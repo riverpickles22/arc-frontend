@@ -38,4 +38,16 @@ The app is a pure client of two backend routes:
 
 The canon JSON shape is the contract between canon and any app — it's produced by arc-core's `export-canon.py` and documented there. Nothing in this repo parses YAML or knows where the story lives.
 
-Colors follow fixed categorical assignment per character and per entity type, in light and dark themes. `public/cuba.geo.json` is a coarse Natural-Earth-derived coastline; swap in a higher-resolution one when map fidelity starts to matter.
+## Story-agnostic by construction
+
+This repo contains no story. Everything specific to one comes from canon or from the story itself:
+
+| | Source |
+|---|---|
+| Map extent | fitted to the basemap and to every `place` with coordinates |
+| Character colours | `story.protagonists` order, then remaining character ids |
+| Opening year | the earliest character state — the first year the map has anyone on it |
+| Basemap coastline | the story's `assets/`, via `GET /api/assets/<name>` |
+| Map inset | the story's `view.yaml` |
+
+The last two are optional: with no basemap the markers draw without a coastline, and with no inset everything renders on the main map. Colours are positional against the `--c1`…`--c8` palette in `theme.css`, so they're stable across reloads without being pinned to any particular cast.
