@@ -72,9 +72,9 @@ export function ChatPanel({
             can reshape it as you converse. Changes land as{' '}
             <span className="badge proposed">proposed</span> until you ratify them.
             <div className="chat-examples">
-              <em>"Give the denouncing neighbor a name and a dead son — make them real."</em>
-              <em>"Add a state snapshot for Mateo during the 1994 Maleconazo."</em>
-              <em>"Merge chapters 2 and 3 — the dog POV chapter is too early."</em>
+              <em>"Give the neighbor who informs a name and a reason — make them real."</em>
+              <em>"Add a state snapshot for the stray during the riot."</em>
+              <em>"Merge chapters 2 and 3 — the second POV lands too early."</em>
             </div>
           </div>
         )}

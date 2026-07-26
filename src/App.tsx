@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { loadCanon, yearRange, eraAt, dk } from './canon'
-import type { Canon } from './canon'
+import { loadCanon, loadView, yearRange, eraAt, dk, charColors, openingYear } from './canon'
+import type { Canon, View } from './canon'
 import { Timeline } from './components/Timeline'
 import { MapView } from './components/MapView'
 import { GraphView } from './components/GraphView'
@@ -8,15 +8,9 @@ import { ProfilePanel } from './components/ProfilePanel'
 import { EventStrip } from './components/EventStrip'
 import { ChatPanel } from './components/ChatPanel'
 
-// Fixed categorical assignment for characters (identity, never cycled).
-export const CHAR_COLORS: Record<string, string> = {
-  'char.carlos': 'var(--c1)',
-  'char.diego': 'var(--c2)',
-  'char.mateo': 'var(--c3)',
-  'char.manuel': 'var(--c4)',
-  'char.carlos-father': 'var(--c5)',
-  'char.carlos-mother': 'var(--c6)',
-}
+// Character colours are derived per story (see charColors in canon.ts) so this
+// repo carries no story's cast. Entity types are the system's own vocabulary,
+// so they stay fixed here.
 export const TYPE_COLORS: Record<string, string> = {
   character: 'var(--c1)',
   place: 'var(--c2)',
@@ -26,9 +20,10 @@ export const TYPE_COLORS: Record<string, string> = {
 
 export default function App() {
   const [canon, setCanon] = useState<Canon | null>(null)
+  const [view, setView] = useState<View>({})
   const [err, setErr] = useState<string | null>(null)
-  const [year, setYear] = useState(1958)
-  const [selected, setSelected] = useState<string | null>('char.carlos')
+  const [year, setYear] = useState<number | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
   const [tab, setTab] = useState<'profile' | 'chat'>('profile')
   const [dark, setDark] = useState<boolean>(() => matchMedia('(prefers-color-scheme: dark)').matches)
 
@@ -38,6 +33,7 @@ export default function App() {
 
   useEffect(() => {
     refreshCanon()
+    loadView().then(setView)
   }, [refreshCanon])
 
   useEffect(() => {
@@ -45,6 +41,17 @@ export default function App() {
   }, [dark])
 
   const range = useMemo(() => (canon ? yearRange(canon.timeline.eras) : ([1950, 2000] as [number, number])), [canon])
+  const colors = useMemo(() => (canon ? charColors(canon) : {}), [canon])
+
+  // Open on the story's own terms — its first protagonist, at the earliest
+  // year its eras cover — rather than a hardcoded character and date.
+  useEffect(() => {
+    if (!canon) return
+    if (selected === null) {
+      setSelected(canon.story.protagonists?.find(id => canon.entities[id]) ?? Object.keys(canon.entities)[0] ?? null)
+    }
+    if (year === null) setYear(openingYear(canon, range[0]))
+  }, [canon, selected, year, range])
 
   // selecting anything from the chat/profile flips to profile tab
   const selectAndShow = useCallback((id: string) => {
@@ -53,7 +60,7 @@ export default function App() {
   }, [])
 
   if (err) return <div className="empty">Failed to load canon: {err}</div>
-  if (!canon) return <div className="empty">Loading canon…</div>
+  if (!canon || year === null) return <div className="empty">Loading canon…</div>
 
   const tEnd = dk(String(year), true)
   const era = eraAt(tEnd, canon.timeline.eras)
@@ -80,7 +87,8 @@ export default function App() {
       <div className="main">
         <section className="panel col-map">
           <h2>Map — where everyone is in {year}</h2>
-          <MapView canon={canon} tEnd={tEnd} selected={selected} onSelect={selectAndShow} />
+          <MapView canon={canon} view={view} colors={colors} tEnd={tEnd}
+            selected={selected} onSelect={selectAndShow} />
         </section>
         <section className="panel col-graph">
           <h2>Graph — entities &amp; relationships</h2>

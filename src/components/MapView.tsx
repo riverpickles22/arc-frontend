@@ -1,17 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Canon, Entity } from '../canon'
-import { extantAt, resolveCoords, stateAt, timeRefKey } from '../canon'
-import { CHAR_COLORS } from '../App'
-
-interface Geo { features: { geometry: { type: string; coordinates: number[][][] | number[][][][] } }[] }
+import type { BBox, Canon, Entity, GeoJSON, View } from '../canon'
+import { extantAt, fitBBox, geoCoords, loadBasemap, resolveCoords, stateAt, timeRefKey } from '../canon'
 
 const W = 1000
-const MAIN = { lon0: -85.3, lon1: -73.8, lat0: 19.4, lat1: 23.8 }
-const INSET = { lon0: -82.43, lon1: -82.3, lat0: 23.08, lat1: 23.175 }
-const H = Math.round((W * (MAIN.lat1 - MAIN.lat0)) / ((MAIN.lon1 - MAIN.lon0) * Math.cos((21.6 * Math.PI) / 180)))
 const INS = { x: 14, y: 14, w: 330, h: 240 }
+const FALLBACK: BBox = { lon0: -180, lon1: 180, lat0: -60, lat1: 75 }
 
-type BBox = typeof MAIN
 const proj = (b: BBox, w: number, h: number, ox = 0, oy = 0) =>
   (lon: number, lat: number): [number, number] => [
     ox + ((lon - b.lon0) / (b.lon1 - b.lon0)) * w,
@@ -20,26 +14,47 @@ const proj = (b: BBox, w: number, h: number, ox = 0, oy = 0) =>
 const inBox = (b: BBox, lon: number, lat: number) =>
   lon >= b.lon0 && lon <= b.lon1 && lat >= b.lat0 && lat <= b.lat1
 
+/** Height that keeps degrees square at the bbox's own latitude. */
+const heightFor = (b: BBox) => {
+  const midLat = ((b.lat0 + b.lat1) / 2) * (Math.PI / 180)
+  return Math.round((W * (b.lat1 - b.lat0)) / ((b.lon1 - b.lon0) * Math.cos(midLat)))
+}
+
 interface Tip { x: number; y: number; title: string; sub?: string }
 
 export function MapView({
-  canon, tEnd, selected, onSelect,
+  canon, view, colors, tEnd, selected, onSelect,
 }: {
   canon: Canon
+  view: View
+  colors: Record<string, string>
   tEnd: number
   selected: string | null
   onSelect: (id: string) => void
 }) {
-  const [geo, setGeo] = useState<Geo | null>(null)
+  const [geo, setGeo] = useState<GeoJSON | null>(null)
   const [tip, setTip] = useState<Tip | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
 
+  const basemap = view.map?.basemap
   useEffect(() => {
-    fetch(`${import.meta.env.BASE_URL}cuba.geo.json`).then(r => r.json()).then(setGeo).catch(() => setGeo(null))
-  }, [])
+    let live = true
+    loadBasemap(basemap).then(g => { if (live) setGeo(g) })
+    return () => { live = false }
+  }, [basemap])
 
-  const pMain = useMemo(() => proj(MAIN, W, H), [])
-  const pIns = useMemo(() => proj(INSET, INS.w, INS.h, INS.x, INS.y), [])
+  const inset = view.map?.inset
+
+  // The map covers whatever is being drawn — the coastline plus every located
+  // place. Fitting to places alone would crop a basemap that extends past them.
+  const MAIN = useMemo(
+    () => fitBBox(canon.entities, geoCoords(geo)) ?? FALLBACK,
+    [canon.entities, geo],
+  )
+  const H = useMemo(() => heightFor(MAIN), [MAIN])
+
+  const pMain = useMemo(() => proj(MAIN, W, H), [MAIN, H])
+  const pIns = useMemo(() => (inset ? proj(inset, INS.w, INS.h, INS.x, INS.y) : null), [inset])
 
   const coastPath = useMemo(() => {
     if (!geo) return ''
@@ -87,8 +102,19 @@ export function MapView({
     setTip({ x: ev.clientX - r.left + 12, y: ev.clientY - r.top + 12, title, sub })
   }
 
-  const markers = (box: BBox, project: (lon: number, lat: number) => [number, number], scale = 1) => {
-    const inside = chars.filter(c => inBox(box, c.lon, c.lat))
+  // `exclude` keeps characters drawn in the inset from also appearing on the
+  // main map. Excluding by bbox rather than by longitude matters: carving the
+  // main map into left/right strips drops anyone at the inset's longitude but
+  // outside its latitude — they appear on neither map.
+  const markers = (
+    box: BBox,
+    project: (lon: number, lat: number) => [number, number],
+    scale = 1,
+    exclude?: BBox,
+  ) => {
+    const inside = chars.filter(
+      c => inBox(box, c.lon, c.lat) && !(exclude && inBox(exclude, c.lon, c.lat)),
+    )
     // fan out markers sharing a location
     const groups = new Map<string, typeof inside>()
     for (const c of inside) {
@@ -114,7 +140,7 @@ export function MapView({
             onMouseMove={ev => showTip(ev, c.e.name, c.cond)}
             onMouseLeave={() => setTip(null)}
           >
-            <circle cx={mx} cy={my} r={(sel ? 8 : 6.5) * scale} fill={CHAR_COLORS[c.e.id] ?? 'var(--c7)'}
+            <circle cx={mx} cy={my} r={(sel ? 8 : 6.5) * scale} fill={colors[c.e.id] ?? 'var(--c7)'}
               stroke="var(--surface-1)" strokeWidth={2} />
             <text x={lx} y={my + 4} fontSize={11.5 * scale} textAnchor={labelLeft ? 'end' : 'start'}
               fill="var(--text-primary)" fontWeight={sel ? 650 : 400}>
@@ -154,25 +180,27 @@ export function MapView({
         {trail.length > 1 && (
           <polyline
             points={trail.map(c => pMain(c.lon, c.lat).join(',')).join(' ')}
-            fill="none" stroke={selected ? CHAR_COLORS[selected] ?? 'var(--c7)' : 'var(--muted)'}
+            fill="none" stroke={selected ? colors[selected] ?? 'var(--c7)' : 'var(--muted)'}
             strokeWidth={2} strokeDasharray="6 5" opacity={0.75}
           />
         )}
 
-        {placeDots(MAIN, pMain, { kinds: new Set(['city']) })}
-        {markers({ ...MAIN, lon1: INSET.lon0 } as BBox, pMain) /* chars outside Havana box */}
-        {markers({ lon0: INSET.lon1, lon1: MAIN.lon1, lat0: MAIN.lat0, lat1: MAIN.lat1 } as BBox, pMain)}
+        {/* With no inset declared, every place and character draws on the main
+            map; with one, its contents are drawn there instead. */}
+        {placeDots(MAIN, pMain, inset ? { kinds: new Set(['city']) } : undefined)}
+        {markers(MAIN, pMain, 1, inset)}
 
-        {/* Havana inset */}
-        <g>
-          <rect x={INS.x} y={INS.y} width={INS.w} height={INS.h} rx={8}
-            fill="var(--land)" stroke="var(--baseline)" strokeWidth={1} />
-          <text x={INS.x + 10} y={INS.y + 18} fontSize={11} fontWeight={650} fill="var(--muted)">
-            HAVANA (inset)
-          </text>
-          {placeDots(INSET, pIns, { labelBelow: true })}
-          {markers(INSET, pIns)}
-        </g>
+        {inset && pIns && (
+          <g>
+            <rect x={INS.x} y={INS.y} width={INS.w} height={INS.h} rx={8}
+              fill="var(--land)" stroke="var(--baseline)" strokeWidth={1} />
+            <text x={INS.x + 10} y={INS.y + 18} fontSize={11} fontWeight={650} fill="var(--muted)">
+              {inset.label.toUpperCase()} (inset)
+            </text>
+            {placeDots(inset, pIns, { labelBelow: true })}
+            {markers(inset, pIns)}
+          </g>
+        )}
       </svg>
       {tip && (
         <div className="tooltip" style={{ left: tip.x, top: tip.y }}>
@@ -181,7 +209,7 @@ export function MapView({
         </div>
       )}
       <div className="legend">
-        {Object.entries(CHAR_COLORS).map(([id, color]) => (
+        {Object.entries(colors).map(([id, color]) => (
           <span key={id} className="item">
             <span className="swatch" style={{ background: color }} />
             {canon.entities[id]?.name ?? id}
