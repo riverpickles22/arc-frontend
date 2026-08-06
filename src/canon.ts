@@ -121,47 +121,14 @@ export interface Canon {
 }
 
 // ---- time helpers ------------------------------------------------------
+//
+// The date-ordering rule and temporal resolution live in arc-canon-graph
+// (arc-core/graph) — the single implementation shared with the validator via
+// graph/date-vectors.json. This file re-exports them so existing imports
+// keep working; do not reimplement dk() here.
 
-export const dateOf = (v?: DateLike): string | undefined =>
-  typeof v === 'string' ? v : v?.date
-
-/** Numeric key yyyymmdd; missing parts snap to start (or end) of the period. */
-export function dk(date: string, end = false): number {
-  const p = date.split('-').map(Number)
-  const [y, m, d] = [p[0], p[1] ?? (end ? 12 : 1), p[2] ?? (end ? 31 : 1)]
-  return y * 10000 + m * 100 + d
-}
-
-export function eraSpanKeys(era: Era): [number, number] {
-  const s = dateOf(era.span.start)
-  const e = dateOf(era.span.end)
-  return [s ? dk(s) : 0, e ? dk(e, true) : 99999999]
-}
-
-/** Effective date key of a timeref: its date, else its era's start. */
-export function timeRefKey(at: TimeRef, eras: Era[]): number {
-  if (at.date) return dk(at.date)
-  const era = eras.find(e => e.id === at.era)
-  return era ? eraSpanKeys(era)[0] : 0
-}
-
-/** Latest state whose effective time <= T (T = end-of-year key). */
-export function stateAt(entity: Entity, tEnd: number, eras: Era[]): State | undefined {
-  const states = (entity.states ?? [])
-    .map(s => ({ s, k: timeRefKey(s.at, eras) }))
-    .filter(x => x.k <= tEnd)
-    .sort((a, b) => a.k - b.k)
-  return states.at(-1)?.s
-}
-
-/** Is the entity extant (born/created and not yet dead/ended) at year-end T? */
-export function extantAt(entity: Entity, tEnd: number): boolean {
-  const start = dateOf(entity.born) ?? dateOf(entity.created) ?? dateOf(entity.span?.start)
-  const stop = dateOf(entity.died) ?? dateOf(entity.destroyed) ?? dateOf(entity.span?.end)
-  if (start && dk(start) > tEnd) return false
-  if (stop && dk(stop, true) < tEnd) return false
-  return true
-}
+import { dk, dateOf, eraSpanKeys, timeRefKey, stateAt, extantAt } from 'arc-canon-graph'
+export { dk, dateOf, eraSpanKeys, timeRefKey, stateAt, extantAt }
 
 /** Resolve a place id to coordinates, walking part_of up the hierarchy. */
 export function resolveCoords(
