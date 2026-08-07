@@ -20,21 +20,36 @@ Vite proxies `/api` to `http://localhost:8787`. Point it elsewhere with `ARC_BAC
 
 ## What it shows
 
-- **Timeline** — era bands plus chapter bands (colored by part); drag the year slider to set story-time T, or click a chapter to jump to its span. Every panel answers "as of T."
+Three pages — **World**, **Manuscript**, **Wiki** — over one story. Position
+carries across them: the manuscript's chapter is book time's chapter, so
+flipping to the world view shows the graph projected at the manuscript's
+moment.
+
+The World page:
+
+- **Timeline** — two scales. *Calendar* is true to story time with a density-weighted axis (an era's width follows how much story lives in it, not its raw years; condensed eras wear a ⋯). *Book time* gives every chapter an equal cell in reading order — flashbacks sit where the reader meets them. Drag to set story-time T; every panel answers "as of T."
 - **Event strip** — the events dated in the selected year; click to inspect.
 - **Map** — the story's geography; each character's marker sits at their state location at T (latest state ≤ T), with the selected character's movement trail dashed behind them.
 - **Graph** — entities as nodes colored by type, objective relationship edges solid, and the selected character's *subjective perception at T* as dashed edges — hover to read the stance. Entities not extant at T (unborn, dead, dissolved) fade.
 - **Profile** — the full versioned journey of the selected entity or chapter, with the snapshot active at T highlighted. Every ID is a link; `proposed` facts wear a badge.
 - **Chat (✦)** — the world-shaping agent. It reads the full canon and conventions, discusses the story, and edits canon/docs through the validator. Failed writes are reverted and bounced back to the agent to fix; successful ones refresh the map, graph, and timeline live. New facts default to `status: proposed` until you ratify them in conversation.
 
+The **Manuscript** page reads the bound scenes in `prose/` (conventions §10): chapters in reading order, each showing its canon outline as an epigraph and its scenes with status pills and *rests-on* links that jump to the world view.
+
+The **Wiki** page renders the story's `docs/` articles — working `[[wikilinks]]`, a canon-facts panel for bound entities, and backlinks.
+
 ## Architecture
 
-The app is a pure client of two backend routes:
+The app is a pure client of the backend routes:
 
 | Route | Used by |
 |---|---|
 | `GET /api/canon` | `loadCanon()` in `src/canon.ts` — the whole graph in one fetch |
+| `GET /api/docs` | the Wiki page (`loadDocs()`) |
+| `GET /api/prose` | the Manuscript page (`loadProse()`) |
 | `POST /api/chat` | `src/components/ChatPanel.tsx` |
+
+Temporal resolution (`dk`, `stateAt`, `extantAt`, …) comes from `arc-canon-graph` — arc-core's graph module, a `file:` dependency — so the date-ordering rule has exactly one implementation across the system.
 
 The canon JSON shape is the contract between canon and any app — it's produced by arc-core's `export-canon.py` and documented there. Nothing in this repo parses YAML or knows where the story lives.
 

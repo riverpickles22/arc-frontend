@@ -278,6 +278,29 @@ export async function loadCanon(): Promise<Canon> {
   return res.json()
 }
 
+export interface DocArticle { path: string; canon: string | null; body: string }
+export interface ProseScene {
+  scene: string; chapter: string; status: string
+  pov: string | null; events: string[]; facts: string[]
+  file: string; body: string
+}
+
+/** The story encyclopedia: docs/ articles with their canon bindings. */
+export async function loadDocs(): Promise<DocArticle[]> {
+  try {
+    const res = await fetch('/api/docs')
+    return res.ok ? (await res.json()).articles : []
+  } catch { return [] }
+}
+
+/** The manuscript: bound prose scenes (conventions §10). */
+export async function loadProse(): Promise<ProseScene[]> {
+  try {
+    const res = await fetch('/api/prose')
+    return res.ok ? (await res.json()).scenes : []
+  } catch { return [] }
+}
+
 /** view.yaml from the story repo. A story without one renders from canon alone. */
 export async function loadView(): Promise<View> {
   try {

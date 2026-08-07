@@ -201,3 +201,79 @@ svg text { font-family: inherit; }
   padding: 0 14px; cursor: pointer; font-weight: 650;
 }
 .chat-input button:disabled { opacity: 0.45; cursor: default; }
+
+/* timeline scale toggle: calendar (1:1 story time) vs book time (reading order) */
+.tl-mode { display: flex; gap: 2px; justify-content: flex-end; padding: 0 0 6px; }
+.tl-mode button {
+  font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer;
+  color: var(--text-secondary); background: transparent;
+  border: 1px solid var(--border); border-radius: 999px;
+}
+.tl-mode button:hover { color: var(--text-primary); }
+.tl-mode button.sel { color: var(--c1); border-color: var(--c1); }
+
+/* ---- page nav (World | Manuscript | Wiki) ---- */
+.pagenav { display: flex; gap: 2px; margin-left: 14px; }
+.pagenav button {
+  font: inherit; font-size: 13px; font-weight: 600; padding: 5px 13px; cursor: pointer;
+  color: var(--text-secondary); background: transparent; border: 1px solid transparent; border-radius: 8px;
+}
+.pagenav button:hover { color: var(--text-primary); background: var(--panel); }
+.pagenav button.sel { color: var(--c1); border-color: var(--c1); }
+
+/* ---- shared sidebar for wiki + manuscript ---- */
+.side-nav { overflow-y: auto; padding: 14px 10px; border-right: 1px solid var(--border); }
+.side-nav h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 6px 6px; }
+.side-nav h3:first-child { margin-top: 0; }
+.navitem {
+  display: block; width: 100%; text-align: left; font: inherit; font-size: 13.5px; padding: 5px 8px;
+  color: var(--text-secondary); background: transparent; border: none; border-left: 2px solid transparent;
+  border-radius: 0 6px 6px 0; cursor: pointer; line-height: 1.35;
+}
+.navitem:hover { color: var(--text-primary); background: var(--panel); }
+.navitem.sel { color: var(--c1); border-left-color: var(--c1); background: var(--panel); }
+.navitem .chn { display: inline-block; min-width: 18px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.navitem .chmeta { float: right; font-size: 11px; color: var(--muted); }
+
+/* ---- rendered markdown ---- */
+.mdbody { font-size: 15.5px; line-height: 1.65; color: var(--text-primary); max-width: 74ch; }
+.mdbody h1 { font-size: 22px; letter-spacing: -.01em; margin: 0 0 12px; }
+.mdbody h2 { font-size: 16px; margin: 22px 0 8px; }
+.mdbody h3 { font-size: 14px; margin: 16px 0 6px; }
+.mdbody p { margin: 0 0 10px; }
+.mdbody ul { margin: 0 0 10px; padding-left: 22px; }
+.mdbody blockquote { margin: 0 0 12px; padding: 8px 14px; border-left: 3px solid var(--border); color: var(--text-secondary); }
+.mdbody code { font-size: 13px; background: var(--panel); padding: 1px 5px; border-radius: 4px; }
+.mdbody hr { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
+.mdbody .wikilink { color: var(--c1); cursor: pointer; text-decoration: none; }
+.mdbody .wikilink:hover { text-decoration: underline; }
+.mdbody.prose { font-family: Georgia, 'Times New Roman', serif; font-size: 16.5px; line-height: 1.75; }
+
+/* ---- wiki ---- */
+.wiki-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 230px minmax(0,1fr) 280px; gap: 0; overflow: hidden; }
+.wiki-layout > article { overflow-y: auto; padding: 20px 28px; }
+.wiki-aside { overflow-y: auto; padding: 16px 14px; border-left: 1px solid var(--border); }
+.facts { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); padding: 12px 14px; margin-bottom: 14px; }
+.facts h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; }
+.facts .frow { display: flex; gap: 10px; font-size: 13px; margin-bottom: 5px; color: var(--text-primary); }
+.facts .frow span:first-child { color: var(--muted); min-width: 52px; }
+.facts .fsummary { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin: 8px 0; }
+
+/* ---- manuscript ---- */
+.ms-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0,1fr); overflow: hidden; }
+.ms-main { overflow-y: auto; padding: 24px 36px 60px; }
+.ms-head h1 { font-size: 24px; letter-spacing: -.01em; margin: 0 0 4px; }
+.ms-meta { color: var(--text-secondary); font-size: 13px; margin: 0 0 18px; }
+.ms-outline { max-width: 74ch; margin: 0 0 22px; padding: 12px 16px; border-left: 3px solid var(--c1);
+  background: var(--panel); border-radius: 0 8px 8px 0; color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
+.ms-outline .olabel { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 4px; }
+.scene { margin-bottom: 30px; }
+.scene-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 12.5px;
+  color: var(--text-secondary); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 12px; }
+.scene-head code { font-size: 12px; color: var(--c1); }
+.scene-head .rests { color: var(--muted); }
+.scene-head .rests .wikilink { color: var(--c1); cursor: pointer; margin-left: 6px; }
+.stpill { font-size: 10.5px; font-weight: 600; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border); }
+.stpill.proposed { color: var(--c4); border-color: var(--c4); }
+.stpill.canon { color: var(--c8); border-color: var(--c8); }
+.ms-empty { max-width: 74ch; color: var(--muted); font-size: 14px; font-style: italic; }
