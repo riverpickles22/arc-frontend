@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import type { Chapter, ProseDraft, ProseScene, SceneContract } from '../canon'
+import type { Chapter, ChatResponse, ProseDraft, ProseScene, SceneContract } from '../canon'
 import { dateOf } from '../canon'
 import { acceptDraft, discardDraft } from '../api'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
+import { CopyRef } from './CopyRef'
 
 /** The scene's stated intent (conventions §10), collapsed by default —
  *  the contract the prose must satisfy, not an outline of what happens. */
@@ -75,7 +76,7 @@ function DiffBody({ d }: { d: ParaDiff[] }) {
  *  the working tree. Changed scenes render with word-level highlights, the
  *  drawer carries the running change summary, and Accept ratifies the draft
  *  into main — the proposed → canon gate applied to prose, commit = ratify. */
-export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenWorld, draft, onRefresh }: {
+export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenWorld, draft, onRefresh, onCanonChanged }: {
   scenes: ProseScene[]
   chapters: Chapter[]          // sorted by order
   chapterIx: number
@@ -83,6 +84,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   onOpenWorld: (id: string) => void
   draft: ProseDraft
   onRefresh: () => void
+  onCanonChanged?: () => void
 }) {
   const [showChanges, setShowChanges] = useState(true)
   const [drawer, setDrawer] = useState(false)
@@ -90,6 +92,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [armed, setArmed] = useState<string | null>(null)   // discard needs a second click
+  const [capture, setCapture] = useState<ChatResponse | null>(null)   // the capture pass's briefing, post-accept
 
   // A half-armed discard must not survive closing the drawer or moving to
   // another chapter.
@@ -128,7 +131,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     setBusy(true); setErr(null)
     try { await op(); onRefresh() } catch (e) { setErr((e as Error).message ?? String(e)) } finally { setBusy(false) }
   }
-  const accept = () => run(async () => { await acceptDraft(msg || undefined); setMsg('') })
+  const accept = () => run(async () => {
+    const res = await acceptDraft(msg || undefined)
+    setMsg('')
+    setCapture(res.capture ?? null)
+    if (res.capture?.canonChanged) onCanonChanged?.()
+  })
   const discard = (file: string) => {
     if (armed !== file) { setArmed(file); return }
     setArmed(null)
@@ -190,6 +198,21 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               </div>
             )}
             {err && <p className="db-err">{err}</p>}
+            {capture && (
+              <div className="db-capture">
+                <h3>What this scene changed — capture pass</h3>
+                <div className="db-capture-reply">{capture.reply}</div>
+                {capture.actions.length > 0 && (
+                  <div className="db-capture-actions">
+                    {capture.actions.map((a, i) => (
+                      <span key={i} className={`cap-action${a.ok ? '' : ' failed'}`}>
+                        ✎ {a.path}{a.ok ? '' : ` — ${a.detail}`}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="db-history">
               <h3>Ratified versions</h3>
               {draft.history.map(h => (
@@ -221,6 +244,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
             <section key={s.scene} className="scene">
               <div className="scene-head">
                 <code>{s.scene}</code>
+                <CopyRef text={s.scene} />
                 <span className={`stpill ${s.status}`}>{s.status}</span>
                 {change && <span className={`stpill ${change.status}`}>draft · {change.status}</span>}
                 {s.pov && <a className="linklike" onClick={() => onOpenWorld(s.pov!)}>POV {s.pov}</a>}

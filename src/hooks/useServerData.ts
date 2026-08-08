@@ -8,9 +8,9 @@
 // failure is recorded, so a down backend shows a banner rather than
 // masquerading as an empty story.
 import { useCallback, useEffect, useState } from 'react'
-import type { Canon, DocArticle, ProseDraft, ProseScene } from '../canon'
+import type { AttentionResponse, Canon, DocArticle, MaterialItem, ProseDraft, ProseScene } from '../canon'
 import type { View } from '../presentation'
-import { loadCanon, loadDocs, loadDraft, loadProse, loadView, NO_DRAFT } from '../api'
+import { loadAttention, loadCanon, loadDocs, loadDraft, loadMaterial, loadProse, loadView, NO_DRAFT } from '../api'
 
 export interface ServerData {
   canon: Canon | null
@@ -20,6 +20,8 @@ export interface ServerData {
   docs: DocArticle[]
   prose: ProseScene[]
   draft: ProseDraft
+  attention: AttentionResponse | null
+  material: MaterialItem[]
   degraded: string[]
   refreshCanon: () => void
   refreshProse: () => void
@@ -34,6 +36,8 @@ export function useServerData(): ServerData {
   const [docs, setDocs] = useState<DocArticle[]>([])
   const [prose, setProse] = useState<ProseScene[]>([])
   const [draft, setDraft] = useState<ProseDraft>(NO_DRAFT)
+  const [attn, setAttn] = useState<AttentionResponse | null>(null)
+  const [material, setMaterial] = useState<MaterialItem[]>([])
   const [degraded, setDegraded] = useState<string[]>([])
 
   const loadAll = useCallback(async (signal?: AbortSignal) => {
@@ -53,6 +57,9 @@ export function useServerData(): ServerData {
       secondary('docs', loadDocs, setDocs),
       secondary('prose', loadProse, setProse),
       secondary('draft', loadDraft, setDraft),
+      // attention/material failing is not a degradation — the chips hide
+      loadAttention(signal).then(setAttn).catch(() => {}),
+      loadMaterial(signal).then(setMaterial).catch(() => {}),
     ])
     if (!signal?.aborted) setDegraded(failures)
   }, [])
@@ -70,6 +77,8 @@ export function useServerData(): ServerData {
     loadCanon()
       .then(c => { setCanon(c); setCanonError(null) })
       .catch(e => setCanonError(message(e)))
+    loadAttention().then(setAttn).catch(() => {})
+    loadMaterial().then(setMaterial).catch(() => {})
   }, [])
 
   // Prose and its draft state refresh together: accept/discard change both.
@@ -78,5 +87,5 @@ export function useServerData(): ServerData {
     loadDraft().then(setDraft).catch(() => setDegraded(d => (d.includes('draft') ? d : [...d, 'draft'])))
   }, [])
 
-  return { canon, canonError, retry, view, docs, prose, draft, degraded, refreshCanon, refreshProse }
+  return { canon, canonError, retry, view, docs, prose, draft, attention: attn, material, degraded, refreshCanon, refreshProse }
 }

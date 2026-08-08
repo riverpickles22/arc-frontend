@@ -10,10 +10,41 @@ import { MapView } from './components/MapView'
 import { GraphView } from './components/GraphView'
 import { ProfilePanel } from './components/ProfilePanel'
 import { EventStrip } from './components/EventStrip'
+import { AttentionInbox } from './components/AttentionInbox'
+import { MaterialDrawer } from './components/MaterialDrawer'
 import { ManuscriptView } from './components/ManuscriptView'
 import { WikiView } from './components/WikiView'
 
 type Page = 'world' | 'manuscript' | 'wiki'
+
+// ---- URL routes ---------------------------------------------------------
+// Hash routes make every position refresh-safe and copyable, speaking the
+// reference grammar (conventions §7):
+//   #/world/char.carlos@ch.10-return   selection + world moment
+//   #/world/@1959                      moment only
+//   #/manuscript/ch.05-the-denunciation
+//   #/wiki/docs/entities/characters/carlos.md   (bare #/wiki = landing)
+interface Route {
+  page: Page
+  id?: string
+  anchor?: string
+  chapterId?: string
+  wikiPath?: string
+}
+
+function parseHash(): Route {
+  const h = decodeURIComponent(location.hash.replace(/^#\/?/, ''))
+  const [head, ...rest] = h.split('/')
+  if (head === 'manuscript') return { page: 'manuscript', chapterId: rest[0] || undefined }
+  if (head === 'wiki') return { page: 'wiki', wikiPath: rest.join('/') || undefined }
+  if (head === 'world') {
+    const tail = rest.join('/')
+    const at = tail.indexOf('@')
+    if (at === -1) return { page: 'world', id: tail || undefined }
+    return { page: 'world', id: tail.slice(0, at) || undefined, anchor: tail.slice(at + 1) || undefined }
+  }
+  return { page: 'world' }
+}
 
 export default function App() {
   const data = useServerData()
@@ -44,15 +75,21 @@ function Shell({ canon, data, dark, onToggleDark }: {
   dark: boolean
   onToggleDark: () => void
 }) {
-  const [page, setPage] = useState<Page>('world')
-  const [selectedState, setSelected] = useState<string | null>(null)
+  // The route is read once at mount; from then on state drives the URL.
+  const [route] = useState<Route>(parseHash)
+  const [page, setPage] = useState<Page>(route.page)
+  const [selectedState, setSelected] = useState<string | null>(route.id ?? null)
+  const [wikiPath, setWikiPath] = useState<string | null>(route.wikiPath ?? null)
 
   const range = useMemo(() => yearRange(canon.timeline.eras), [canon])
   const colors = useMemo(() => charColors(canon), [canon])
   // Book time never consults dates for ordering — reading order is chapter order.
   const chapters = useMemo(() => [...(canon.chapters ?? [])].sort((a, b) => a.order - b.order), [canon])
 
-  const time = useTimeCursor(canon, chapters, range)
+  const time = useTimeCursor(canon, chapters, range,
+    route.page === 'manuscript' ? { chapterId: route.chapterId }
+      : route.anchor ? (/^\d{1,4}$/.test(route.anchor) ? { year: Number(route.anchor) } : { chapterId: route.anchor })
+        : undefined)
 
   // Open on the story's own terms — its first protagonist — until the user
   // selects; derived, so no initialization effect is needed.
@@ -87,6 +124,24 @@ function Shell({ canon, data, dark, onToggleDark }: {
     setPage(p)
   }
 
+  // Keep the URL current — replaceState, so refresh and copy keep the spot
+  // without flooding history.
+  const bookChapterId = time.bookChapter?.id
+  const curChapterId = chapters[Math.min(time.chapterIx, chapters.length - 1)]?.id
+  useEffect(() => {
+    let h = '#/' + page
+    if (page === 'world') {
+      const anchor = time.timeMode === 'book' ? bookChapterId : String(time.year)
+      if (selected) h += '/' + selected + (anchor ? '@' + anchor : '')
+      else if (anchor) h += '/@' + anchor
+    } else if (page === 'manuscript' && curChapterId) {
+      h += '/' + curChapterId
+    } else if (page === 'wiki' && wikiPath) {
+      h += '/' + wikiPath
+    }
+    history.replaceState(null, '', h)
+  }, [page, selected, time.timeMode, time.year, bookChapterId, curChapterId, wikiPath])
+
   const degraded = [...data.degraded, ...(data.canonError ? ['canon refresh'] : [])]
 
   return (
@@ -97,6 +152,8 @@ function Shell({ canon, data, dark, onToggleDark }: {
           <span className="logline">
             {canon.story.title} — {canon.story.logline}
           </span>
+          <MaterialDrawer items={data.material} canon={canon} onOpen={openWorld} />
+          <AttentionInbox attention={data.attention} canon={canon} onOpen={openWorld} />
           <button className="themeToggle" onClick={data.retry}
             title="Reload canon, docs, and prose — picks up edits made from Claude sessions">
             Refresh
@@ -115,7 +172,9 @@ function Shell({ canon, data, dark, onToggleDark }: {
         {degraded.length > 0 && (
           <div className="degraded">
             {degraded.join(', ')} unavailable — is arc-backend running?{' '}
-            <button className="themeToggle" onClick={data.retry}>Retry</button>
+            <MaterialDrawer items={data.material} canon={canon} onOpen={openWorld} />
+          <AttentionInbox attention={data.attention} canon={canon} onOpen={openWorld} />
+          <button className="themeToggle" onClick={data.retry}>Retry</button>
           </div>
         )}
       </header>
@@ -123,10 +182,11 @@ function Shell({ canon, data, dark, onToggleDark }: {
       {page === 'manuscript' && (
         <ManuscriptView scenes={data.prose} chapters={chapters}
           chapterIx={time.chapterIx} onChapter={time.setChapterIx} onOpenWorld={openWorld}
-          draft={data.draft} onRefresh={data.refreshProse} />
+          draft={data.draft} onRefresh={data.refreshProse} onCanonChanged={data.refreshCanon} />
       )}
       {page === 'wiki' && (
-        <WikiView canon={canon} articles={data.docs} onOpenWorld={openWorld} />
+        <WikiView canon={canon} articles={data.docs} onOpenWorld={openWorld}
+          sel={wikiPath} onSel={setWikiPath} />
       )}
 
       {page === 'world' && <>
@@ -151,7 +211,8 @@ function Shell({ canon, data, dark, onToggleDark }: {
         <section className="panel col-profile">
           <h2>Profile</h2>
           <ProfilePanel canon={canon} id={selected} tEnd={time.tEnd} onSelect={selectAndShow} prose={data.prose}
-            onJumpTo={time.goToKey} />
+            onJumpTo={time.goToKey}
+            refAnchor={time.timeMode === 'book' ? time.bookChapter?.id : String(time.year)} />
         </section>
       </div>
       </>}

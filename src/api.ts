@@ -6,9 +6,9 @@
 // banner) belongs to the caller — useServerData — not here, so a down
 // backend can no longer masquerade as an empty story.
 import type {
-  ApiErrorResponse, DocsResponse, ProseAcceptResponse, ProseResponse,
+  ApiErrorResponse, AttentionResponse, DocsResponse, MaterialResponse, ProseAcceptResponse, ProseResponse,
 } from 'arc-canon-graph'
-import type { Canon, DocArticle, ProseDraft, ProseScene } from './canon'
+import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene } from './canon'
 import type { View } from './presentation'
 import type { GeoJSON } from './map-geometry'
 
@@ -42,6 +42,14 @@ export const loadDocs = (signal?: AbortSignal): Promise<DocArticle[]> =>
 export const loadProse = (signal?: AbortSignal): Promise<ProseScene[]> =>
   getJson<ProseResponse>('/api/prose', { signal }).then(r => r.scenes)
 
+/** The attention inbox: checks findings, proposals, unfired payoffs. */
+export const loadAttention = (signal?: AbortSignal): Promise<AttentionResponse> =>
+  getJson<AttentionResponse>('/api/attention', { signal })
+
+/** Story material: the unplaced layer (conventions §12). */
+export const loadMaterial = (signal?: AbortSignal): Promise<MaterialItem[]> =>
+  getJson<MaterialResponse>('/api/material', { signal }).then(r => r.items)
+
 /** view.yaml from the story repo. A story without one renders from canon alone. */
 export const loadView = (signal?: AbortSignal): Promise<View> =>
   getJson<View>('/api/view', { signal })
@@ -65,7 +73,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const acceptDraft = (message?: string): Promise<ProseAcceptResponse> =>
-  post('/api/prose/accept', { message })
+  post('/api/prose/accept', { message, capture: true })   // capture runs when the backend has credentials
 
 export const discardDraft = (file: string): Promise<void> =>
   post('/api/prose/discard', { file })

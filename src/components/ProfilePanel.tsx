@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { loadGraph } from 'arc-canon-graph'
 import type { Canon, Chapter, Entity, EventDoc, ProseScene, State } from '../canon'
 import { dateOf, stateAt, timeRefKey } from '../canon'
+import { CopyRef } from './CopyRef'
 
 function Ref({ id, canon, onSelect }: { id: string; canon: Canon; onSelect: (id: string) => void }) {
   const chapter = (canon.chapters ?? []).find(c => c.id === id)
@@ -112,8 +113,8 @@ function StateCard({
 }
 
 function EntityProfile({
-  e, canon, tEnd, onSelect, children,
-}: { e: Entity; canon: Canon; tEnd: number; onSelect: (id: string) => void; children?: ReactNode }) {
+  e, canon, tEnd, onSelect, refAnchor, children,
+}: { e: Entity; canon: Canon; tEnd: number; onSelect: (id: string) => void; refAnchor?: string; children?: ReactNode }) {
   const active = stateAt(e, tEnd, canon.timeline.eras)
   const edges = canon.relationships.filter(r => r.from === e.id || r.to === e.id)
   return (
@@ -122,7 +123,8 @@ function EntityProfile({
         {e.name}
         {e.status !== 'canon' && <span className={`badge ${e.status}`}>{e.status}</span>}
       </h3>
-      <div className="sub">{e.type}{e.species ? ` · ${e.species}` : ''}{e.kind ? ` · ${e.kind}` : ''} · {e.id}</div>
+      <div className="sub">{e.type}{e.species ? ` · ${e.species}` : ''}{e.kind ? ` · ${e.kind}` : ''} · {e.id}
+        {' '}<CopyRef text={refAnchor ? `${e.id}@${refAnchor}` : e.id} /></div>
       <div className="summary">{e.summary}</div>
       {e.appearance && <div className="field"><div className="k">appearance</div><div className="v">{e.appearance}</div></div>}
       {e.voice && <div className="field"><div className="k">voice / signature</div><div className="v">{e.voice}</div></div>}
@@ -157,8 +159,8 @@ function EntityProfile({
 }
 
 function EventProfile({
-  ev, canon, tEnd, onSelect, onJumpTo, children,
-}: { ev: EventDoc; canon: Canon; tEnd: number; onSelect: (id: string) => void; onJumpTo?: (k: number) => void; children?: ReactNode }) {
+  ev, canon, tEnd, onSelect, onJumpTo, refAnchor, children,
+}: { ev: EventDoc; canon: Canon; tEnd: number; onSelect: (id: string) => void; onJumpTo?: (k: number) => void; refAnchor?: string; children?: ReactNode }) {
   const eraName = canon.timeline.eras.find(e => e.id === ev.when.era)?.name ?? ev.when.era
   const evKey = timeRefKey(ev.when, canon.timeline.eras)
   return (
@@ -167,7 +169,8 @@ function EventProfile({
         {ev.title}
         {ev.status !== 'canon' && <span className={`badge ${ev.status}`}>{ev.status}</span>}
       </h3>
-      <div className="sub">event · {ev.scope} · {ev.when.date ?? eraName}{ev.when.approximate ? ' (approx.)' : ''}</div>
+      <div className="sub">event · {ev.scope} · {ev.when.date ?? eraName}{ev.when.approximate ? ' (approx.)' : ''}
+        {' '}<CopyRef text={refAnchor ? `${ev.id}@${refAnchor}` : ev.id} /></div>
       {evKey > tEnd && (
         <div className="sub notyet">
           hasn't happened yet at the world's moment
@@ -215,7 +218,7 @@ function ChapterProfile({
         {c.order}. {c.title}
         {c.status !== 'canon' && <span className={`badge ${c.status}`}>{c.status}</span>}
       </h3>
-      <div className="sub">chapter · {c.part} · {s} → {e}</div>
+      <div className="sub">chapter · {c.part} · {s} → {e} <CopyRef text={c.id} /></div>
       <div className="summary">{c.summary}</div>
       {c.pov && <div className="field"><div className="k">pov</div><div className="v"><Ref id={c.pov} canon={canon} onSelect={onSelect} /></div></div>}
       {c.events?.length ? (
@@ -234,14 +237,14 @@ function ChapterProfile({
 }
 
 export function ProfilePanel({
-  canon, id, tEnd, onSelect, prose, onJumpTo,
-}: { canon: Canon; id: string | null; tEnd: number; onSelect: (id: string) => void; prose: ProseScene[]; onJumpTo?: (k: number) => void }) {
+  canon, id, tEnd, onSelect, prose, onJumpTo, refAnchor,
+}: { canon: Canon; id: string | null; tEnd: number; onSelect: (id: string) => void; prose: ProseScene[]; onJumpTo?: (k: number) => void; refAnchor?: string }) {
   if (!id) return <div className="empty">Select a character, place, or event.</div>
   const impact = <ImpactSection canon={canon} id={id} prose={prose} onSelect={onSelect} />
   const e = canon.entities[id]
-  if (e) return <EntityProfile e={e} canon={canon} tEnd={tEnd} onSelect={onSelect}>{impact}</EntityProfile>
+  if (e) return <EntityProfile e={e} canon={canon} tEnd={tEnd} onSelect={onSelect} refAnchor={refAnchor}>{impact}</EntityProfile>
   const ev = canon.events[id]
-  if (ev) return <EventProfile ev={ev} canon={canon} tEnd={tEnd} onSelect={onSelect} onJumpTo={onJumpTo}>{impact}</EventProfile>
+  if (ev) return <EventProfile ev={ev} canon={canon} tEnd={tEnd} onSelect={onSelect} onJumpTo={onJumpTo} refAnchor={refAnchor}>{impact}</EventProfile>
   const ch = (canon.chapters ?? []).find(c => c.id === id)
   if (ch) return <ChapterProfile c={ch} canon={canon} onSelect={onSelect} />
   return <div className="empty">Unknown id: {id}</div>

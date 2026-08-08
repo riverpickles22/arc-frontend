@@ -28,12 +28,21 @@ export interface TimeCursor {
   goToKey: (k: number) => void
 }
 
-export function useTimeCursor(canon: Canon, chapters: Chapter[], range: [number, number]): TimeCursor {
+export function useTimeCursor(
+  canon: Canon,
+  chapters: Chapter[],
+  range: [number, number],
+  /** From the URL route, when present — a chapter anchor or a year. */
+  initial?: { chapterId?: string; year?: number },
+): TimeCursor {
   // null = not yet touched by the user — the opening year derives instead
   // of being set by an effect.
-  const [yearState, setYear] = useState<number | null>(null)
-  const [timeMode, setTimeMode] = useState<TimeMode>('book')   // reading order is the default lens
-  const [chapterIx, setChapterIx] = useState(0)
+  const [yearState, setYear] = useState<number | null>(initial?.year ?? null)
+  const [timeMode, setTimeMode] = useState<TimeMode>(initial?.year != null ? 'calendar' : 'book')
+  const [chapterIx, setChapterIx] = useState(() => {
+    const ix = initial?.chapterId ? chapters.findIndex(c => c.id === initial.chapterId) : -1
+    return ix >= 0 ? ix : 0
+  })
 
   const year = yearState ?? openingYear(canon, range[0])
 

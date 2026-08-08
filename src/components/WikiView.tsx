@@ -4,6 +4,7 @@ import { dateOf } from '../canon'
 import { mdToHtml, slugOf } from '../md'
 import { landingMd } from '../wiki-landing'
 import { wikilinkClickHandler } from '../wikilinks'
+import { CopyRef } from './CopyRef'
 
 const TYPE_LABEL: Record<string, string> = {
   character: 'Characters', place: 'Places', faction: 'Factions', object: 'Objects',
@@ -13,10 +14,14 @@ const TYPE_LABEL: Record<string, string> = {
  *  (lead, infobox, plot by part, core characters, places, themes), entity
  *  articles with infobox + relationships, per-article TOC, search, and
  *  See also from backlinks. */
-export function WikiView({ canon, articles, onOpenWorld }: {
+export function WikiView({ canon, articles, onOpenWorld, sel, onSel }: {
   canon: Canon
   articles: DocArticle[]
   onOpenWorld: (id: string) => void
+  /** The open article's path; null = the story landing page. Lifted so the
+   *  URL route can carry it and the position survives page switches. */
+  sel: string | null
+  onSel: (path: string | null) => void
 }) {
   const byCanon = useMemo(() => {
     const m = new Map<string, DocArticle>()
@@ -36,8 +41,6 @@ export function WikiView({ canon, articles, onOpenWorld }: {
     return [...g.entries()].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
   }, [articles, canon])
 
-  // null = the story landing page, the wiki's front door.
-  const [sel, setSel] = useState<string | null>(null)
   const [q, setQ] = useState('')
   const bodyRef = useRef<HTMLElement>(null)
 
@@ -82,7 +85,7 @@ export function WikiView({ canon, articles, onOpenWorld }: {
 
   const goTo = (id: string) => {
     const bound = byCanon.get(id)
-    if (bound) setSel(bound.path)
+    if (bound) onSel(bound.path)
     else onOpenWorld(id)   // no article — show it in the world view instead
   }
 
@@ -106,12 +109,12 @@ export function WikiView({ canon, articles, onOpenWorld }: {
             <h3>{hits.length ? `Results (${hits.length})` : 'No results'}</h3>
             {hits.map(a => (
               <button key={a.path} className={a.path === sel ? 'navitem sel' : 'navitem'}
-                onClick={() => setSel(a.path)}>{title(a)}</button>
+                onClick={() => onSel(a.path)}>{title(a)}</button>
             ))}
           </div>
         ) : (
           <>
-            <button className={home ? 'navitem home sel' : 'navitem home'} onClick={() => setSel(null)}>
+            <button className={home ? 'navitem home sel' : 'navitem home'} onClick={() => onSel(null)}>
               ⌂ {canon.story.title}
             </button>
             {groups.map(([label, list]) => (
@@ -119,7 +122,7 @@ export function WikiView({ canon, articles, onOpenWorld }: {
                 <h3>{label}</h3>
                 {list.map(a => (
                   <button key={a.path} className={a.path === sel ? 'navitem sel' : 'navitem'}
-                    onClick={() => setSel(a.path)}>
+                    onClick={() => onSel(a.path)}>
                     {title(a)}
                   </button>
                 ))}
@@ -158,7 +161,7 @@ export function WikiView({ canon, articles, onOpenWorld }: {
               <span className="ib-type">{entity.type} · {entity.status}</span>
             </div>
             <div className="ib-body">
-              <div className="frow"><span>id</span><code>{entity.id}</code></div>
+              <div className="frow"><span>id</span><span><code>{entity.id}</code> <CopyRef text={entity.id} /></span></div>
               {entity.aliases?.length ? <div className="frow"><span>aliases</span>{entity.aliases.join(', ')}</div> : null}
               {(entity.kind ?? entity.species) && <div className="frow"><span>kind</span>{entity.kind ?? entity.species}</div>}
               {lifespan?.from && <div className="frow"><span>from</span>{lifespan.from}</div>}
@@ -206,7 +209,7 @@ export function WikiView({ canon, articles, onOpenWorld }: {
             <h3>See also</h3>
             {backlinks.length
               ? backlinks.map(b => (
-                <button key={b.path} className="navitem" onClick={() => setSel(b.path)}>{title(b)}</button>
+                <button key={b.path} className="navitem" onClick={() => onSel(b.path)}>{title(b)}</button>
               ))
               : <p className="fsummary">{article?.canon ? 'No article links here yet.' : 'See also appears for entity articles.'}</p>}
           </div>
