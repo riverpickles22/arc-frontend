@@ -65,6 +65,40 @@ export function fitBBox(
   return reshape(pad(b))
 }
 
+/**
+ * Where an inset panel should sit: the corner of the frame whose panel
+ * rectangle covers the fewest drawn points (coastline vertices + place
+ * markers, already projected to frame coordinates). Ties break toward the
+ * corner farthest from `avoid` (the inset's source rectangle), so the
+ * panel never sits on top of the very area it excerpts. Deterministic.
+ */
+export function bestCorner(
+  frame: { W: number; H: number },
+  size: { w: number; h: number },
+  points: [number, number][],
+  avoid?: { x: number; y: number },
+  margin = 14,
+): { x: number; y: number } {
+  const cands = [
+    { x: margin, y: margin },
+    { x: frame.W - size.w - margin, y: margin },
+    { x: margin, y: frame.H - size.h - margin },
+    { x: frame.W - size.w - margin, y: frame.H - size.h - margin },
+  ]
+  let best = cands[0]
+  let bestScore = Infinity
+  for (const c of cands) {
+    let covered = 0
+    for (const [px, py] of points) {
+      if (px >= c.x && px <= c.x + size.w && py >= c.y && py <= c.y + size.h) covered++
+    }
+    const d = avoid ? Math.hypot(c.x + size.w / 2 - avoid.x, c.y + size.h / 2 - avoid.y) : 0
+    const score = covered - d * 1e-6
+    if (score < bestScore) { bestScore = score; best = c }
+  }
+  return best
+}
+
 // Keep the drawn map within a sane aspect range. A story with one place, or
 // places strung along a single axis, otherwise yields an extreme viewport —
 // and at high latitude the cos correction makes a square degree box tall.

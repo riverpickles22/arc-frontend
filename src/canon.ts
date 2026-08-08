@@ -8,7 +8,7 @@
 import type { TimeRef, DateLike } from 'arc-canon-graph'
 export type {
   TimeRef, DateLike, DocArticle, SceneContract, ProseScene, ProseChange, ProseDraft,
-  ChatMessage, ChatAction, ChatResponse, ApiErrorResponse, AttentionResponse, MaterialItem,
+  ChatMessage, ChatAction, ChatResponse, DraftSceneResponse, ApiErrorResponse, AttentionResponse, MaterialItem,
 } from 'arc-canon-graph'
 
 export interface SubjRel { toward: string; stance: string }
@@ -24,6 +24,14 @@ export interface State {
   relationships?: SubjRel[]
   possessions?: string[]
   controlled_by?: string
+  note?: string
+}
+
+/** What kind of fact a record is (conventions §13). Absent = fictional. */
+export interface Provenance {
+  register: 'fictional' | 'historical' | 'inferred'
+  sources?: string[]
+  confidence?: 'high' | 'medium' | 'low'
   note?: string
 }
 
@@ -52,6 +60,7 @@ export interface Entity {
   goals?: string[]
   tags?: string[]
   grounding?: string[]
+  provenance?: Provenance
   states?: State[]
 }
 
@@ -70,6 +79,7 @@ export interface EventDoc {
   narrative_notes?: string
   on_page?: boolean
   grounding?: string[]
+  provenance?: Provenance
 }
 
 export interface Edge {

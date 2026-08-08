@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import type { Chapter, ChatResponse, ProseDraft, ProseScene, SceneContract } from '../canon'
+import type { Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, SceneContract } from '../canon'
 import { dateOf } from '../canon'
-import { acceptDraft, discardDraft } from '../api'
+import { acceptDraft, discardDraft, draftScene } from '../api'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
@@ -94,10 +94,18 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const [armed, setArmed] = useState<string | null>(null)   // discard needs a second click
   const [capture, setCapture] = useState<ChatResponse | null>(null)   // the capture pass's briefing, post-accept
 
+  // The drafting pass: generation into the working tree. Its own busy flag —
+  // a pass runs for a minute or more and must not lock accept/discard.
+  const [genBusy, setGenBusy] = useState(false)
+  const [genErr, setGenErr] = useState<string | null>(null)
+  const [gen, setGen] = useState<DraftSceneResponse | null>(null)
+  const [guidance, setGuidance] = useState('')
+  const [showGen, setShowGen] = useState(false)
+
   // A half-armed discard must not survive closing the drawer or moving to
-  // another chapter.
+  // another chapter; a stale briefing must not survive the move either.
   const toggleDrawer = () => { setArmed(null); setDrawer(o => !o) }
-  const gotoChapter = (i: number) => { setArmed(null); onChapter(i) }
+  const gotoChapter = (i: number) => { setArmed(null); setGen(null); setGenErr(null); setShowGen(false); onChapter(i) }
 
   const byFile = useMemo(() => new Map(scenes.map(s => [s.file, s])), [scenes])
   const diffs = useMemo(() => {
@@ -144,6 +152,47 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   }
 
   const defaultMsg = `prose: accept draft (${n} scene${n === 1 ? '' : 's'})`
+
+  const generate = async () => {
+    setGenBusy(true); setGenErr(null); setGen(null)
+    try {
+      const res = await draftScene(cur.id, guidance.trim() || undefined)
+      setGen(res)
+      setGuidance('')
+      onRefresh()
+    } catch (e) {
+      setGenErr((e as Error).message ?? String(e))
+    } finally {
+      setGenBusy(false)
+    }
+  }
+
+  // The drafting-pass bar: always present on an outline-only chapter, toggled
+  // from the header once scenes exist. The result is an ordinary draft — it
+  // arrives in the draft layer with its pill, and accept/discard apply.
+  const genBar = (
+    <div className="genbar">
+      <div className="genrow">
+        <input value={guidance} disabled={genBusy}
+          placeholder="guidance (optional) — tone, focus, what to lean into"
+          onChange={ev => setGuidance(ev.target.value)} />
+        <button disabled={genBusy} onClick={generate}>
+          {genBusy ? 'Drafting…' : curScenes.length ? 'Draft next scene' : 'Draft this scene'}
+        </button>
+      </div>
+      {genBusy && <p className="gen-note">arc is drafting from the chapter's context pack — style contract, cast state, payoff fence. This takes a minute or two.</p>}
+      {genErr && <p className="db-err">{genErr}</p>}
+      {gen && (
+        <div className="db-capture">
+          <h3>Drafting pass — briefing</h3>
+          {gen.file
+            ? <p className="gen-note">Wrote <code>{gen.file}</code> as a working-tree draft — review it below, then accept or discard.</p>
+            : <p className="db-err">The pass finished without writing a scene — see the briefing.</p>}
+          <div className="db-capture-reply">{gen.reply}</div>
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <div className="ms-layout">
@@ -229,7 +278,11 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           <h1>{cur.order === 0 ? 'Prologue' : `Chapter ${cur.order}`} — {cur.title}</h1>
           <p className="ms-meta">{spanText}{cur.part ? ` · ${cur.part}` : ''}
             {words > 0 && ` · ~${pages} page${pages === 1 ? '' : 's'} · ${mins} min read`}
-            {' · '}<span className={`stpill ${cur.status}`}>{cur.status}</span></p>
+            {' · '}<span className={`stpill ${cur.status}`}>{cur.status}</span>
+            {curScenes.length > 0 && (
+              <>{' · '}<a className="linklike" onClick={() => setShowGen(o => !o)}>
+                {showGen ? 'hide drafting' : 'draft next scene'}</a></>
+            )}</p>
         </header>
 
         <blockquote className="ms-outline">
@@ -273,9 +326,15 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           </section>
         ))}
 
+        {curScenes.length > 0 && showGen && genBar}
+
         {!curScenes.length && !curDeleted.length && (
-          <p className="ms-empty">No scenes drafted yet — the outline above is this chapter's canon summary.
-            Scenes land in <code>prose/ch-{String(cur.order).padStart(2, '0')}/</code> with frontmatter binding them to the facts they rest on.</p>
+          <>
+            <p className="ms-empty">No scenes drafted yet — the outline above is this chapter's canon summary.
+              Scenes land in <code>prose/ch-{String(cur.order).padStart(2, '0')}/</code> with frontmatter binding them to the facts they rest on.
+              Write one by hand, or let arc draft it from the record's own context.</p>
+            {genBar}
+          </>
         )}
       </article>
     </div>

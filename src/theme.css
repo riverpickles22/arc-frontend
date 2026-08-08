@@ -128,6 +128,21 @@ svg text { font-family: inherit; }
   padding: 0 5px; color: var(--muted); vertical-align: 1px; margin-left: 6px;
 }
 .badge.proposed { color: var(--c6); border-color: var(--c6); }
+.badge.prov-historical { color: var(--c2); border-color: var(--c2); }
+.badge.prov-inferred { color: var(--c6); border-color: var(--c6); }
+.badge.prov-fictional { color: var(--muted); }
+.prov-note { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.focusmodes {
+  position: absolute; top: 6px; right: 18px; display: flex; gap: 0;
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  background: var(--surface-1);
+}
+.focusmodes button {
+  font: inherit; font-size: 11px; padding: 2px 9px; cursor: pointer;
+  background: transparent; color: var(--muted); border: none;
+}
+.focusmodes button + button { border-left: 1px solid var(--border); }
+.focusmodes button.sel { color: var(--text-primary); background: var(--panel); font-weight: 650; }
 .linklike { color: var(--c1); cursor: pointer; text-decoration: none; }
 .linklike:hover { text-decoration: underline; }
 .empty { color: var(--muted); padding: 12px; }
@@ -295,6 +310,18 @@ svg text { font-family: inherit; }
 }
 .db-accept button:disabled { opacity: .45; cursor: default; }
 .db-err { color: var(--c8); font-size: 12.5px; margin: 4px 0; }
+.genbar { margin: 14px 0; }
+.genrow { display: flex; gap: 8px; }
+.genrow input {
+  flex: 1; font: inherit; font-size: 13px; padding: 6px 9px;
+  background: var(--page); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px;
+}
+.genrow button {
+  border: 1px solid var(--c1); background: var(--c1); color: #fff; white-space: nowrap;
+  border-radius: 8px; padding: 0 14px; cursor: pointer; font-weight: 650;
+}
+.genrow button:disabled { opacity: .55; cursor: default; }
+.gen-note { color: var(--muted); font-size: 12.5px; margin: 6px 0; }
 .db-history h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 10px 0 6px; }
 .db-hrow { display: flex; gap: 10px; font-size: 12.5px; color: var(--text-secondary); margin-bottom: 3px; }
 .db-hrow code { color: var(--c1); }
@@ -361,3 +388,9 @@ svg text { font-family: inherit; }
 .cap-action { font-size: 11px; font-family: ui-monospace, monospace; color: var(--c2);
   border: 1px solid var(--border); border-radius: 5px; padding: 1px 7px; width: fit-content; }
 .cap-action.failed { color: var(--c8); }
+
+/* POV mode + state deltas */
+.pov-unseen { margin-top: 6px; }
+.pov-unseen .k { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--c1); margin-bottom: 3px; }
+.state-delta { margin-top: 8px; font-size: 11px; color: var(--c5); font-style: italic; }
+.state-delta + .statecard { margin-top: 2px; }

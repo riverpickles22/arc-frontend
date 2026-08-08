@@ -173,6 +173,13 @@ export function WikiView({ canon, articles, onOpenWorld, sel, onSel }: {
                   </a>
                 </div>
               )}
+              {entity.provenance && (
+                <div className="frow"><span>provenance</span>
+                  <span><span className={`badge prov-${entity.provenance.register}`}>{entity.provenance.register}</span>
+                    {entity.provenance.sources?.length ? <> {entity.provenance.sources.map(s => <code key={s}> {s}</code>)}</> : null}
+                  </span>
+                </div>
+              )}
               {edges.length > 0 && (
                 <div className="ib-rels">
                   <h3>Relationships</h3>

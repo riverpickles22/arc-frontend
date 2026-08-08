@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { loadGraph } from 'arc-canon-graph'
 import { yearRange } from './canon'
 import type { Canon } from './canon'
 import { charColors } from './presentation'
+import { focusSet, type FocusMode } from './graph-focus'
 import { useServerData } from './hooks/useServerData'
 import type { ServerData } from './hooks/useServerData'
 import { useTimeCursor } from './hooks/useTimeCursor'
@@ -80,6 +82,8 @@ function Shell({ canon, data, dark, onToggleDark }: {
   const [page, setPage] = useState<Page>(route.page)
   const [selectedState, setSelected] = useState<string | null>(route.id ?? null)
   const [wikiPath, setWikiPath] = useState<string | null>(route.wikiPath ?? null)
+  const [povMode, setPovMode] = useState(false)   // "through their eyes" on the selected character
+  const [focusMode, setFocusMode] = useState<FocusMode>('all')   // graph focus: chapter / selection / all
 
   const range = useMemo(() => yearRange(canon.timeline.eras), [canon])
   const colors = useMemo(() => charColors(canon), [canon])
@@ -141,6 +145,27 @@ function Shell({ canon, data, dark, onToggleDark }: {
     }
     history.replaceState(null, '', h)
   }, [page, selected, time.timeMode, time.year, bookChapterId, curChapterId, wikiPath])
+
+  // The selected character's world as of T (event-level POV; conventions'
+  // dramatic-irony view). Only computed while the toggle is on.
+  const selectedIsChar = selected != null && canon.entities[selected]?.type === 'character'
+  const povView = useMemo(
+    () => (povMode && selectedIsChar ? loadGraph(canon).povView(selected!, time.tEnd) : null),
+    [povMode, selectedIsChar, canon, selected, time.tEnd],
+  )
+  const povDim = useMemo(
+    () => (povView ? new Set([selected!, ...povView.met, ...povView.places]) : null),
+    [povView, selected],
+  )
+
+  // Graph focus modes (dimming over re-layout). POV wins while active — it is
+  // the stronger, deliberately-toggled statement about what to show.
+  const curChapter = chapters[Math.min(time.chapterIx, chapters.length - 1)]
+  const focusDim = useMemo(
+    () => focusSet(focusMode, canon, curChapter, data.prose, selected),
+    [focusMode, canon, curChapter, data.prose, selected],
+  )
+  const graphDim = povDim ?? focusDim
 
   const degraded = [...data.degraded, ...(data.canonError ? ['canon refresh'] : [])]
 
@@ -206,13 +231,15 @@ function Shell({ canon, data, dark, onToggleDark }: {
         </section>
         <section className="panel col-graph">
           <h2>Graph — entities &amp; relationships</h2>
-          <GraphView canon={canon} tEnd={time.tEnd} selected={selected} onSelect={selectAndShow} />
+          <GraphView canon={canon} tEnd={time.tEnd} selected={selected} onSelect={selectAndShow} dimTo={graphDim}
+            focus={{ mode: focusMode, onMode: setFocusMode }} />
         </section>
         <section className="panel col-profile">
           <h2>Profile</h2>
           <ProfilePanel canon={canon} id={selected} tEnd={time.tEnd} onSelect={selectAndShow} prose={data.prose}
             onJumpTo={time.goToKey}
-            refAnchor={time.timeMode === 'book' ? time.bookChapter?.id : String(time.year)} />
+            refAnchor={time.timeMode === 'book' ? time.bookChapter?.id : String(time.year)}
+            pov={selectedIsChar ? { active: povMode, view: povView, onToggle: () => setPovMode(m => !m) } : undefined} />
         </section>
       </div>
       </>}

@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 import type { Canon, Chapter, Era } from '../../canon'
 import { dateOf, dk, eraSpanKeys } from '../../canon'
+import { keepLabels } from './labels'
 import { ERA_TINT } from './tints'
 
 /** Era containing a chapter's effective (end) date — for era bands in book time. */
@@ -38,6 +39,12 @@ export function BookBand({ canon, chapters, chapterIx, onChapter, era, selected,
   const n = chapters.length
   const cw = W / n
   const cur = chapters[Math.min(chapterIx, n - 1)]
+
+  // Same declutter rule as the calendar band. Equal cells never overlap, so
+  // this only drops labels when cells get too narrow to read at all.
+  const chLabel = keepLabels(chapters.map((c, i) => (
+    { x: i * cw + 1, w: cw - 2, chars: `${c.order}. ${c.title}`.length }
+  )))
 
   // merge consecutive chapters sharing an era into one band
   const runs: { era: Era | undefined; from: number; to: number }[] = []
@@ -84,10 +91,12 @@ export function BookBand({ canon, chapters, chapterIx, onChapter, era, selected,
               <rect x={xs + 1} y={32} width={cw - 2} height={18} rx={3}
                 fill={partTint(c)} opacity={sel || onCur ? 0.5 : 0.22}
                 stroke={sel ? 'var(--c1)' : 'var(--border)'} strokeWidth={sel ? 1.5 : 0.5} />
-              <text x={xs + 5} y={45} fontSize={10} fill="var(--text-primary)"
-                clipPath={`url(#bclip-${c.id})`}>
-                {c.order}. {c.title}
-              </text>
+              {chLabel[i] && (
+                <text x={xs + 5} y={45} fontSize={10} fill="var(--text-primary)"
+                  clipPath={`url(#bclip-${c.id})`}>
+                  {c.order}. {c.title}
+                </text>
+              )}
               <title>{c.order}. {c.title} ({spanText(c)})</title>
             </g>
           )

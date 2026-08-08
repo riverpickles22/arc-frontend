@@ -5,6 +5,7 @@ import {
 import type { SimulationLinkDatum, SimulationNodeDatum } from 'd3-force'
 import type { Canon } from '../canon'
 import { extantAt, nameOf, stateAt } from '../canon'
+import { FOCUS_MODES, type FocusMode } from '../graph-focus'
 import { TYPE_COLORS } from '../presentation'
 import { Legend, TipOverlay, useTip } from './overlays'
 
@@ -18,12 +19,16 @@ interface Node extends SimulationNodeDatum {
 }
 
 export function GraphView({
-  canon, tEnd, selected, onSelect,
+  canon, tEnd, selected, onSelect, dimTo, focus,
 }: {
   canon: Canon
   tEnd: number
   selected: string | null
   onSelect: (id: string) => void
+  /** Dim everything outside this set (POV mode or a focus mode). */
+  dimTo?: Set<string> | null
+  /** The focus-mode control (Chapter / Selection / All). */
+  focus?: { mode: FocusMode; onMode: (m: FocusMode) => void }
 }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const { tip, showTip, hideTip } = useTip(wrapRef)
@@ -79,7 +84,7 @@ export function GraphView({
         ))}
         {/* objective edges */}
         {links.map(l => (
-          <g key={l.edge.id}
+          <g key={l.edge.id} opacity={dimTo && !(dimTo.has(l.edge.from) && dimTo.has(l.edge.to)) ? 0.15 : 1}
             onMouseMove={ev => showTip(ev, l.edge.kind, l.edge.summary)}
             onMouseLeave={hideTip}>
             <line x1={l.source.x} y1={l.source.y} x2={l.target.x} y2={l.target.y}
@@ -108,6 +113,7 @@ export function GraphView({
           const ent = canon.entities[n.id]
           const alive = extantAt(ent, tEnd)
           const sel = selected === n.id
+          const dimmed = !!dimTo && !dimTo.has(n.id)
           const r = n.type === 'character' ? 10 : 7.5
           return (
             <g key={n.id} style={{ cursor: 'pointer' }}
@@ -117,9 +123,10 @@ export function GraphView({
               {sel && <circle cx={n.x} cy={n.y} r={r + 5} fill="none" stroke="var(--c1)" strokeWidth={2} />}
               <circle cx={n.x} cy={n.y} r={r}
                 fill={TYPE_COLORS[n.type] ?? 'var(--c7)'}
-                opacity={alive ? 1 : 0.28}
+                opacity={dimmed ? 0.12 : alive ? 1 : 0.28}
                 stroke="var(--surface-1)" strokeWidth={2} />
               <text x={n.x} y={(n.y ?? 0) + r + 13} fontSize={11} textAnchor="middle"
+                opacity={dimmed ? 0.25 : 1}
                 fill={alive ? 'var(--text-primary)' : 'var(--muted)'} fontWeight={sel ? 650 : 400}>
                 {n.name}
               </text>
@@ -128,6 +135,15 @@ export function GraphView({
         })}
       </svg>
       <TipOverlay tip={tip} />
+      {focus && (
+        <div className="focusmodes">
+          {FOCUS_MODES.map(f => (
+            <button key={f.mode} title={f.title}
+              className={focus.mode === f.mode ? 'sel' : ''}
+              onClick={() => focus.onMode(f.mode)}>{f.label}</button>
+          ))}
+        </div>
+      )}
       <Legend items={Object.entries(TYPE_COLORS).map(([type, color]) => ({ label: type, color }))}>
         <span className="item"><span className="swatch" style={{ background: 'transparent', border: '1px dashed var(--c1)', borderRadius: 0, width: 12, height: 0 }} />perception at T (selected)</span>
         <span className="item" style={{ opacity: 0.4 }}>● faded = not extant at T</span>

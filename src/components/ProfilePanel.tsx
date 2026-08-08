@@ -1,9 +1,52 @@
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { loadGraph } from 'arc-canon-graph'
-import type { Canon, Chapter, Entity, EventDoc, ProseScene, State } from '../canon'
+import type { Canon, Chapter, Entity, EventDoc, ProseScene, Provenance, State } from '../canon'
 import { dateOf, stateAt, timeRefKey } from '../canon'
 import { CopyRef } from './CopyRef'
+
+/** Provenance register (conventions §13): is this the author's invention or
+ *  the world's record? Rendered wherever facts are read; absent = fictional,
+ *  shown only when a record declares itself. */
+export function ProvenanceField({ p }: { p: Provenance }) {
+  return (
+    <div className="field">
+      <div className="k">provenance</div>
+      <div className="v">
+        <span className={`badge prov-${p.register}`}>{p.register}</span>
+        {p.confidence && <> · confidence {p.confidence}</>}
+        {p.sources?.length ? (
+          <> · sources: {p.sources.map((s, i) => <span key={s}>{i > 0 && ', '}<code>{s}</code></span>)}</>
+        ) : null}
+        {p.note && <div className="prov-note">{p.note}</div>}
+      </div>
+    </div>
+  )
+}
+
+export interface PovProp {
+  active: boolean
+  view: { seen: string[]; places: string[]; met: string[]; unseen: string[] } | null
+  onToggle: () => void
+}
+
+/** Field-level summary of what changed vs the previous snapshot — the
+ *  "changed since" quick view; the full temporal diff surface comes later. */
+function stateDelta(prev: State, cur: State): string[] {
+  const out: string[] = []
+  if (prev.location !== cur.location && cur.location) out.push(`location → ${cur.location}`)
+  if (prev.condition !== cur.condition && cur.condition) out.push('condition')
+  if (prev.psychology !== cur.psychology && cur.psychology) out.push('psychology')
+  const beliefs = (cur.beliefs?.length ?? 0) - (prev.beliefs?.length ?? 0)
+  if (beliefs !== 0) out.push(`${beliefs > 0 ? '+' : ''}${beliefs} belief${Math.abs(beliefs) === 1 ? '' : 's'}`)
+  const poss = (cur.possessions?.length ?? 0) - (prev.possessions?.length ?? 0)
+  if (poss !== 0) out.push(`${poss > 0 ? '+' : ''}${poss} possession${Math.abs(poss) === 1 ? '' : 's'}`)
+  const prevRel = new Map((prev.relationships ?? []).map(r => [r.toward, r.stance]))
+  let shifted = 0
+  for (const r of cur.relationships ?? []) if (prevRel.has(r.toward) && prevRel.get(r.toward) !== r.stance) shifted++
+  if (shifted) out.push(`${shifted} perception${shifted === 1 ? '' : 's'} shifted`)
+  return out
+}
 
 function Ref({ id, canon, onSelect }: { id: string; canon: Canon; onSelect: (id: string) => void }) {
   const chapter = (canon.chapters ?? []).find(c => c.id === id)
@@ -113,8 +156,8 @@ function StateCard({
 }
 
 function EntityProfile({
-  e, canon, tEnd, onSelect, refAnchor, children,
-}: { e: Entity; canon: Canon; tEnd: number; onSelect: (id: string) => void; refAnchor?: string; children?: ReactNode }) {
+  e, canon, tEnd, onSelect, refAnchor, pov, children,
+}: { e: Entity; canon: Canon; tEnd: number; onSelect: (id: string) => void; refAnchor?: string; pov?: PovProp; children?: ReactNode }) {
   const active = stateAt(e, tEnd, canon.timeline.eras)
   const edges = canon.relationships.filter(r => r.from === e.id || r.to === e.id)
   return (
@@ -130,6 +173,7 @@ function EntityProfile({
       {e.voice && <div className="field"><div className="k">voice / signature</div><div className="v">{e.voice}</div></div>}
       {e.sensory && <div className="field"><div className="k">sensory</div><div className="v">{e.sensory}</div></div>}
       {e.significance && <div className="field"><div className="k">significance</div><div className="v">{e.significance}</div></div>}
+      {e.provenance && <ProvenanceField p={e.provenance} />}
       {edges.length > 0 && (
         <div className="field">
           <div className="k">objective edges</div>
@@ -144,11 +188,38 @@ function EntityProfile({
           </div>
         </div>
       )}
+      {pov && (
+        <div className="field">
+          <div className="k">through their eyes
+            <button className="copyref" style={{ marginLeft: 6 }} onClick={pov.onToggle}>
+              {pov.active ? 'on — show all' : 'off'}
+            </button>
+          </div>
+          {pov.active && pov.view && (
+            <div className="v">
+              has seen {pov.view.seen.length} event{pov.view.seen.length === 1 ? '' : 's'} · been {pov.view.places.length} place{pov.view.places.length === 1 ? '' : 's'} · met {pov.view.met.length}
+              {pov.view.unseen.length > 0 && (
+                <div className="pov-unseen">
+                  <span className="k">unknown to them (the reader may know)</span>
+                  {pov.view.unseen.map(id => (
+                    <div key={id}><Ref id={id} canon={canon} onSelect={onSelect} /></div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {(e.states?.length ?? 0) > 0 && (
         <div className="field">
           <div className="k">versioned journey ({e.states!.length} states)</div>
           {e.states!.map((s, i) => (
-            <StateCard key={i} s={s} canon={canon} active={s === active} onSelect={onSelect} />
+            <div key={i}>
+              {i > 0 && stateDelta(e.states![i - 1], s).length > 0 && (
+                <div className="state-delta">changed: {stateDelta(e.states![i - 1], s).join(' · ')}</div>
+              )}
+              <StateCard s={s} canon={canon} active={s === active} onSelect={onSelect} />
+            </div>
           ))}
         </div>
       )}
@@ -201,6 +272,7 @@ function EventProfile({
           {ev.leads_to.map((c, i) => <span key={c}>{i > 0 && ' · '}<Ref id={c} canon={canon} onSelect={onSelect} /></span>)}
         </div></div>
       ) : null}
+      {ev.provenance && <ProvenanceField p={ev.provenance} />}
       {ev.narrative_notes && <div className="field"><div className="k">notes</div><div className="v">{ev.narrative_notes}</div></div>}
       {children}
     </div>
@@ -237,12 +309,12 @@ function ChapterProfile({
 }
 
 export function ProfilePanel({
-  canon, id, tEnd, onSelect, prose, onJumpTo, refAnchor,
-}: { canon: Canon; id: string | null; tEnd: number; onSelect: (id: string) => void; prose: ProseScene[]; onJumpTo?: (k: number) => void; refAnchor?: string }) {
+  canon, id, tEnd, onSelect, prose, onJumpTo, refAnchor, pov,
+}: { canon: Canon; id: string | null; tEnd: number; onSelect: (id: string) => void; prose: ProseScene[]; onJumpTo?: (k: number) => void; refAnchor?: string; pov?: PovProp }) {
   if (!id) return <div className="empty">Select a character, place, or event.</div>
   const impact = <ImpactSection canon={canon} id={id} prose={prose} onSelect={onSelect} />
   const e = canon.entities[id]
-  if (e) return <EntityProfile e={e} canon={canon} tEnd={tEnd} onSelect={onSelect} refAnchor={refAnchor}>{impact}</EntityProfile>
+  if (e) return <EntityProfile e={e} canon={canon} tEnd={tEnd} onSelect={onSelect} refAnchor={refAnchor} pov={pov}>{impact}</EntityProfile>
   const ev = canon.events[id]
   if (ev) return <EventProfile ev={ev} canon={canon} tEnd={tEnd} onSelect={onSelect} onJumpTo={onJumpTo} refAnchor={refAnchor}>{impact}</EventProfile>
   const ch = (canon.chapters ?? []).find(c => c.id === id)

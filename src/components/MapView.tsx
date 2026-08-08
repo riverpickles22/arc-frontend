@@ -2,13 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Canon, Entity } from '../canon'
 import { extantAt, nameOf, stateAt, timeRefKey } from '../canon'
 import type { BBox, GeoJSON } from '../map-geometry'
-import { fitBBox, geoCoords, resolveCoords } from '../map-geometry'
+import { bestCorner, fitBBox, geoCoords, resolveCoords } from '../map-geometry'
 import { loadBasemap } from '../api'
 import type { View } from '../presentation'
 import { Legend, TipOverlay, useTip } from './overlays'
 
 const W = 1000
-const INS = { x: 14, y: 14, w: 330, h: 240 }
 const FALLBACK: BBox = { lon0: -180, lon1: 180, lat0: -60, lat1: 75 }
 
 const proj = (b: BBox, w: number, h: number, ox = 0, oy = 0) =>
@@ -57,7 +56,33 @@ export function MapView({
   const H = useMemo(() => heightFor(MAIN), [MAIN])
 
   const pMain = useMemo(() => proj(MAIN, W, H), [MAIN, H])
-  const pIns = useMemo(() => (inset ? proj(inset, INS.w, INS.h, INS.x, INS.y) : null), [inset])
+
+  const places = useMemo(
+    () => Object.values(canon.entities).filter(e => e.type === 'place' && e.coordinates),
+    [canon],
+  )
+
+  // The inset panel: sized to its bbox's aspect (capped so it never dominates
+  // the frame), placed in the corner covering the least of what is drawn —
+  // coastline and place markers — and never on top of its own source area.
+  const INS = useMemo(() => {
+    if (!inset) return null
+    const cos = Math.cos((((inset.lat0 + inset.lat1) / 2) * Math.PI) / 180) || 1
+    const aspect = (inset.lat1 - inset.lat0) / ((inset.lon1 - inset.lon0) * cos)
+    const w = Math.round(Math.max(160, Math.min(330, 0.38 * W, (0.55 * H) / aspect)))
+    const h = Math.round(w * aspect)
+    const pts: [number, number][] = [
+      ...geoCoords(geo).map(([lon, lat]) => pMain(lon, lat)),
+      ...places.map(p => pMain(p.coordinates!.lon, p.coordinates!.lat)),
+    ]
+    const [sx0, sy0] = pMain(inset.lon0, inset.lat1)
+    const [sx1, sy1] = pMain(inset.lon1, inset.lat0)
+    const src = { x0: sx0, y0: sy0, x1: sx1, y1: sy1 }
+    const { x, y } = bestCorner({ W, H }, { w, h }, pts, { x: (sx0 + sx1) / 2, y: (sy0 + sy1) / 2 })
+    return { x, y, w, h, src }
+  }, [inset, geo, places, pMain, H])
+
+  const pIns = useMemo(() => (inset && INS ? proj(inset, INS.w, INS.h, INS.x, INS.y) : null), [inset, INS])
 
   const coastPath = useMemo(() => {
     if (!geo) return ''
@@ -71,11 +96,6 @@ export function MapView({
       .map(r => 'M' + r.map(([lon, lat]) => pMain(lon, lat).map(v => v.toFixed(1)).join(',')).join('L') + 'Z')
       .join(' ')
   }, [geo, pMain])
-
-  const places = useMemo(
-    () => Object.values(canon.entities).filter(e => e.type === 'place' && e.coordinates),
-    [canon],
-  )
 
   // Characters positioned at T
   const chars = useMemo(() => {
@@ -187,17 +207,29 @@ export function MapView({
         {placeDots(MAIN, pMain, inset ? { kinds: new Set(['city']) } : undefined)}
         {markers(MAIN, pMain, 1, inset)}
 
-        {inset && pIns && (
-          <g>
-            <rect x={INS.x} y={INS.y} width={INS.w} height={INS.h} rx={8}
-              fill="var(--land)" stroke="var(--baseline)" strokeWidth={1} />
-            <text x={INS.x + 10} y={INS.y + 18} fontSize={11} fontWeight={650} fill="var(--muted)">
-              {inset.label.toUpperCase()} (inset)
-            </text>
-            {placeDots(inset, pIns, { labelBelow: true })}
-            {markers(inset, pIns)}
-          </g>
-        )}
+        {inset && INS && pIns && (() => {
+          // the excerpted area, outlined on the main map, linked to the panel
+          const { src } = INS
+          const scx = (src.x0 + src.x1) / 2
+          const scy = (src.y0 + src.y1) / 2
+          const lx = Math.max(INS.x, Math.min(scx, INS.x + INS.w))
+          const ly = Math.max(INS.y, Math.min(scy, INS.y + INS.h))
+          return (
+            <g>
+              <rect x={src.x0} y={src.y0} width={src.x1 - src.x0} height={src.y1 - src.y0}
+                fill="none" stroke="var(--c1)" strokeWidth={1.2} strokeDasharray="3 3" opacity={0.8} />
+              <line x1={scx} y1={scy} x2={lx} y2={ly}
+                stroke="var(--c1)" strokeWidth={1} strokeDasharray="3 3" opacity={0.5} />
+              <rect x={INS.x} y={INS.y} width={INS.w} height={INS.h} rx={8}
+                fill="var(--land)" stroke="var(--c1)" strokeWidth={1} />
+              <text x={INS.x + 10} y={INS.y + 18} fontSize={11} fontWeight={650} fill="var(--muted)">
+                {inset.label.toUpperCase()} (inset)
+              </text>
+              {placeDots(inset, pIns, { labelBelow: true })}
+              {markers(inset, pIns)}
+            </g>
+          )
+        })()}
       </svg>
       <TipOverlay tip={tip} />
       <Legend items={[

@@ -6,7 +6,8 @@
 // banner) belongs to the caller — useServerData — not here, so a down
 // backend can no longer masquerade as an empty story.
 import type {
-  ApiErrorResponse, AttentionResponse, DocsResponse, MaterialResponse, ProseAcceptResponse, ProseResponse,
+  ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, MaterialResponse,
+  ProseAcceptResponse, ProseResponse,
 } from 'arc-canon-graph'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene } from './canon'
 import type { View } from './presentation'
@@ -77,6 +78,11 @@ export const acceptDraft = (message?: string): Promise<ProseAcceptResponse> =>
 
 export const discardDraft = (file: string): Promise<void> =>
   post('/api/prose/discard', { file })
+
+/** The drafting pass: generate one scene into the working tree. Slow (a
+ *  full model pass); the result arrives as an ordinary draft change. */
+export const draftScene = (chapter: string, guidance?: string): Promise<DraftSceneResponse> =>
+  post('/api/prose/draft-scene', { chapter, guidance })
 
 /** A story's basemap, served from its assets/. Absent is fine — a story
  *  without one still draws its markers, so a miss stays null by design. */
