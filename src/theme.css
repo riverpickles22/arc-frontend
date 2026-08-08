@@ -1,70 +1,34 @@
-/* arc viewer theme — palette per dataviz reference instance */
+/* arc viewer theme — palette per dataviz reference instance.
+ *
+ * One token block for both themes: every color is a light-dark() pair, and
+ * the theme is chosen by color-scheme alone — the OS preference before the
+ * app mounts, then the data-theme attribute the toggle sets. No duplicated
+ * palette blocks to drift apart. */
 :root {
-  color-scheme: light;
-  --surface-1: #fcfcfb;
-  --page: #f9f9f7;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
+  color-scheme: light dark;
+  --surface-1: light-dark(#fcfcfb, #1a1a19);
+  --page: light-dark(#f9f9f7, #0d0d0d);
+  --text-primary: light-dark(#0b0b0b, #ffffff);
+  --text-secondary: light-dark(#52514e, #c3c2b7);
   --muted: #898781;
-  --grid: #e1e0d9;
-  --baseline: #c3c2b7;
-  --border: rgba(11, 11, 11, 0.1);
+  --grid: light-dark(#e1e0d9, #2c2c2a);
+  --baseline: light-dark(#c3c2b7, #383835);
+  --border: light-dark(rgba(11, 11, 11, 0.1), rgba(255, 255, 255, 0.1));
+  --panel: light-dark(rgba(11, 11, 11, 0.05), rgba(255, 255, 255, 0.06));
   /* categorical slots, fixed order */
-  --c1: #2a78d6; /* blue */
+  --c1: light-dark(#2a78d6, #3987e5); /* blue */
   --c2: #008300; /* green */
-  --c3: #e87ba4; /* magenta */
-  --c4: #eda100; /* yellow */
-  --c5: #1baf7a; /* aqua */
-  --c6: #eb6834; /* orange */
-  --c7: #4a3aa7; /* violet */
-  --c8: #e34948; /* red */
-  --land: #f0efec;
-  --water: #e4ecf4;
+  --c3: light-dark(#e87ba4, #d55181); /* magenta */
+  --c4: light-dark(#eda100, #c98500); /* yellow */
+  --c5: light-dark(#1baf7a, #199e70); /* aqua */
+  --c6: light-dark(#eb6834, #d95926); /* orange */
+  --c7: light-dark(#4a3aa7, #9085e9); /* violet */
+  --c8: light-dark(#e34948, #e66767); /* red */
+  --land: light-dark(#f0efec, #262624);
+  --water: light-dark(#e4ecf4, #16202a);
 }
-@media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme='light'])) {
-    color-scheme: dark;
-    --surface-1: #1a1a19;
-    --page: #0d0d0d;
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --muted: #898781;
-    --grid: #2c2c2a;
-    --baseline: #383835;
-    --border: rgba(255, 255, 255, 0.1);
-    --c1: #3987e5;
-    --c2: #008300;
-    --c3: #d55181;
-    --c4: #c98500;
-    --c5: #199e70;
-    --c6: #d95926;
-    --c7: #9085e9;
-    --c8: #e66767;
-    --land: #262624;
-    --water: #16202a;
-  }
-}
-:root[data-theme='dark'] {
-  color-scheme: dark;
-  --surface-1: #1a1a19;
-  --page: #0d0d0d;
-  --text-primary: #ffffff;
-  --text-secondary: #c3c2b7;
-  --muted: #898781;
-  --grid: #2c2c2a;
-  --baseline: #383835;
-  --border: rgba(255, 255, 255, 0.1);
-  --c1: #3987e5;
-  --c2: #008300;
-  --c3: #d55181;
-  --c4: #c98500;
-  --c5: #199e70;
-  --c6: #d95926;
-  --c7: #9085e9;
-  --c8: #e66767;
-  --land: #262624;
-  --water: #16202a;
-}
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark'] { color-scheme: dark; }
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
@@ -221,6 +185,11 @@ svg text { font-family: inherit; }
 }
 .pagenav button:hover { color: var(--text-primary); background: var(--panel); }
 .pagenav button.sel { color: var(--c1); border-color: var(--c1); }
+.degraded {
+  margin-top: 4px; padding: 5px 10px; font-size: 12.5px; border-radius: 8px;
+  color: var(--c6); border: 1px solid var(--c6);
+  background: color-mix(in srgb, var(--c6) 8%, var(--surface-1));
+}
 
 /* ---- shared sidebar for wiki + manuscript ---- */
 .side-nav { overflow-y: auto; padding: 14px 10px; border-right: 1px solid var(--border); }

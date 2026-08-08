@@ -54,8 +54,8 @@ export function ChatPanel({
         return [...m, { role: 'assistant', content: data.reply || '(no reply)' }]
       })
       if (data.canonChanged) onCanonChanged()
-    } catch (e: any) {
-      setError(e?.message ?? String(e))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(false)
     }

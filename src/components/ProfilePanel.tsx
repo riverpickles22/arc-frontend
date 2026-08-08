@@ -1,5 +1,5 @@
 import type { Canon, Chapter, Entity, EventDoc, State } from '../canon'
-import { stateAt } from '../canon'
+import { dateOf, stateAt } from '../canon'
 
 function Ref({ id, canon, onSelect }: { id: string; canon: Canon; onSelect: (id: string) => void }) {
   const name = canon.entities[id]?.name ?? canon.events[id]?.title ?? id
@@ -137,8 +137,8 @@ function EventProfile({
 function ChapterProfile({
   c, canon, onSelect,
 }: { c: Chapter; canon: Canon; onSelect: (id: string) => void }) {
-  const s = typeof c.span.start === 'string' ? c.span.start : c.span.start?.date
-  const e = typeof c.span.end === 'string' ? c.span.end : c.span.end?.date
+  const s = dateOf(c.span.start)
+  const e = dateOf(c.span.end)
   return (
     <div className="profile">
       <h3>

@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import type { Chapter, ProseDraft, ProseScene, SceneContract } from '../canon'
-import { acceptDraft, dateOf, discardDraft } from '../canon'
+import { dateOf } from '../canon'
+import { acceptDraft, discardDraft } from '../api'
+import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
 
@@ -89,6 +91,11 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const [err, setErr] = useState<string | null>(null)
   const [armed, setArmed] = useState<string | null>(null)   // discard needs a second click
 
+  // A half-armed discard must not survive closing the drawer or moving to
+  // another chapter.
+  const toggleDrawer = () => { setArmed(null); setDrawer(o => !o) }
+  const gotoChapter = (i: number) => { setArmed(null); onChapter(i) }
+
   const byFile = useMemo(() => new Map(scenes.map(s => [s.file, s])), [scenes])
   const diffs = useMemo(() => {
     const m = new Map<string, ParaDiff[]>()
@@ -115,10 +122,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const pages = Math.max(1, Math.round(words / 250))
   const mins = Math.max(1, Math.round(words / 230))
 
-  const bodyClick = (ev: React.MouseEvent) => {
-    const t = (ev.target as HTMLElement).closest('a.wikilink') as HTMLElement | null
-    if (t) { ev.preventDefault(); onOpenWorld(t.dataset.id!) }
-  }
+  const bodyClick = wikilinkClickHandler(onOpenWorld)
 
   const run = async (op: () => Promise<unknown>) => {
     setBusy(true); setErr(null)
@@ -138,7 +142,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       <nav className="side-nav">
         <h3>Chapters</h3>
         {chapters.map((c, i) => (
-          <button key={c.id} className={i === chapterIx ? 'navitem sel' : 'navitem'} onClick={() => onChapter(i)}>
+          <button key={c.id} className={i === chapterIx ? 'navitem sel' : 'navitem'} onClick={() => gotoChapter(i)}>
             <span className="chn">{c.order === 0 ? 'P' : c.order}</span> {c.title}
             <span className="chmeta">{scenesOf(c.id) ? `${scenesOf(c.id)} scene${scenesOf(c.id) === 1 ? '' : 's'}` : 'outline'}</span>
           </button>
@@ -160,7 +164,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
             ) : (
               <span className="db-sum">Manuscript matches main — no draft changes.</span>
             )}
-            <button className="themeToggle" onClick={() => setDrawer(o => !o)}>{drawer ? 'Close' : 'Review'}</button>
+            <button className="themeToggle" onClick={toggleDrawer}>{drawer ? 'Close' : 'Review'}</button>
           </div>
         )}
 

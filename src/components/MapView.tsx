@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { BBox, Canon, Entity, GeoJSON, View } from '../canon'
-import { extantAt, fitBBox, geoCoords, loadBasemap, resolveCoords, stateAt, timeRefKey } from '../canon'
+import type { Canon, Entity } from '../canon'
+import { extantAt, nameOf, stateAt, timeRefKey } from '../canon'
+import type { BBox, GeoJSON } from '../map-geometry'
+import { fitBBox, geoCoords, resolveCoords } from '../map-geometry'
+import { loadBasemap } from '../api'
+import type { View } from '../presentation'
+import { Legend, TipOverlay, useTip } from './overlays'
 
 const W = 1000
 const INS = { x: 14, y: 14, w: 330, h: 240 }
@@ -20,8 +25,6 @@ const heightFor = (b: BBox) => {
   return Math.round((W * (b.lat1 - b.lat0)) / ((b.lon1 - b.lon0) * Math.cos(midLat)))
 }
 
-interface Tip { x: number; y: number; title: string; sub?: string }
-
 export function MapView({
   canon, view, colors, tEnd, selected, onSelect,
 }: {
@@ -33,8 +36,8 @@ export function MapView({
   onSelect: (id: string) => void
 }) {
   const [geo, setGeo] = useState<GeoJSON | null>(null)
-  const [tip, setTip] = useState<Tip | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+  const { tip, showTip, hideTip } = useTip(wrapRef)
 
   const basemap = view.map?.basemap
   useEffect(() => {
@@ -96,12 +99,6 @@ export function MapView({
       .filter((c): c is { lat: number; lon: number } => !!c)
   }, [canon, selected, tEnd])
 
-  const showTip = (ev: React.MouseEvent, title: string, sub?: string) => {
-    const r = wrapRef.current?.getBoundingClientRect()
-    if (!r) return
-    setTip({ x: ev.clientX - r.left + 12, y: ev.clientY - r.top + 12, title, sub })
-  }
-
   // `exclude` keeps characters drawn in the inset from also appearing on the
   // main map. Excluding by bbox rather than by longitude matters: carving the
   // main map into left/right strips drops anyone at the inset's longitude but
@@ -138,7 +135,7 @@ export function MapView({
             style={{ cursor: 'pointer' }}
             onClick={() => onSelect(c.e.id)}
             onMouseMove={ev => showTip(ev, c.e.name, c.cond)}
-            onMouseLeave={() => setTip(null)}
+            onMouseLeave={hideTip}
           >
             <circle cx={mx} cy={my} r={(sel ? 8 : 6.5) * scale} fill={colors[c.e.id] ?? 'var(--c7)'}
               stroke="var(--surface-1)" strokeWidth={2} />
@@ -161,7 +158,7 @@ export function MapView({
         return (
           <g key={p.id + box.lon0} style={{ cursor: 'pointer' }} onClick={() => onSelect(p.id)}
             onMouseMove={ev => showTip(ev, p.name, p.summary.slice(0, 90) + '…')}
-            onMouseLeave={() => setTip(null)}>
+            onMouseLeave={hideTip}>
             <circle cx={x} cy={y} r={3} fill="var(--muted)" />
             <text x={opts?.labelBelow ? x : x + 6} y={opts?.labelBelow ? y + 14 : y - 4}
               fontSize={10} textAnchor={opts?.labelBelow ? 'middle' : 'start'}
@@ -202,21 +199,11 @@ export function MapView({
           </g>
         )}
       </svg>
-      {tip && (
-        <div className="tooltip" style={{ left: tip.x, top: tip.y }}>
-          <div className="t-title">{tip.title}</div>
-          {tip.sub && <div className="t-sub">{tip.sub}</div>}
-        </div>
-      )}
-      <div className="legend">
-        {Object.entries(colors).map(([id, color]) => (
-          <span key={id} className="item">
-            <span className="swatch" style={{ background: color }} />
-            {canon.entities[id]?.name ?? id}
-          </span>
-        ))}
-        <span className="item"><span className="swatch" style={{ background: 'var(--muted)' }} />place</span>
-      </div>
+      <TipOverlay tip={tip} />
+      <Legend items={[
+        ...Object.entries(colors).map(([id, color]) => ({ label: nameOf(canon, id), color })),
+        { label: 'place', color: 'var(--muted)' },
+      ]} />
     </div>
   )
 }
