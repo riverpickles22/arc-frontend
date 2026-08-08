@@ -1,14 +1,15 @@
 // Canon data contract + time-resolution helpers.
 // Mirrors arc/schema/*.schema.json; the JSON comes from tools/export-canon.py.
+//
+// The HTTP wire types (prose, docs, draft, chat) live in arc-canon-graph
+// (graph/api-types.ts) — one source of truth shared with arc-backend.
+// Imported and re-exported here so component imports stay unchanged.
 
-export interface TimeRef {
-  era: string
-  date?: string
-  precision?: string
-  approximate?: boolean
-  timepoint?: string
-  note?: string
-}
+import type { TimeRef, DateLike, DocArticle, ProseScene, ProseDraft } from 'arc-canon-graph'
+export type {
+  TimeRef, DateLike, DocArticle, SceneContract, ProseScene, ProseChange, ProseDraft,
+  ChatMessage, ChatAction, ChatResponse, ApiErrorResponse,
+} from 'arc-canon-graph'
 
 export interface SubjRel { toward: string; stance: string }
 
@@ -25,8 +26,6 @@ export interface State {
   controlled_by?: string
   note?: string
 }
-
-export type DateLike = string | { date?: string; era?: string; note?: string; approximate?: boolean }
 
 export interface Entity {
   id: string
@@ -279,23 +278,6 @@ export async function loadCanon(): Promise<Canon> {
   return res.json()
 }
 
-export interface DocArticle { path: string; canon: string | null; body: string }
-
-/** The scene's stated intent (conventions §10) — what it must accomplish. */
-export interface SceneContract {
-  purpose?: string; reader_before?: string; reader_after?: string
-  wants?: Record<string, string>
-  must_establish?: string[]; must_withhold?: string[]; motifs?: string[]
-  constraints?: string
-}
-
-export interface ProseScene {
-  scene: string; chapter: string; status: string
-  pov: string | null; events: string[]; facts: string[]
-  contract: SceneContract | null
-  file: string; body: string
-}
-
 /** The story encyclopedia: docs/ articles with their canon bindings. */
 export async function loadDocs(): Promise<DocArticle[]> {
   try {
@@ -315,17 +297,6 @@ export async function loadProse(): Promise<ProseScene[]> {
 // ---- the draft layer ---------------------------------------------------
 // Main is the story repo's HEAD; the draft is the working tree. Accept
 // ratifies (a prose-scoped git commit); discard rolls a file back.
-
-export interface ProseChange {
-  file: string
-  status: 'added' | 'modified' | 'deleted'
-  main: ProseScene | null
-}
-export interface ProseDraft {
-  git: boolean
-  changes: ProseChange[]
-  history: { hash: string; date: string; subject: string }[]
-}
 
 export const NO_DRAFT: ProseDraft = { git: false, changes: [], history: [] }
 

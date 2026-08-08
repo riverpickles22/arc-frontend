@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-
-interface Msg { role: 'user' | 'assistant'; content: string }
-interface Action { tool: string; path: string; ok: boolean; detail?: string }
+import type { ApiErrorResponse, ChatAction, ChatMessage, ChatResponse } from '../canon'
 
 const ID_RE = /\b((?:char|place|faction|obj|event|era|tp|rel|ch)\.[a-z0-9][a-z0-9.-]*[a-z0-9])\b/g
 
@@ -24,8 +22,8 @@ export function ChatPanel({
   onCanonChanged: () => void
   onSelect: (id: string) => void
 }) {
-  const [messages, setMessages] = useState<Msg[]>([])
-  const [actions, setActions] = useState<Record<number, Action[]>>({})
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [actions, setActions] = useState<Record<number, ChatAction[]>>({})
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -49,8 +47,8 @@ export function ChatPanel({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ messages: history }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      const data: ChatResponse | ApiErrorResponse = await res.json()
+      if (!res.ok || 'error' in data) throw new Error(('error' in data ? data.error : undefined) ?? `HTTP ${res.status}`)
       setMessages(m => {
         setActions(a => ({ ...a, [m.length]: data.actions ?? [] }))
         return [...m, { role: 'assistant', content: data.reply || '(no reply)' }]
