@@ -7,6 +7,12 @@
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+/** Anchor id for a heading — shared with the wiki TOC so links resolve.
+ *  Entities are stripped first: the renderer slugs escaped text, the TOC
+ *  slugs raw text, and both must land on the same id. */
+export const slugOf = (s: string) =>
+  s.replace(/&(amp|lt|gt);/g, ' ').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+
 const inline = (s: string) =>
   s
     .replace(/\[\[([a-z]+\.[a-z0-9.-]+)\|([^\]]+)\]\]/g, '<a class="wikilink" data-id="$1">$2</a>')
@@ -29,7 +35,7 @@ export function mdToHtml(md: string): string {
   for (const raw of esc(md).split('\n')) {
     const line = raw.trimEnd()
     const h = line.match(/^(#{1,3}) (.*)$/)
-    if (h) { flushAll(); out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); continue }
+    if (h) { flushAll(); out.push(`<h${h[1].length} id="${slugOf(h[2])}">${inline(h[2])}</h${h[1].length}>`); continue }
     if (/^---+$/.test(line)) { flushAll(); out.push('<hr>'); continue }
     if (line.startsWith('&gt;')) { flushPara(); flushList(); (quote ??= []).push(line.replace(/^&gt;\s?/, '')); continue }
     const li = line.match(/^[-*] (.*)$/)

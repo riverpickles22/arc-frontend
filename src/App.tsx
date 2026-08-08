@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { loadCanon, loadDocs, loadProse, loadView, yearRange, eraAt, dk, dateOf, charColors, openingYear } from './canon'
-import type { Canon, DocArticle, ProseScene, View } from './canon'
+import { loadCanon, loadDocs, loadDraft, loadProse, loadView, yearRange, eraAt, dk, dateOf, charColors, openingYear, NO_DRAFT } from './canon'
+import type { Canon, DocArticle, ProseDraft, ProseScene, View } from './canon'
 import { Timeline, type TimeMode } from './components/Timeline'
 import { MapView } from './components/MapView'
 import { GraphView } from './components/GraphView'
@@ -27,10 +27,11 @@ export default function App() {
   const [view, setView] = useState<View>({})
   const [docs, setDocs] = useState<DocArticle[]>([])
   const [prose, setProse] = useState<ProseScene[]>([])
+  const [draft, setDraft] = useState<ProseDraft>(NO_DRAFT)
   const [page, setPage] = useState<Page>('world')
   const [err, setErr] = useState<string | null>(null)
   const [year, setYear] = useState<number | null>(null)
-  const [timeMode, setTimeMode] = useState<TimeMode>('calendar')
+  const [timeMode, setTimeMode] = useState<TimeMode>('book')   // reading order is the default lens; calendar is the toggle
   const [chapterIx, setChapterIx] = useState(0)
   const [selected, setSelected] = useState<string | null>(null)
   const [tab, setTab] = useState<'profile' | 'chat'>('profile')
@@ -40,12 +41,18 @@ export default function App() {
     loadCanon().then(setCanon).catch(e => setErr(String(e)))
   }, [])
 
+  // Prose and its draft state refresh together: accept/discard change both.
+  const refreshProse = useCallback(() => {
+    loadProse().then(setProse)
+    loadDraft().then(setDraft)
+  }, [])
+
   useEffect(() => {
     refreshCanon()
     loadView().then(setView)
     loadDocs().then(setDocs)
-    loadProse().then(setProse)
-  }, [refreshCanon])
+    refreshProse()
+  }, [refreshCanon, refreshProse])
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
@@ -120,7 +127,15 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>arc</h1>
+        <div className="toprow">
+          <h1>arc</h1>
+          <span className="logline">
+            {canon.story.title} — {canon.story.logline}
+          </span>
+          <button className="themeToggle" onClick={() => setDark(d => !d)}>
+            {dark ? 'Light' : 'Dark'} mode
+          </button>
+        </div>
         <nav className="pagenav">
           {(['world', 'manuscript', 'wiki'] as Page[]).map(p => (
             <button key={p} className={page === p ? 'sel' : ''} onClick={() => goto(p)}>
@@ -128,17 +143,12 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <span className="logline">
-          {canon.story.title} — {canon.story.logline}
-        </span>
-        <button className="themeToggle" onClick={() => setDark(d => !d)}>
-          {dark ? 'Light' : 'Dark'} mode
-        </button>
       </header>
 
       {page === 'manuscript' && (
         <ManuscriptView scenes={prose} chapters={chapters}
-          chapterIx={chapterIx} onChapter={setChapterIx} onOpenWorld={openWorld} />
+          chapterIx={chapterIx} onChapter={setChapterIx} onOpenWorld={openWorld}
+          draft={draft} onRefresh={refreshProse} />
       )}
       {page === 'wiki' && (
         <WikiView canon={canon} articles={docs} onOpenWorld={openWorld} />

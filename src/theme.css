@@ -77,7 +77,8 @@ body {
 
 .app { display: flex; flex-direction: column; height: 100%; gap: 10px; padding: 12px 16px; }
 
-.topbar { display: flex; align-items: baseline; gap: 14px; }
+.topbar { display: flex; flex-direction: column; gap: 6px; }
+.toprow { display: flex; align-items: baseline; gap: 14px; }
 .topbar h1 { font-size: 17px; margin: 0; font-weight: 650; }
 .topbar .logline { color: var(--text-secondary); font-size: 13px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .themeToggle {
@@ -213,7 +214,7 @@ svg text { font-family: inherit; }
 .tl-mode button.sel { color: var(--c1); border-color: var(--c1); }
 
 /* ---- page nav (World | Manuscript | Wiki) ---- */
-.pagenav { display: flex; gap: 2px; margin-left: 14px; }
+.pagenav { display: flex; gap: 2px; }
 .pagenav button {
   font: inherit; font-size: 13px; font-weight: 600; padding: 5px 13px; cursor: pointer;
   color: var(--text-secondary); background: transparent; border: 1px solid transparent; border-radius: 8px;
@@ -251,6 +252,28 @@ svg text { font-family: inherit; }
 
 /* ---- wiki ---- */
 .wiki-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 230px minmax(0,1fr) 280px; gap: 0; overflow: hidden; }
+.wiki-search {
+  width: 100%; margin: 0 0 10px; padding: 6px 9px; font: inherit; font-size: 13px;
+  background: var(--page); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.side-nav .navitem.home { font-weight: 650; color: var(--text-primary); margin-bottom: 4px; }
+.side-nav .navitem.home.sel { color: var(--c1); }
+.infobox { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 14px; background: var(--surface-1); }
+.infobox .ib-head {
+  padding: 9px 14px; font-weight: 650; font-size: 14px;
+  background: color-mix(in srgb, var(--c1) 12%, var(--surface-1));
+  border-bottom: 1px solid var(--border);
+}
+.infobox .ib-head .ib-type { display: block; font-weight: 400; font-size: 11.5px; color: var(--text-secondary); }
+.infobox .ib-body { padding: 10px 14px; }
+.infobox .frow { display: flex; gap: 10px; font-size: 13px; margin-bottom: 5px; color: var(--text-primary); }
+.infobox .frow > span:first-child { color: var(--muted); min-width: 64px; flex: none; }
+.infobox .ib-rels { margin-top: 10px; }
+.infobox .ib-rels h3, .infobox h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 6px; }
+.infobox .fsummary { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin: 10px 0; }
+.wiki-toc .navitem { font-size: 12.5px; padding: 3px 8px; }
+.wiki-toc .navitem.d3 { padding-left: 20px; font-size: 12px; }
 .wiki-layout > article { overflow-y: auto; padding: 20px 28px; }
 .wiki-aside { overflow-y: auto; padding: 16px 14px; border-left: 1px solid var(--border); }
 .facts { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); padding: 12px 14px; margin-bottom: 14px; }
@@ -277,3 +300,72 @@ svg text { font-family: inherit; }
 .stpill.proposed { color: var(--c4); border-color: var(--c4); }
 .stpill.canon { color: var(--c8); border-color: var(--c8); }
 .ms-empty { max-width: 74ch; color: var(--muted); font-size: 14px; font-style: italic; }
+
+/* ---- scene contract (conventions §10) ---- */
+.contract {
+  max-width: 74ch; margin: 0 0 14px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--surface-1); font-size: 13px;
+}
+.contract summary {
+  padding: 7px 12px; cursor: pointer; color: var(--text-secondary);
+  font-size: 12.5px; list-style-position: inside;
+}
+.contract summary:hover { color: var(--text-primary); }
+.contract[open] summary { border-bottom: 1px solid var(--border); color: var(--text-primary); }
+.ct-body { padding: 10px 14px; }
+.ct-row { display: flex; gap: 12px; margin-bottom: 7px; line-height: 1.5; color: var(--text-primary); }
+.ct-row:last-child { margin-bottom: 0; }
+.ct-k {
+  flex: 0 0 76px; font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--muted); padding-top: 2px;
+}
+.ct-row ul { margin: 0; padding-left: 18px; }
+.ct-row li { margin-bottom: 2px; }
+.ct-motif {
+  display: inline-block; border: 1px solid var(--border); border-radius: 999px;
+  padding: 1px 9px; margin: 0 6px 3px 0; font-size: 12px; color: var(--text-secondary);
+}
+
+/* ---- draft layer (main = HEAD, draft = working tree) ---- */
+.draftbar {
+  display: flex; align-items: center; gap: 14px; max-width: 74ch; margin: 0 0 14px;
+  padding: 8px 12px; border: 1px solid var(--c4); border-radius: 8px;
+  background: color-mix(in srgb, var(--c4) 8%, var(--surface-1)); font-size: 13px;
+}
+.draftbar.clean { border-color: var(--border); background: var(--surface-1); color: var(--muted); }
+.draftbar .db-sum { flex: 1; min-width: 0; }
+.db-toggle { display: flex; gap: 5px; align-items: center; color: var(--text-secondary); font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+.ins-ct { color: var(--c2); font-weight: 600; }
+.del-ct { color: var(--c8); font-weight: 600; }
+.draftdrawer {
+  max-width: 74ch; margin: 0 0 18px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1);
+}
+.db-row { display: flex; align-items: baseline; gap: 10px; font-size: 13px; margin-bottom: 6px; }
+.db-row code { flex: 1; min-width: 0; font-size: 12px; }
+.db-discard {
+  font: inherit; font-size: 11.5px; color: var(--c8); background: transparent;
+  border: 1px solid var(--border); border-radius: 6px; padding: 1px 8px; cursor: pointer;
+}
+.db-discard:disabled { opacity: .45; cursor: default; }
+.db-accept { display: flex; gap: 8px; margin: 10px 0; }
+.db-accept input {
+  flex: 1; font: inherit; font-size: 13px; padding: 6px 9px;
+  background: var(--page); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px;
+}
+.db-accept button {
+  border: 1px solid var(--c2); background: var(--c2); color: #fff;
+  border-radius: 8px; padding: 0 14px; cursor: pointer; font-weight: 650;
+}
+.db-accept button:disabled { opacity: .45; cursor: default; }
+.db-err { color: var(--c8); font-size: 12.5px; margin: 4px 0; }
+.db-history h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 10px 0 6px; }
+.db-hrow { display: flex; gap: 10px; font-size: 12.5px; color: var(--text-secondary); margin-bottom: 3px; }
+.db-hrow code { color: var(--c1); }
+.db-hsub { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.db-history .fsummary { font-size: 12.5px; color: var(--muted); }
+.stpill.added { color: var(--c2); border-color: var(--c2); }
+.stpill.modified { color: var(--c4); border-color: var(--c4); }
+.stpill.deleted { color: var(--c8); border-color: var(--c8); }
+.mdbody.prose ins { background: color-mix(in srgb, var(--c2) 20%, transparent); text-decoration: none; border-radius: 2px; }
+.mdbody.prose del { background: color-mix(in srgb, var(--c8) 15%, transparent); border-radius: 2px; }

@@ -112,6 +112,7 @@ export interface Canon {
   story: {
     slug: string; title: string; logline: string; themes: string[]
     protagonists: string[]; pov?: string; status: string
+    genre?: string; setting?: string
   }
   timeline: { eras: Era[]; anchors?: { id: string; date: string; label: string; approximate?: boolean }[] }
   entities: Record<string, Entity>
@@ -279,9 +280,19 @@ export async function loadCanon(): Promise<Canon> {
 }
 
 export interface DocArticle { path: string; canon: string | null; body: string }
+
+/** The scene's stated intent (conventions §10) — what it must accomplish. */
+export interface SceneContract {
+  purpose?: string; reader_before?: string; reader_after?: string
+  wants?: Record<string, string>
+  must_establish?: string[]; must_withhold?: string[]; motifs?: string[]
+  constraints?: string
+}
+
 export interface ProseScene {
   scene: string; chapter: string; status: string
   pov: string | null; events: string[]; facts: string[]
+  contract: SceneContract | null
   file: string; body: string
 }
 
@@ -300,6 +311,45 @@ export async function loadProse(): Promise<ProseScene[]> {
     return res.ok ? (await res.json()).scenes : []
   } catch { return [] }
 }
+
+// ---- the draft layer ---------------------------------------------------
+// Main is the story repo's HEAD; the draft is the working tree. Accept
+// ratifies (a prose-scoped git commit); discard rolls a file back.
+
+export interface ProseChange {
+  file: string
+  status: 'added' | 'modified' | 'deleted'
+  main: ProseScene | null
+}
+export interface ProseDraft {
+  git: boolean
+  changes: ProseChange[]
+  history: { hash: string; date: string; subject: string }[]
+}
+
+export const NO_DRAFT: ProseDraft = { git: false, changes: [], history: [] }
+
+export async function loadDraft(): Promise<ProseDraft> {
+  try {
+    const res = await fetch('/api/prose/draft')
+    return res.ok ? await res.json() : NO_DRAFT
+  } catch { return NO_DRAFT }
+}
+
+async function post(path: string, body: unknown): Promise<any> {
+  const res = await fetch(path, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })
+  const out = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(out.error ?? res.statusText)
+  return out
+}
+
+export const acceptDraft = (message?: string): Promise<{ hash: string; files: string[] }> =>
+  post('/api/prose/accept', { message })
+
+export const discardDraft = (file: string): Promise<void> =>
+  post('/api/prose/discard', { file })
 
 /** view.yaml from the story repo. A story without one renders from canon alone. */
 export async function loadView(): Promise<View> {
