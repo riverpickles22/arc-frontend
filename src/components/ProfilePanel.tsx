@@ -1,12 +1,73 @@
-import type { Canon, Chapter, Entity, EventDoc, State } from '../canon'
-import { dateOf, stateAt } from '../canon'
+import { useMemo } from 'react'
+import type { ReactNode } from 'react'
+import { loadGraph } from 'arc-canon-graph'
+import type { Canon, Chapter, Entity, EventDoc, ProseScene, State } from '../canon'
+import { dateOf, stateAt, timeRefKey } from '../canon'
 
 function Ref({ id, canon, onSelect }: { id: string; canon: Canon; onSelect: (id: string) => void }) {
-  const name = canon.entities[id]?.name ?? canon.events[id]?.title ?? id
-  const clickable = id in canon.entities || id in canon.events
+  const chapter = (canon.chapters ?? []).find(c => c.id === id)
+  const name = canon.entities[id]?.name ?? canon.events[id]?.title ?? (chapter && `${chapter.order}. ${chapter.title}`) ?? id
+  const clickable = id in canon.entities || id in canon.events || !!chapter
   return clickable
     ? <a className="linklike" onClick={() => onSelect(id)}>{name}</a>
     : <span>{name}</span>
+}
+
+/** The deterministic blast radius of the selected id (conventions §11):
+ *  everything below "depended on by" is register proven; the questions are
+ *  register asked — surfaced because the dependency is visible, never
+ *  answered. */
+function ImpactSection({ canon, id, prose, onSelect }: {
+  canon: Canon; id: string; prose: ProseScene[]; onSelect: (id: string) => void
+}) {
+  const report = useMemo(
+    () => loadGraph(canon).impacts(id, prose.map(sc => ({ scene: sc.scene, facts: sc.facts, events: sc.events }))),
+    [canon, id, prose],
+  )
+  const proven = report.events.length + report.states.length + report.relationships.length +
+    report.chapters.length + report.parts.length + report.scenes.length + report.downstream.length
+  if (!proven && !report.questions.length) return null
+  return (
+    <>
+      {proven > 0 && (
+        <div className="field">
+          <div className="k">depended on by</div>
+          <div className="v">
+            {report.events.map(e => (
+              <div key={'e' + e.id + e.via}><Ref id={e.id} canon={canon} onSelect={onSelect} /> <span className="badge">{e.via}</span></div>
+            ))}
+            {report.states.map((st, i) => (
+              <div key={'s' + i}><Ref id={st.entity} canon={canon} onSelect={onSelect} /> <span className="badge">state @ {st.at} · {st.via}</span></div>
+            ))}
+            {report.chapters.map(c => (
+              <div key={'c' + c.id + c.via}><Ref id={c.id} canon={canon} onSelect={onSelect} /> <span className="badge">{c.via}</span></div>
+            ))}
+            {report.relationships.map(r => <div key={r}><code>{r}</code></div>)}
+            {report.parts.map(pt => (
+              <div key={'p' + pt}><Ref id={pt} canon={canon} onSelect={onSelect} /> <span className="badge">part of it</span></div>
+            ))}
+            {report.scenes.map(sc => <div key={sc}><code>{sc}</code> <span className="badge">prose rests on it</span></div>)}
+            {report.downstream.length > 0 && (
+              <div className="downstream">
+                downstream: {report.downstream.map((d, i) => (
+                  <span key={d.id}>{i > 0 && ' → '}<Ref id={d.id} canon={canon} onSelect={onSelect} /></span>
+                ))}
+                {report.downstreamTruncated && ' … (walk capped — the full chain is longer)'}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {report.questions.length > 0 && (
+        <div className="field">
+          <div className="k">asked — yours to answer</div>
+          <div className="v asked">
+            {report.questions.map(q => <div key={q.question}>{q.question}</div>)}
+          </div>
+        </div>
+      )}
+    </>
+  )
 }
 
 function StateCard({
@@ -51,8 +112,8 @@ function StateCard({
 }
 
 function EntityProfile({
-  e, canon, tEnd, onSelect,
-}: { e: Entity; canon: Canon; tEnd: number; onSelect: (id: string) => void }) {
+  e, canon, tEnd, onSelect, children,
+}: { e: Entity; canon: Canon; tEnd: number; onSelect: (id: string) => void; children?: ReactNode }) {
   const active = stateAt(e, tEnd, canon.timeline.eras)
   const edges = canon.relationships.filter(r => r.from === e.id || r.to === e.id)
   return (
@@ -90,14 +151,16 @@ function EntityProfile({
         </div>
       )}
       {e.narrative_notes && <div className="field"><div className="k">notes / open questions</div><div className="v">{e.narrative_notes}</div></div>}
+      {children}
     </div>
   )
 }
 
 function EventProfile({
-  ev, canon, onSelect,
-}: { ev: EventDoc; canon: Canon; onSelect: (id: string) => void }) {
+  ev, canon, tEnd, onSelect, onJumpTo, children,
+}: { ev: EventDoc; canon: Canon; tEnd: number; onSelect: (id: string) => void; onJumpTo?: (k: number) => void; children?: ReactNode }) {
   const eraName = canon.timeline.eras.find(e => e.id === ev.when.era)?.name ?? ev.when.era
+  const evKey = timeRefKey(ev.when, canon.timeline.eras)
   return (
     <div className="profile">
       <h3>
@@ -105,6 +168,12 @@ function EventProfile({
         {ev.status !== 'canon' && <span className={`badge ${ev.status}`}>{ev.status}</span>}
       </h3>
       <div className="sub">event · {ev.scope} · {ev.when.date ?? eraName}{ev.when.approximate ? ' (approx.)' : ''}</div>
+      {evKey > tEnd && (
+        <div className="sub notyet">
+          hasn't happened yet at the world's moment
+          {onJumpTo && <> — <a className="linklike" onClick={() => onJumpTo(evKey)}>jump the world here</a></>}
+        </div>
+      )}
       <div className="summary">{ev.summary}</div>
       {ev.where && <div className="field"><div className="k">where</div><div className="v"><Ref id={ev.where} canon={canon} onSelect={onSelect} /></div></div>}
       {ev.participants?.length ? (
@@ -130,6 +199,7 @@ function EventProfile({
         </div></div>
       ) : null}
       {ev.narrative_notes && <div className="field"><div className="k">notes</div><div className="v">{ev.narrative_notes}</div></div>}
+      {children}
     </div>
   )
 }
@@ -164,13 +234,14 @@ function ChapterProfile({
 }
 
 export function ProfilePanel({
-  canon, id, tEnd, onSelect,
-}: { canon: Canon; id: string | null; tEnd: number; onSelect: (id: string) => void }) {
+  canon, id, tEnd, onSelect, prose, onJumpTo,
+}: { canon: Canon; id: string | null; tEnd: number; onSelect: (id: string) => void; prose: ProseScene[]; onJumpTo?: (k: number) => void }) {
   if (!id) return <div className="empty">Select a character, place, or event.</div>
+  const impact = <ImpactSection canon={canon} id={id} prose={prose} onSelect={onSelect} />
   const e = canon.entities[id]
-  if (e) return <EntityProfile e={e} canon={canon} tEnd={tEnd} onSelect={onSelect} />
+  if (e) return <EntityProfile e={e} canon={canon} tEnd={tEnd} onSelect={onSelect}>{impact}</EntityProfile>
   const ev = canon.events[id]
-  if (ev) return <EventProfile ev={ev} canon={canon} onSelect={onSelect} />
+  if (ev) return <EventProfile ev={ev} canon={canon} tEnd={tEnd} onSelect={onSelect} onJumpTo={onJumpTo}>{impact}</EventProfile>
   const ch = (canon.chapters ?? []).find(c => c.id === id)
   if (ch) return <ChapterProfile c={ch} canon={canon} onSelect={onSelect} />
   return <div className="empty">Unknown id: {id}</div>

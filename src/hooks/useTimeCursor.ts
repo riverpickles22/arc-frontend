@@ -20,6 +20,12 @@ export interface TimeCursor {
   setChapterIx: (ix: number) => void
   setTimeMode: (m: TimeMode) => void
   switchMode: (m: TimeMode) => void
+  /** Move the world's projection to a chapter — selection clarity: selecting
+   *  a chapter converges "what I selected" and "where I am". */
+  goToChapter: (chapterId: string) => void
+  /** Move the world's projection to an arbitrary date key (e.g. an event's
+   *  moment), in whichever scale is active. */
+  goToKey: (k: number) => void
 }
 
 export function useTimeCursor(canon: Canon, chapters: Chapter[], range: [number, number]): TimeCursor {
@@ -62,5 +68,34 @@ export function useTimeCursor(canon: Canon, chapters: Chapter[], range: [number,
     setTimeMode(m)
   }
 
-  return { year, timeMode, chapterIx, ...derived, setYear, setChapterIx, setTimeMode, switchMode }
+  const goToChapter = (chapterId: string) => {
+    const ix = chapters.findIndex(c => c.id === chapterId)
+    if (ix < 0) return
+    if (timeMode === 'book') {
+      setChapterIx(ix)
+    } else {
+      const s = dateOf(chapters[ix].span.start)
+      if (s) setYear(yearOf(s))
+    }
+  }
+
+  const goToKey = (k: number) => {
+    if (timeMode === 'calendar') {
+      setYear(Math.floor(k / 10000))
+      return
+    }
+    // book mode: the chapter whose span contains k, else the nearest before
+    const inSpan = chapters.findIndex(c => {
+      const s = dateOf(c.span.start), e = dateOf(c.span.end)
+      return s && e && dk(s) <= k && k <= dk(e, true)
+    })
+    if (inSpan >= 0) { setChapterIx(inSpan); return }
+    const before = chapters.reduce((best, c, i) => {
+      const s = dateOf(c.span.start)
+      return s && dk(s) <= k ? i : best
+    }, 0)
+    setChapterIx(before)
+  }
+
+  return { year, timeMode, chapterIx, ...derived, setYear, setChapterIx, setTimeMode, switchMode, goToChapter, goToKey }
 }

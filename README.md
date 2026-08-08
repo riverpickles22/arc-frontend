@@ -32,7 +32,7 @@ The World page:
 - **Map** — the story's geography; each character's marker sits at their state location at T (latest state ≤ T), with the selected character's movement trail dashed behind them.
 - **Graph** — entities as nodes colored by type, objective relationship edges solid, and the selected character's *subjective perception at T* as dashed edges — hover to read the stance. Entities not extant at T (unborn, dead, dissolved) fade.
 - **Profile** — the full versioned journey of the selected entity or chapter, with the snapshot active at T highlighted. Every ID is a link; `proposed` facts wear a badge.
-- **Chat (✦)** — the world-shaping agent. It reads the full canon and conventions, discusses the story, and edits canon/docs through the validator. Failed writes are reverted and bounced back to the agent to fix; successful ones refresh the map, graph, and timeline live. New facts default to `status: proposed` until you ratify them in conversation.
+- **Chatting with the story** happens through Claude Code and the `arc-canon` skill (arc-core), not an in-app panel — same files, same rules, same validator. The topbar's Refresh button picks up edits made from those sessions. (`arc-backend`'s `/api/chat` agent remains available to other consumers.)
 
 The **Manuscript** page reads the bound scenes in `prose/` (conventions §10): chapters in reading order, each showing its canon outline as an epigraph and its scenes with status pills and *rests-on* links that jump to the world view.
 
@@ -47,7 +47,7 @@ The app is a pure client of the backend routes:
 | `GET /api/canon` | `loadCanon()` in `src/canon.ts` — the whole graph in one fetch |
 | `GET /api/docs` | the Wiki page (`loadDocs()`) |
 | `GET /api/prose` | the Manuscript page (`loadProse()`) |
-| `POST /api/chat` | `src/components/ChatPanel.tsx` |
+| `POST /api/chat` | *(no in-app consumer — Claude Code is the chat)* |
 
 Temporal resolution (`dk`, `stateAt`, `extantAt`, …) comes from `arc-canon-graph` — arc-core's graph module, a `file:` dependency — so the date-ordering rule has exactly one implementation across the system.
 

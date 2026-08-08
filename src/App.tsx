@@ -10,7 +10,6 @@ import { MapView } from './components/MapView'
 import { GraphView } from './components/GraphView'
 import { ProfilePanel } from './components/ProfilePanel'
 import { EventStrip } from './components/EventStrip'
-import { ChatPanel } from './components/ChatPanel'
 import { ManuscriptView } from './components/ManuscriptView'
 import { WikiView } from './components/WikiView'
 
@@ -47,7 +46,6 @@ function Shell({ canon, data, dark, onToggleDark }: {
 }) {
   const [page, setPage] = useState<Page>('world')
   const [selectedState, setSelected] = useState<string | null>(null)
-  const [tab, setTab] = useState<'profile' | 'chat'>('profile')
 
   const range = useMemo(() => yearRange(canon.timeline.eras), [canon])
   const colors = useMemo(() => charColors(canon), [canon])
@@ -63,18 +61,23 @@ function Shell({ canon, data, dark, onToggleDark }: {
     ?? Object.keys(canon.entities)[0]
     ?? null
 
-  // selecting anything from the chat/profile flips to profile tab
+  // Selection clarity: selecting a chapter also moves the world's projection
+  // to it — "what I selected" and "where I am" converge for chapters.
+  // Entities and events select without moving time; events that sit outside
+  // the world's moment say so in the profile instead.
+  const isChapter = useCallback((id: string) => (canon.chapters ?? []).some(c => c.id === id), [canon])
+
   const selectAndShow = useCallback((id: string) => {
     setSelected(id)
-    setTab('profile')
-  }, [])
+    if (isChapter(id)) time.goToChapter(id)
+  }, [isChapter, time])
 
   // From the manuscript or wiki: show this id in the world view.
   const openWorld = useCallback((id: string) => {
     setSelected(id)
-    setTab('profile')
     setPage('world')
-  }, [])
+    if (isChapter(id)) time.goToChapter(id)
+  }, [isChapter, time])
 
   // Page switch. Leaving the manuscript for the world view snaps time to
   // book mode at the manuscript's chapter — the two pages describe the same
@@ -94,6 +97,10 @@ function Shell({ canon, data, dark, onToggleDark }: {
           <span className="logline">
             {canon.story.title} — {canon.story.logline}
           </span>
+          <button className="themeToggle" onClick={data.retry}
+            title="Reload canon, docs, and prose — picks up edits made from Claude sessions">
+            Refresh
+          </button>
           <button className="themeToggle" onClick={onToggleDark}>
             {dark ? 'Light' : 'Dark'} mode
           </button>
@@ -142,19 +149,9 @@ function Shell({ canon, data, dark, onToggleDark }: {
           <GraphView canon={canon} tEnd={time.tEnd} selected={selected} onSelect={selectAndShow} />
         </section>
         <section className="panel col-profile">
-          <div className="tabbar">
-            <button className={tab === 'profile' ? 'tab sel' : 'tab'} onClick={() => setTab('profile')}>
-              Profile
-            </button>
-            <button className={tab === 'chat' ? 'tab sel' : 'tab'} onClick={() => setTab('chat')}>
-              ✦ Chat
-            </button>
-          </div>
-          {tab === 'profile' ? (
-            <ProfilePanel canon={canon} id={selected} tEnd={time.tEnd} onSelect={selectAndShow} />
-          ) : (
-            <ChatPanel onCanonChanged={data.refreshCanon} onSelect={selectAndShow} />
-          )}
+          <h2>Profile</h2>
+          <ProfilePanel canon={canon} id={selected} tEnd={time.tEnd} onSelect={selectAndShow} prose={data.prose}
+            onJumpTo={time.goToKey} />
         </section>
       </div>
       </>}
