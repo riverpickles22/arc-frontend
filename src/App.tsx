@@ -16,8 +16,15 @@ import { AttentionInbox } from './components/AttentionInbox'
 import { MaterialDrawer } from './components/MaterialDrawer'
 import { ManuscriptView } from './components/ManuscriptView'
 import { WikiView } from './components/WikiView'
+import { StyleView, type StyleTab } from './components/StyleView'
 
-type Page = 'world' | 'manuscript' | 'wiki'
+type Page = 'world' | 'manuscript' | 'wiki' | 'style'
+
+// Labels live in a lookup, not a ternary chain: a chain's final `else` label
+// silently mislabels every page added after it.
+const PAGE_LABEL: Record<Page, string> = {
+  world: 'World', manuscript: 'Manuscript', wiki: 'Wiki', style: 'Style',
+}
 
 // ---- URL routes ---------------------------------------------------------
 // Hash routes make every position refresh-safe and copyable, speaking the
@@ -32,6 +39,7 @@ interface Route {
   anchor?: string
   chapterId?: string
   wikiPath?: string
+  styleTab?: StyleTab
 }
 
 function parseHash(): Route {
@@ -39,6 +47,7 @@ function parseHash(): Route {
   const [head, ...rest] = h.split('/')
   if (head === 'manuscript') return { page: 'manuscript', chapterId: rest[0] || undefined }
   if (head === 'wiki') return { page: 'wiki', wikiPath: rest.join('/') || undefined }
+  if (head === 'style') return { page: 'style', styleTab: rest[0] === 'author' ? 'author' : 'book' }
   if (head === 'world') {
     const tail = rest.join('/')
     const at = tail.indexOf('@')
@@ -82,6 +91,7 @@ function Shell({ canon, data, dark, onToggleDark }: {
   const [page, setPage] = useState<Page>(route.page)
   const [selectedState, setSelected] = useState<string | null>(route.id ?? null)
   const [wikiPath, setWikiPath] = useState<string | null>(route.wikiPath ?? null)
+  const [styleTab, setStyleTab] = useState<StyleTab>(route.styleTab ?? 'book')
   const [povMode, setPovMode] = useState(false)   // "through their eyes" on the selected character
   const [focusMode, setFocusMode] = useState<FocusMode>('all')   // graph focus: chapter / selection / all
 
@@ -142,9 +152,11 @@ function Shell({ canon, data, dark, onToggleDark }: {
       h += '/' + curChapterId
     } else if (page === 'wiki' && wikiPath) {
       h += '/' + wikiPath
+    } else if (page === 'style' && styleTab !== 'book') {
+      h += '/' + styleTab
     }
     history.replaceState(null, '', h)
-  }, [page, selected, time.timeMode, time.year, bookChapterId, curChapterId, wikiPath])
+  }, [page, selected, time.timeMode, time.year, bookChapterId, curChapterId, wikiPath, styleTab])
 
   // The selected character's world as of T (event-level POV; conventions'
   // dramatic-irony view). Only computed while the toggle is on.
@@ -188,9 +200,9 @@ function Shell({ canon, data, dark, onToggleDark }: {
           </button>
         </div>
         <nav className="pagenav">
-          {(['world', 'manuscript', 'wiki'] as Page[]).map(p => (
+          {(Object.keys(PAGE_LABEL) as Page[]).map(p => (
             <button key={p} className={page === p ? 'sel' : ''} onClick={() => goto(p)}>
-              {p === 'world' ? 'World' : p === 'manuscript' ? 'Manuscript' : 'Wiki'}
+              {PAGE_LABEL[p]}
             </button>
           ))}
         </nav>
@@ -208,6 +220,9 @@ function Shell({ canon, data, dark, onToggleDark }: {
         <ManuscriptView scenes={data.prose} chapters={chapters}
           chapterIx={time.chapterIx} onChapter={time.setChapterIx} onOpenWorld={openWorld}
           draft={data.draft} onRefresh={data.refreshProse} onCanonChanged={data.refreshCanon} />
+      )}
+      {page === 'style' && (
+        <StyleView style={data.style} tab={styleTab} onTab={setStyleTab} />
       )}
       {page === 'wiki' && (
         <WikiView canon={canon} articles={data.docs} onOpenWorld={openWorld}

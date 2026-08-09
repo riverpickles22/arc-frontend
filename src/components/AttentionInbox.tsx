@@ -16,13 +16,14 @@ export function AttentionInbox({ attention, canon, onOpen }: {
   const [open, setOpen] = useState(false)
   if (!attention) return null
 
-  const { errors, warnings, proposals, payoffs } = attention
-  const total = errors + warnings + proposals + payoffs
+  const { errors, warnings, proposals, payoffs, obligations } = attention
+  const total = errors + warnings + proposals + payoffs + obligations
   const label = total === 0 ? 'all clear' : [
     errors > 0 && plural(errors, 'error'),
     warnings > 0 && plural(warnings, 'warning'),
     proposals > 0 && plural(proposals, 'proposal'),
     payoffs > 0 && plural(payoffs, 'unfired payoff'),
+    obligations > 0 && plural(obligations, 'unmet obligation'),
   ].filter(Boolean).join(' · ')
 
   const jump = (id: string) => { onOpen(id); setOpen(false) }
@@ -30,7 +31,7 @@ export function AttentionInbox({ attention, canon, onOpen }: {
   return (
     <>
       <button className={`attn-chip${errors > 0 ? ' err' : total > 0 ? ' warn' : ''}`}
-        title="Everything needing your attention — checks, proposals, unfired payoffs"
+        title="Everything needing your attention — checks, proposals, unfired payoffs, unmet obligations"
         onClick={() => setOpen(o => !o)}>
         ⚑ {label}
       </button>
@@ -58,6 +59,22 @@ export function AttentionInbox({ attention, canon, onOpen }: {
                     {' plants '}
                     <a className="linklike" onClick={() => jump(d.to)}>{canon.events[d.to]?.title ?? d.to}</a>
                     , which never reaches the page
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {attention.unmetObligations.length > 0 && (
+            <div className="attn-group">
+              <h3>what the story still owes</h3>
+              {attention.unmetObligations.map(o => (
+                <div key={o.id} className="attn-row">
+                  <span className={`sev ${o.klass === 'overdue' ? 'error' : 'warning'}`}>{o.klass}</span>
+                  {/* mat.* ids are not canon — nameOf would not resolve them, so
+                      the obligation speaks for itself in the author's own words. */}
+                  <span className="attn-msg">
+                    {o.body}
+                    {o.satisfiers.length > 0 && <span className="attn-sat"> — intended by {o.satisfiers.join(', ')}</span>}
                   </span>
                 </div>
               ))}

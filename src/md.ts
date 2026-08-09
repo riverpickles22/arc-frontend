@@ -24,13 +24,33 @@ const inline = (s: string) =>
 export function mdToHtml(md: string): string {
   const out: string[] = []
   let para: string[] = []
-  let list: string[] | null = null
+  let list: { kind: 'ul' | 'ol'; items: string[] } | null = null
   let quote: string[] | null = null
 
   const flushPara = () => { if (para.length) { out.push(`<p>${inline(para.join(' '))}</p>`); para = [] } }
-  const flushList = () => { if (list) { out.push(`<ul>${list.map(i => `<li>${inline(i)}</li>`).join('')}</ul>`); list = null } }
+  const flushList = () => {
+    if (list) {
+      out.push(`<${list.kind}>${list.items.map(i => `<li>${inline(i)}</li>`).join('')}</${list.kind}>`)
+      list = null
+    }
+  }
   const flushQuote = () => { if (quote) { out.push(`<blockquote>${inline(quote.join(' '))}</blockquote>`); quote = null } }
   const flushAll = () => { flushPara(); flushList(); flushQuote() }
+
+  const item = (kind: 'ul' | 'ol', text: string) => {
+    flushPara(); flushQuote()
+    if (list && list.kind !== kind) flushList()   // switching kind starts a new list
+    const open = (list ??= { kind, items: [] })
+    open.items.push(text)
+  }
+  /** Append to the open item — the lazy-continuation case. Returns false when
+   *  no list is open, so the caller falls through to paragraph handling. */
+  const continueItem = (text: string): boolean => {
+    const open = list
+    if (!open || !open.items.length) return false
+    open.items[open.items.length - 1] += ' ' + text
+    return true
+  }
 
   for (const raw of esc(md).split('\n')) {
     const line = raw.trimEnd()
@@ -39,9 +59,15 @@ export function mdToHtml(md: string): string {
     if (/^---+$/.test(line)) { flushAll(); out.push('<hr>'); continue }
     if (line.startsWith('&gt;')) { flushPara(); flushList(); (quote ??= []).push(line.replace(/^&gt;\s?/, '')); continue }
     const li = line.match(/^[-*] (.*)$/)
-    if (li) { flushPara(); flushQuote(); (list ??= []).push(li[1]); continue }
+    if (li) { item('ul', li[1]); continue }
+    const oli = line.match(/^\d+\. (.*)$/)
+    if (oli) { item('ol', oli[1]); continue }
     if (!line.trim()) { flushAll(); continue }
-    flushList(); flushQuote()
+    // Lazy continuation: a wrapped list item is still that item. Without this
+    // a hanging-indent second line closes the list and starts a paragraph,
+    // which shatters every multi-line bullet in a style guide or convention.
+    if (continueItem(line.trim())) continue
+    flushQuote()
     para.push(line.trim())
   }
   flushAll()

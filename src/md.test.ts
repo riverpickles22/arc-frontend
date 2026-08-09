@@ -34,3 +34,40 @@ test('slugOf strips entities so renderer and TOC agree on anchors', () => {
   expect(slugOf('Themes &amp; metaphors')).toBe('themes-metaphors')
   expect(slugOf('  Plot  ')).toBe('plot')
 })
+
+// The style contract (conventions §10) is written as wrapped bullets and a
+// numbered checklist; before these rules every multi-line bullet shattered
+// into stray paragraphs. Fixtures below are lifted from the real style.md.
+test('a wrapped bullet stays one list item instead of closing the list', () => {
+  const html = mdToHtml(
+    '- **POV.** Prologue: omniscient, no POV character. Carlos chapters: close\n' +
+    '  third. Dog chapters (Diego, Mateo): strictly behavioral and sensory.\n' +
+    '- **Tense.** Past, throughout.\n')
+  expect(html).toBe(
+    '<ul><li><strong>POV.</strong> Prologue: omniscient, no POV character. Carlos chapters: close third. ' +
+    'Dog chapters (Diego, Mateo): strictly behavioral and sensory.</li>' +
+    '<li><strong>Tense.</strong> Past, throughout.</li></ul>')
+  expect(html).not.toContain('<p>')          // the continuation never becomes a paragraph
+})
+
+test('the pre-draft checklist renders as an ordered list, wrapped items included', () => {
+  const html = mdToHtml(
+    '1. Does the scene open on smell (or smell braided with sound)? (§2)\n' +
+    '2. Does any sentence interpret, explain, or name an ideology or symbol?\n' +
+    '   Cut it. (§1)\n' +
+    '3. Does any word, object, or image postdate the scene\'s year? (§4)\n')
+  expect(html).toContain('<ol>')
+  expect(html).toContain('</ol>')
+  expect((html.match(/<li>/g) ?? []).length).toBe(3)
+  expect(html).toContain('name an ideology or symbol? Cut it. (§1)</li>')
+})
+
+test('switching between bullet and numbered starts a new list', () => {
+  const html = mdToHtml('- one\n1. two\n')
+  expect(html).toBe('<ul><li>one</li></ul>\n<ol><li>two</li></ol>')
+})
+
+test('a paragraph after a blank line is still a paragraph, not a continuation', () => {
+  const html = mdToHtml('- item\n\nA following paragraph.\n')
+  expect(html).toBe('<ul><li>item</li></ul>\n<p>A following paragraph.</p>')
+})

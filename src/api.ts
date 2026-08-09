@@ -7,7 +7,7 @@
 // backend can no longer masquerade as an empty story.
 import type {
   AnalyzeResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, MaterialResponse,
-  ProseAcceptResponse, ProseResponse,
+  ProseAcceptResponse, ProseResponse, StyleResponse,
 } from 'arc-canon-graph'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene } from './canon'
 import type { View } from './presentation'
@@ -50,6 +50,10 @@ export const loadAttention = (signal?: AbortSignal): Promise<AttentionResponse> 
 /** Story material: the unplaced layer (conventions §12). */
 export const loadMaterial = (signal?: AbortSignal): Promise<MaterialItem[]> =>
   getJson<MaterialResponse>('/api/material', { signal }).then(r => r.items)
+
+/** The style contract (conventions §10): both layers as they are on disk. */
+export const loadStyle = (signal?: AbortSignal): Promise<StyleResponse> =>
+  getJson<StyleResponse>('/api/style', { signal })
 
 /** view.yaml from the story repo. A story without one renders from canon alone. */
 export const loadView = (signal?: AbortSignal): Promise<View> =>

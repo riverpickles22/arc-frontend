@@ -10,6 +10,12 @@ const TYPE_LABEL: Record<string, string> = {
   character: 'Characters', place: 'Places', faction: 'Factions', object: 'Objects',
 }
 
+// Story documents are known by filename; the ones with a real role get a real
+// name rather than a bare slug.
+const DOC_TITLE: Record<string, string> = {
+  style: 'Prose style contract', vision: 'Vision', world: 'World',
+}
+
 /** The story encyclopedia, Wikipedia-shaped: a synthesized landing article
  *  (lead, infobox, plot by part, core characters, places, themes), entity
  *  articles with infobox + relationships, per-article TOC, search, and
@@ -48,9 +54,11 @@ export function WikiView({ canon, articles, onOpenWorld, sel, onSel }: {
   const entity = article?.canon ? canon.entities[article.canon] : undefined
   const home = sel === null
 
-  const title = useCallback((a: DocArticle) =>
-    a.canon ? canon.entities[a.canon]?.name ?? a.canon
-      : a.path.replace(/^docs\//, '').replace(/\.md$/, ''), [canon])
+  const title = useCallback((a: DocArticle) => {
+    if (a.canon) return canon.entities[a.canon]?.name ?? a.canon
+    const slug = a.path.replace(/^docs\//, '').replace(/\.md$/, '')
+    return DOC_TITLE[slug] ?? slug
+  }, [canon])
 
   const md = useMemo(
     () => (home ? landingMd(canon, articles, byCanon) : article?.body ?? ''),
