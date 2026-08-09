@@ -21,6 +21,8 @@ export interface State {
   condition?: string
   psychology?: string
   beliefs?: string[]
+  wants?: string[]
+  fears?: string[]
   relationships?: SubjRel[]
   possessions?: string[]
   controlled_by?: string
@@ -137,8 +139,9 @@ export interface Canon {
 // graph/date-vectors.json. This file re-exports them so existing imports
 // keep working; do not reimplement dk() here.
 
-import { dk, dateOf, eraSpanKeys, timeRefKey, stateAt, extantAt } from 'arc-canon-graph'
-export { dk, dateOf, eraSpanKeys, timeRefKey, stateAt, extantAt }
+import { dk, dateOf, diffCharacter, eraSpanKeys, timeRefKey, stateAt, extantAt } from 'arc-canon-graph'
+export { dk, dateOf, diffCharacter, eraSpanKeys, timeRefKey, stateAt, extantAt }
+export type { CharacterDiff } from 'arc-canon-graph'
 
 /** Resolve a place id to coordinates, walking part_of up the hierarchy. */
 export function resolveCoords(

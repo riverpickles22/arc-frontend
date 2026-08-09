@@ -1,8 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { loadGraph } from 'arc-canon-graph'
 import type { Canon, Chapter, Entity, EventDoc, ProseScene, Provenance, State } from '../canon'
-import { dateOf, stateAt, timeRefKey } from '../canon'
+import { dateOf, diffCharacter, dk, stateAt, timeRefKey } from '../canon'
+import type { CharacterDiff } from '../canon'
 import { CopyRef } from './CopyRef'
 
 /** Provenance register (conventions §13): is this the author's invention or
@@ -30,22 +31,82 @@ export interface PovProp {
   onToggle: () => void
 }
 
-/** Field-level summary of what changed vs the previous snapshot — the
- *  "changed since" quick view; the full temporal diff surface comes later. */
-function stateDelta(prev: State, cur: State): string[] {
+/** Compact one-line summary of a CharacterDiff — contents named, never
+ *  counted. The adjacent-snapshot "changed:" line and the full compare view
+ *  both derive from the same diffCharacter; this is just its short form. */
+const clip = (s: string, n = 44) => (s.length > n ? s.slice(0, n - 1) + '…' : s)
+function diffSummary(d: CharacterDiff, canon: Canon): string[] {
   const out: string[] = []
-  if (prev.location !== cur.location && cur.location) out.push(`location → ${cur.location}`)
-  if (prev.condition !== cur.condition && cur.condition) out.push('condition')
-  if (prev.psychology !== cur.psychology && cur.psychology) out.push('psychology')
-  const beliefs = (cur.beliefs?.length ?? 0) - (prev.beliefs?.length ?? 0)
-  if (beliefs !== 0) out.push(`${beliefs > 0 ? '+' : ''}${beliefs} belief${Math.abs(beliefs) === 1 ? '' : 's'}`)
-  const poss = (cur.possessions?.length ?? 0) - (prev.possessions?.length ?? 0)
-  if (poss !== 0) out.push(`${poss > 0 ? '+' : ''}${poss} possession${Math.abs(poss) === 1 ? '' : 's'}`)
-  const prevRel = new Map((prev.relationships ?? []).map(r => [r.toward, r.stance]))
-  let shifted = 0
-  for (const r of cur.relationships ?? []) if (prevRel.has(r.toward) && prevRel.get(r.toward) !== r.stance) shifted++
-  if (shifted) out.push(`${shifted} perception${shifted === 1 ? '' : 's'} shifted`)
+  for (const s of d.scalars) {
+    if (s.field === 'location' && s.after) out.push(`→ ${canon.entities[s.after]?.name ?? s.after}`)
+    else if (s.field !== 'age') out.push(s.field)
+  }
+  for (const l of d.lists) {
+    for (const x of l.removed) out.push(`${l.field} −“${clip(x)}”`)
+    for (const x of l.added) out.push(`${l.field} +“${clip(x)}”`)
+  }
+  for (const r of d.relationships) {
+    const name = canon.entities[r.toward]?.name ?? r.toward
+    out.push(r.before === undefined ? `now perceives ${name}` : r.after === undefined ? `no longer perceives ${name}` : `~ ${name}`)
+  }
   return out
+}
+
+/** The full compare: any two chapters' end states, with the causes that
+ *  drove the change. One implementation — diffCharacter — shared with the
+ *  CLI and the adjacent-snapshot line above. */
+function CompareStates({ e, canon, onSelect }: { e: Entity; canon: Canon; onSelect: (id: string) => void }) {
+  const chapters = useMemo(() => [...(canon.chapters ?? [])].sort((x, y) => x.order - y.order), [canon])
+  const [fromCh, setFromCh] = useState(chapters[0]?.id ?? '')
+  const [toCh, setToCh] = useState(chapters.at(-1)?.id ?? '')
+  const key = (id: string) => {
+    const c = chapters.find(x => x.id === id)
+    const end = dateOf(c?.span.end) ?? dateOf(c?.span.start)
+    return end ? dk(end, true) : 99999999
+  }
+  const d = useMemo(
+    () => diffCharacter(e, key(fromCh), key(toCh), canon.timeline.eras),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [e, fromCh, toCh, canon],
+  )
+  const empty = !d.scalars.length && !d.lists.length && !d.relationships.length
+  const sel = (v: string, set: (x: string) => void) => (
+    <select className="cmp-select" value={v} onChange={ev => set(ev.target.value)}>
+      {chapters.map(c => <option key={c.id} value={c.id}>{c.order === 0 ? 'P' : c.order}. {c.title}</option>)}
+    </select>
+  )
+  return (
+    <div className="cmp">
+      <div className="cmp-head">compare {sel(fromCh, setFromCh)} → {sel(toCh, setToCh)}</div>
+      {empty ? <div className="cmp-empty">no change between these moments{d.from === null && d.to === null ? ' — no state exists at either' : ''}</div> : (
+        <div className="cmp-body">
+          {d.scalars.map(s => (
+            <div key={s.field} className="row"><b>{s.field}</b> {s.field === 'location'
+              ? <>{s.before ? <Ref id={s.before} canon={canon} onSelect={onSelect} /> : '—'} → {s.after ? <Ref id={s.after} canon={canon} onSelect={onSelect} /> : '—'}</>
+              : <>{clip(s.before ?? '—', 90)} <span className="cmp-arrow">→</span> {clip(s.after ?? '—', 90)}</>}</div>
+          ))}
+          {d.lists.map(l => (
+            <div key={l.field} className="row"><b>{l.field}</b>{' '}
+              {l.removed.map(x => <span key={'r' + x} className="cmp-del">− {x}</span>)}
+              {l.added.map(x => <span key={'a' + x} className="cmp-ins">+ {x}</span>)}
+            </div>
+          ))}
+          {d.relationships.map(r => (
+            <div key={r.toward} className="row"><b>perceives</b> <Ref id={r.toward} canon={canon} onSelect={onSelect} />{': '}
+              {r.before === undefined ? <span className="cmp-ins">{r.after}</span>
+                : r.after === undefined ? <span className="cmp-del">{r.before} (dropped)</span>
+                  : <>{r.before} <span className="cmp-arrow">→</span> <b>{r.after}</b></>}</div>
+          ))}
+          {d.causes.length > 0 && (
+            <div className="row"><b>because of</b> {d.causes.map((c, i) => (
+              <span key={c}>{i > 0 && ' · '}<Ref id={c} canon={canon} onSelect={onSelect} /></span>
+            ))}</div>
+          )}
+          {d.steps > 1 && <div className="cmp-steps">{d.steps} snapshots inside this window — the path, not a jump</div>}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function Ref({ id, canon, onSelect }: { id: string; canon: Canon; onSelect: (id: string) => void }) {
@@ -129,6 +190,8 @@ function StateCard({
       {s.condition && <div className="row"><b>condition</b> {s.condition}</div>}
       {s.psychology && <div className="row"><b>psychology</b> {s.psychology}</div>}
       {s.beliefs?.length ? <div className="row"><b>believes</b> {s.beliefs.join(' · ')}</div> : null}
+      {s.wants?.length ? <div className="row"><b>wants</b> {s.wants.join(' · ')}</div> : null}
+      {s.fears?.length ? <div className="row"><b>fears</b> {s.fears.join(' · ')}</div> : null}
       {s.relationships?.length ? (
         <div className="row">
           <b>perceives</b>{' '}
@@ -213,14 +276,21 @@ function EntityProfile({
       {(e.states?.length ?? 0) > 0 && (
         <div className="field">
           <div className="k">versioned journey ({e.states!.length} states)</div>
-          {e.states!.map((s, i) => (
-            <div key={i}>
-              {i > 0 && stateDelta(e.states![i - 1], s).length > 0 && (
-                <div className="state-delta">changed: {stateDelta(e.states![i - 1], s).join(' · ')}</div>
-              )}
-              <StateCard s={s} canon={canon} active={s === active} onSelect={onSelect} />
-            </div>
-          ))}
+          {(e.states!.length > 1) && <CompareStates e={e} canon={canon} onSelect={onSelect} />}
+          {e.states!.map((s, i) => {
+            const lines = i > 0
+              ? diffSummary(diffCharacter(e,
+                  timeRefKey(e.states![i - 1].at, canon.timeline.eras),
+                  timeRefKey(s.at, canon.timeline.eras),
+                  canon.timeline.eras), canon)
+              : []
+            return (
+              <div key={i}>
+                {lines.length > 0 && <div className="state-delta">changed: {lines.join(' · ')}</div>}
+                <StateCard s={s} canon={canon} active={s === active} onSelect={onSelect} />
+              </div>
+            )
+          })}
         </div>
       )}
       {e.narrative_notes && <div className="field"><div className="k">notes / open questions</div><div className="v">{e.narrative_notes}</div></div>}
