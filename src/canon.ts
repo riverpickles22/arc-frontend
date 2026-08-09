@@ -8,7 +8,7 @@
 import type { TimeRef, DateLike } from 'arc-canon-graph'
 export type {
   TimeRef, DateLike, DocArticle, SceneContract, ProseScene, ProseChange, ProseDraft,
-  ChatMessage, ChatAction, ChatResponse, DraftSceneResponse, ApiErrorResponse, AttentionResponse, MaterialItem,
+  ChatMessage, ChatAction, ChatResponse, DraftSceneResponse, AnalyzeResponse, ApiErrorResponse, AttentionResponse, MaterialItem,
 } from 'arc-canon-graph'
 
 export interface SubjRel { toward: string; stance: string }

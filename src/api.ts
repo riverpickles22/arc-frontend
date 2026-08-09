@@ -6,7 +6,7 @@
 // banner) belongs to the caller — useServerData — not here, so a down
 // backend can no longer masquerade as an empty story.
 import type {
-  ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, MaterialResponse,
+  AnalyzeResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, MaterialResponse,
   ProseAcceptResponse, ProseResponse,
 } from 'arc-canon-graph'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene } from './canon'
@@ -78,6 +78,11 @@ export const acceptDraft = (message?: string): Promise<ProseAcceptResponse> =>
 
 export const discardDraft = (file: string): Promise<void> =>
   post('/api/prose/discard', { file })
+
+/** The analysis pass: what would the pending draft do to the story? Slow
+ *  (a full model read) and read-only — findings are argued, never proven. */
+export const analyzeDraft = (): Promise<AnalyzeResponse> =>
+  post('/api/prose/analyze', {})
 
 /** The drafting pass: generate one scene into the working tree. Slow (a
  *  full model pass); the result arrives as an ordinary draft change. */

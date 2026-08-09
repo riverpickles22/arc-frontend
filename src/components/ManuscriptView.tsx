@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import type { Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, SceneContract } from '../canon'
+import type { AnalyzeResponse, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, SceneContract } from '../canon'
 import { dateOf } from '../canon'
-import { acceptDraft, discardDraft, draftScene } from '../api'
+import { acceptDraft, analyzeDraft, discardDraft, draftScene } from '../api'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
@@ -102,6 +102,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const [guidance, setGuidance] = useState('')
   const [showGen, setShowGen] = useState(false)
 
+  // The analysis pass: what would this draft do to the story? Read-only, and
+  // never a gate on accepting — the author may ignore it entirely.
+  const [analysis, setAnalysis] = useState<{ res: AnalyzeResponse; key: string } | null>(null)
+  const [anBusy, setAnBusy] = useState(false)
+  const [anErr, setAnErr] = useState<string | null>(null)
+
   // A half-armed discard must not survive closing the drawer or moving to
   // another chapter; a stale briefing must not survive the move either.
   const toggleDrawer = () => { setArmed(null); setDrawer(o => !o) }
@@ -113,6 +119,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     for (const c of draft.changes) m.set(c.file, diffProse(c.main?.body ?? '', byFile.get(c.file)?.body ?? ''))
     return m
   }, [draft, byFile])
+  // An analysis describes a specific set of files; when the draft set moves
+  // under it the analysis is stale, so it is shown only while its key still
+  // matches — derived rather than cleared, so no effect writes state.
+  const draftKey = draft.changes.map(c => `${c.status}:${c.file}`).join('|')
+  const shownAnalysis = analysis?.key === draftKey ? analysis.res : null
+
   const totals = useMemo(() => {
     let ins = 0, del = 0
     for (const d of diffs.values()) { const s = diffStats(d); ins += s.ins; del += s.del }
@@ -145,6 +157,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     setCapture(res.capture ?? null)
     if (res.capture?.canonChanged) onCanonChanged?.()
   })
+  const analyze = async () => {
+    setAnBusy(true); setAnErr(null)
+    try { setAnalysis({ res: await analyzeDraft(), key: draftKey }) }
+    catch (e) { setAnErr((e as Error).message ?? String(e)) }
+    finally { setAnBusy(false) }
+  }
   const discard = (file: string) => {
     if (armed !== file) { setArmed(file); return }
     setArmed(null)
@@ -240,6 +258,31 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 </div>
               )
             })}
+            {n > 0 && (
+              <div className="db-analyze">
+                <button disabled={anBusy} onClick={analyze}>
+                  {anBusy ? 'Reading the draft…' : 'What did this scene change?'}
+                </button>
+                <span className="gen-note">
+                  {anBusy
+                    ? 'Reading the pending scenes against canon, the contract, and the style guide. Nothing is written.'
+                    : 'A read-only pass before you decide — claims to weigh, not errors.'}
+                </span>
+              </div>
+            )}
+            {anErr && <p className="db-err">{anErr}</p>}
+            {shownAnalysis && (
+              <div className="db-analysis">
+                <div className="an-head">
+                  <h3>What this draft would change</h3>
+                  <span className="an-register" title="Model-read claims with citations — never presented as proven (conventions §11)">
+                    argued — claims to review
+                  </span>
+                </div>
+                <div className="db-capture-reply">{shownAnalysis.briefing}</div>
+                <p className="an-foot">{shownAnalysis.files.length} scene{shownAnalysis.files.length === 1 ? '' : 's'} read · {shownAnalysis.engine === 'claude-cli' ? 'claude CLI' : 'API'} · nothing was written</p>
+              </div>
+            )}
             {n > 0 && (
               <div className="db-accept">
                 <input value={msg} placeholder={defaultMsg} onChange={ev => setMsg(ev.target.value)} />

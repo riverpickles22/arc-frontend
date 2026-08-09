@@ -322,6 +322,27 @@ svg text { font-family: inherit; }
 }
 .genrow button:disabled { opacity: .55; cursor: default; }
 .gen-note { color: var(--muted); font-size: 12.5px; margin: 6px 0; }
+.db-analyze { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; }
+.db-analyze button {
+  font: inherit; font-size: 12.5px; font-weight: 650; white-space: nowrap;
+  color: var(--c1); background: transparent; border: 1px solid var(--c1);
+  border-radius: 8px; padding: 4px 12px; cursor: pointer;
+}
+.db-analyze button:disabled { opacity: .55; cursor: default; }
+.db-analyze .gen-note { margin: 0; }
+/* Argued register (conventions §11): visibly not a proven finding — dashed
+   edge, its own label, never the error styling. */
+.db-analysis {
+  border: 1px dashed var(--c1); border-radius: 10px;
+  padding: 10px 12px; margin: 8px 0 12px; background: var(--surface-1);
+}
+.an-head { display: flex; align-items: baseline; gap: 10px; }
+.an-head h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 6px; }
+.an-register {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--c1); border: 1px solid var(--c1); border-radius: 999px; padding: 1px 8px;
+}
+.an-foot { color: var(--muted); font-size: 11.5px; margin: 8px 0 0; }
 .db-history h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 10px 0 6px; }
 .db-hrow { display: flex; gap: 10px; font-size: 12.5px; color: var(--text-secondary); margin-bottom: 3px; }
 .db-hrow code { color: var(--c1); }
