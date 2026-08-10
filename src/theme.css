@@ -235,8 +235,17 @@ svg text { font-family: inherit; }
 .facts .fsummary { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin: 8px 0; }
 
 /* ---- manuscript ---- */
-.ms-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0,1fr); overflow: hidden; }
-.ms-main { overflow-y: auto; padding: 24px 36px 60px; }
+/* Chapters, then the manuscript and its notes at 60/40 of what remains.
+   Both columns live in ONE scroll region: a note is positioned level with
+   the paragraph that provoked it, and alignment that survives scrolling
+   means the two cannot scroll independently. */
+.ms-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr); overflow: hidden; }
+.ms-scroll { overflow-y: auto; min-width: 0; }
+.ms-cols { position: relative; display: grid; grid-template-columns: 60fr 40fr; align-items: start; min-height: 100%; }
+.ms-main { padding: 24px 32px 60px; min-width: 0; }
+/* The prose fills its column — the 74ch measure belongs to the wiki, where
+   the column is not the author's to size. */
+.ms-main .mdbody { max-width: none; }
 .ms-head h1 { font-size: 24px; letter-spacing: -.01em; margin: 0 0 4px; }
 .ms-meta { color: var(--text-secondary); font-size: 13px; margin: 0 0 18px; }
 .ms-outline { max-width: 74ch; margin: 0 0 22px; padding: 12px 16px; border-left: 3px solid var(--c1);
@@ -435,3 +444,34 @@ svg text { font-family: inherit; }
 .cmp-arrow { color: var(--muted); }
 .cmp-empty { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
 .cmp-steps { color: var(--muted); font-size: 11.5px; margin-top: 6px; font-style: italic; }
+
+/* ---- annotations (conventions §14): thoughts anchored to the page ---- */
+/* The rail is a positioning context: cards are placed at their paragraph's
+   line rather than flowing, so the column has no scroll of its own. */
+.notes-rail { position: relative; padding: 24px 20px 60px; border-left: 1px solid var(--border); min-width: 0; }
+.notes-rail > .note { position: absolute; left: 20px; right: 20px; transition: top .15s ease; }
+.notes-rail h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
+.notes-rail h3 .chmeta { text-transform: none; letter-spacing: 0; margin-left: 6px; }
+.note { border: 1px solid var(--border); border-left: 3px solid var(--c1); border-radius: 8px; padding: 10px 12px; box-sizing: border-box; }
+.note-drifted { border-left-color: var(--c4); }
+.note-orphaned, .note-no-scene { border-left-color: var(--c8); border-style: dashed; }
+.note-head { display: flex; align-items: baseline; gap: 8px; font-size: 11px; color: var(--muted); }
+.note-state { color: var(--c4); text-transform: uppercase; letter-spacing: .06em; font-size: 10px; }
+.note-orphaned .note-state, .note-no-scene .note-state { color: var(--c8); }
+.note-quote { margin: 6px 0; padding-left: 9px; border-left: 2px solid var(--baseline); color: var(--text-secondary); font-size: 12.5px; font-style: italic; cursor: pointer; }
+.note-why { color: var(--muted); font-size: 11.5px; margin-bottom: 4px; }
+.note-body { font-size: 13.5px; line-height: 1.5; }
+.note-acts { display: flex; gap: 8px; margin-top: 8px; }
+.note-acts button {
+  font: inherit; font-size: 11.5px; color: var(--text-secondary); background: transparent;
+  border: 1px solid var(--border); border-radius: 6px; padding: 1px 9px; cursor: pointer;
+}
+.note-acts button:disabled { opacity: .45; cursor: default; }
+.note-composer { border: 1px solid var(--c1); border-radius: 10px; padding: 9px 10px; margin: 0 0 12px; background: var(--panel); }
+.note-composer textarea {
+  width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; margin-top: 6px; padding: 6px 8px; resize: vertical;
+  background: var(--page); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px;
+}
+/* a passage that already carries a note — visible, never loud */
+.mdbody.prose p.has-note { border-left: 2px solid var(--c1); padding-left: 10px; margin-left: -12px; }
+.mdbody.prose p.note-focus { background: color-mix(in oklab, var(--c1) 12%, transparent); }

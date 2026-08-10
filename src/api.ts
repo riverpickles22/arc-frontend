@@ -6,10 +6,10 @@
 // banner) belongs to the caller — useServerData — not here, so a down
 // backend can no longer masquerade as an empty story.
 import type {
-  AnalyzeResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, MaterialResponse,
+  AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, MaterialResponse,
   ProseAcceptResponse, ProseResponse, StyleResponse,
 } from 'arc-canon-graph'
-import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene } from './canon'
+import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation } from './canon'
 import type { View } from './presentation'
 import type { GeoJSON } from './map-geometry'
 
@@ -50,6 +50,17 @@ export const loadAttention = (signal?: AbortSignal): Promise<AttentionResponse> 
 /** Story material: the unplaced layer (conventions §12). */
 export const loadMaterial = (signal?: AbortSignal): Promise<MaterialItem[]> =>
   getJson<MaterialResponse>('/api/material', { signal }).then(r => r.items)
+
+/** Annotations (conventions §14): the author's notes with their anchors
+ *  resolved against the prose as it stands. */
+export const loadAnnotations = (signal?: AbortSignal): Promise<ResolvedAnnotation[]> =>
+  getJson<AnnotationsResponse>('/api/annotations', { signal }).then(r => r.annotations)
+
+export const createNote = (n: { scene: string; paragraph: number; quote: string; body: string }): Promise<ResolvedAnnotation> =>
+  post('/api/annotations', n)
+
+export const updateNote = (id: string, status: string): Promise<ResolvedAnnotation> =>
+  post('/api/annotations/update', { id, status })
 
 /** The style contract (conventions §10): both layers as they are on disk. */
 export const loadStyle = (signal?: AbortSignal): Promise<StyleResponse> =>

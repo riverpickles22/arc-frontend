@@ -8,9 +8,9 @@
 // failure is recorded, so a down backend shows a banner rather than
 // masquerading as an empty story.
 import { useCallback, useEffect, useState } from 'react'
-import type { AttentionResponse, Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, StyleResponse } from '../canon'
+import type { AttentionResponse, Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, StyleResponse } from '../canon'
 import type { View } from '../presentation'
-import { loadAttention, loadCanon, loadDocs, loadDraft, loadMaterial, loadProse, loadStyle, loadView, NO_DRAFT } from '../api'
+import { loadAnnotations, loadAttention, loadCanon, loadDocs, loadDraft, loadMaterial, loadProse, loadStyle, loadView, NO_DRAFT } from '../api'
 
 export interface ServerData {
   canon: Canon | null
@@ -18,6 +18,7 @@ export interface ServerData {
   retry: () => void
   view: View
   style: StyleResponse | null
+  notes: ResolvedAnnotation[]
   docs: DocArticle[]
   prose: ProseScene[]
   draft: ProseDraft
@@ -25,6 +26,7 @@ export interface ServerData {
   material: MaterialItem[]
   degraded: string[]
   refreshCanon: () => void
+  refreshNotes: () => void
   refreshProse: () => void
 }
 
@@ -35,6 +37,7 @@ export function useServerData(): ServerData {
   const [canonError, setCanonError] = useState<string | null>(null)
   const [view, setView] = useState<View>({})
   const [style, setStyle] = useState<StyleResponse | null>(null)
+  const [notes, setNotes] = useState<ResolvedAnnotation[]>([])
   const [docs, setDocs] = useState<DocArticle[]>([])
   const [prose, setProse] = useState<ProseScene[]>([])
   const [draft, setDraft] = useState<ProseDraft>(NO_DRAFT)
@@ -57,6 +60,7 @@ export function useServerData(): ServerData {
         .catch(e => { if (!signal?.aborted) setCanonError(message(e)) }),
       secondary('view', loadView, setView),
       secondary('style', loadStyle, setStyle),
+      secondary('notes', loadAnnotations, setNotes),
       secondary('docs', loadDocs, setDocs),
       secondary('prose', loadProse, setProse),
       secondary('draft', loadDraft, setDraft),
@@ -85,10 +89,11 @@ export function useServerData(): ServerData {
   }, [])
 
   // Prose and its draft state refresh together: accept/discard change both.
+  const refreshNotes = useCallback(() => { loadAnnotations().then(setNotes).catch(() => {}) }, [])
   const refreshProse = useCallback(() => {
     loadProse().then(setProse).catch(() => setDegraded(d => (d.includes('prose') ? d : [...d, 'prose'])))
     loadDraft().then(setDraft).catch(() => setDegraded(d => (d.includes('draft') ? d : [...d, 'draft'])))
   }, [])
 
-  return { canon, canonError, retry, view, style, docs, prose, draft, attention: attn, material, degraded, refreshCanon, refreshProse }
+  return { canon, canonError, retry, view, style, notes, docs, prose, draft, attention: attn, material, degraded, refreshCanon, refreshProse, refreshNotes }
 }

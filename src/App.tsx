@@ -219,7 +219,8 @@ function Shell({ canon, data, dark, onToggleDark }: {
       {page === 'manuscript' && (
         <ManuscriptView scenes={data.prose} chapters={chapters}
           chapterIx={time.chapterIx} onChapter={time.setChapterIx} onOpenWorld={openWorld}
-          draft={data.draft} onRefresh={data.refreshProse} onCanonChanged={data.refreshCanon} />
+          draft={data.draft} notes={data.notes} onRefresh={data.refreshProse}
+          onRefreshNotes={data.refreshNotes} onCanonChanged={data.refreshCanon} />
       )}
       {page === 'style' && (
         <StyleView style={data.style} tab={styleTab} onTab={setStyleTab} />

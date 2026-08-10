@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
-import type { AnalyzeResponse, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, SceneContract } from '../canon'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import type { AnalyzeResponse, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, SceneContract } from '../canon'
 import { dateOf } from '../canon'
-import { acceptDraft, analyzeDraft, discardDraft, draftScene } from '../api'
+import { acceptDraft, analyzeDraft, createNote, discardDraft, draftScene, updateNote } from '../api'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
@@ -44,14 +45,25 @@ function ContractPanel({ c, onOpenWorld }: { c: SceneContract; onOpenWorld: (id:
   )
 }
 
-/** A diffed prose body: paragraphs with word-level ins/del highlighting. */
-function DiffBody({ d }: { d: ParaDiff[] }) {
+/** A diffed prose body: paragraphs with word-level ins/del highlighting.
+ *  Carries the same data-para keys as the plain renderer — a note has to find
+ *  its line whether or not the author is looking at changes. Indices come
+ *  from the scene's own paragraphs, matched by text, because a diff's
+ *  sequence includes deletions the body no longer has. */
+function DiffBody({ d, paraKey }: { d: ParaDiff[]; paraKey?: (text: string) => string | undefined }) {
+  const keyOf = (p: ParaDiff): string | undefined => {
+    if (!paraKey) return undefined
+    const text = p.kind === 'changed'
+      ? (p.pieces ?? []).filter(x => x.kind !== 'del').map(x => x.text).join(' ')
+      : p.text ?? ''
+    return paraKey(text)
+  }
   return (
     <div className="mdbody prose">
       {d.map((p, i) => {
         if (p.kind === 'changed') {
           return (
-            <p key={i}>
+            <p key={i} data-para={keyOf(p)}>
               {p.pieces!.map((pc, k) =>
                 pc.kind === 'same' ? <span key={k}>{pc.text} </span>
                   : pc.kind === 'ins' ? <ins key={k}>{pc.text} </ins>
@@ -59,10 +71,85 @@ function DiffBody({ d }: { d: ParaDiff[] }) {
             </p>
           )
         }
-        if (p.kind === 'ins') return <p key={i}><ins>{p.text}</ins></p>
+        if (p.kind === 'ins') return <p key={i} data-para={keyOf(p)}><ins>{p.text}</ins></p>
         if (p.kind === 'del') return <p key={i}><del>{p.text}</del></p>
-        return <p key={i}>{p.text}</p>
+        return <p key={i} data-para={keyOf(p)}>{p.text}</p>
       })}
+    </div>
+  )
+}
+
+
+/** Paragraphs, split the way the anchor resolver splits them — the index a
+ *  note records has to mean the same thing on both sides. */
+const paragraphsOf = (body: string): string[] =>
+  body.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
+
+const STATE_LABEL: Record<string, string> = {
+  resolved: '', drifted: 'moved', orphaned: 'passage gone', 'no-scene': 'scene gone',
+}
+
+/** The notes rail: the author's thoughts on this chapter, anchored to the
+ *  passages that provoked them (conventions §14). A note whose passage has
+ *  moved says so; a note whose passage is gone keeps its quote and waits —
+ *  arc never guesses where a thought now belongs. */
+/** Stack cards at their desired tops without overlapping: each is pushed to
+ *  its paragraph's line, or just below whatever precedes it. */
+function stack(desired: number[], heights: number[], gap = 10): number[] {
+  let floor = 34   // clears the rail's heading
+  return desired.map((d, i) => {
+    const top = Math.max(d, floor)
+    floor = top + (heights[i] || 0) + gap
+    return top
+  })
+}
+
+function NotesRail({ notes, busy, onStatus, onFocus, composer, tops, cardRef }: {
+  notes: ResolvedAnnotation[]
+  busy: boolean
+  onStatus: (id: string, status: string) => void
+  onFocus: (scene: string, paragraph: number | null) => void
+  /** The note being written, rendered here rather than in the manuscript —
+   *  a note is composed where it will live, and the prose never scrolls. */
+  composer: ReactNode
+  /** Final y for each card, aligned to the paragraph it annotates. */
+  tops: number[]
+  cardRef: (i: number, el: HTMLDivElement | null) => void
+}) {
+  const open = notes.filter(n => n.status !== 'resolved' && n.status !== 'dropped')
+  const closed = notes.length - open.length
+  return (
+    <div className="notes-rail">
+      <h3>Notes{notes.length > 0 && (
+        <span className="chmeta">{open.length} open{closed ? ` · ${closed} closed` : ''}</span>
+      )}</h3>
+      {composer}
+      {!notes.length && !composer && (
+        <p className="fsummary">Select any passage to leave one. Notes stay anchored to the
+          text that provoked them — and say so when the manuscript moves underneath.</p>
+      )}
+      {open.map((n, i) => (
+        <div key={n.id} ref={el => cardRef(i, el)}
+          className={`note note-${n.resolution.state}`}
+          style={{ top: tops[i] ?? 0 }}>
+          <div className="note-head">
+            <code>{n.id.replace('note.', '#')}</code>
+            {STATE_LABEL[n.resolution.state] && <span className="note-state">{STATE_LABEL[n.resolution.state]}</span>}
+          </div>
+          {n.anchor.quote && (
+            <blockquote className="note-quote" onClick={() => onFocus(n.anchor.scene, n.resolution.paragraph)}>
+              {n.anchor.quote}
+            </blockquote>
+          )}
+          {n.resolution.note && <div className="note-why">{n.resolution.note}</div>}
+          <div className="note-body">{n.body}</div>
+          <div className="note-acts">
+            <button disabled={busy} onClick={() => onStatus(n.id, 'resolved')}>resolve</button>
+            <button disabled={busy} onClick={() => onStatus(n.id, 'dropped')}>drop</button>
+          </div>
+        </div>
+      ))}
+      {open.length === 0 && notes.length > 0 && <p className="fsummary">Nothing open on this chapter.</p>}
     </div>
   )
 }
@@ -76,14 +163,16 @@ function DiffBody({ d }: { d: ParaDiff[] }) {
  *  the working tree. Changed scenes render with word-level highlights, the
  *  drawer carries the running change summary, and Accept ratifies the draft
  *  into main — the proposed → canon gate applied to prose, commit = ratify. */
-export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenWorld, draft, onRefresh, onCanonChanged }: {
+export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenWorld, draft, notes, onRefresh, onRefreshNotes, onCanonChanged }: {
   scenes: ProseScene[]
   chapters: Chapter[]          // sorted by order
   chapterIx: number
   onChapter: (ix: number) => void
   onOpenWorld: (id: string) => void
   draft: ProseDraft
+  notes: ResolvedAnnotation[]
   onRefresh: () => void
+  onRefreshNotes: () => void
   onCanonChanged?: () => void
 }) {
   const [showChanges, setShowChanges] = useState(true)
@@ -101,6 +190,21 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const [gen, setGen] = useState<DraftSceneResponse | null>(null)
   const [guidance, setGuidance] = useState('')
   const [showGen, setShowGen] = useState(false)
+
+  // Annotations: select prose, write the thought, keep reading. No
+  // categorisation, no scope declaration — the author's only job is the note.
+  const [sel, setSel] = useState<{ scene: string; paragraph: number; quote: string } | null>(null)
+  const [noteText, setNoteText] = useState('')
+  const [noteBusy, setNoteBusy] = useState(false)
+  const [focused, setFocused] = useState<string | null>(null)
+
+  // Notes sit level with the paragraph that provoked them. Both columns
+  // scroll as one region, so a card's y is measured against that region and
+  // never needs re-measuring on scroll — only when the layout itself moves.
+  const colsRef = useRef<HTMLDivElement>(null)
+  const cardsRef = useRef<(HTMLDivElement | null)[]>([])
+  const [tops, setTops] = useState<number[]>([])
+  const setCard = useCallback((i: number, el: HTMLDivElement | null) => { cardsRef.current[i] = el }, [])
 
   // The analysis pass: what would this draft do to the story? Read-only, and
   // never a gate on accepting — the author may ignore it entirely.
@@ -131,9 +235,41 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     return { ins, del }
   }, [diffs])
 
-  if (!chapters.length) return <div className="empty">No chapters in canon yet.</div>
-  const cur = chapters[Math.min(chapterIx, chapters.length - 1)]
-  const curScenes = scenes.filter(s => s.chapter === cur.id).sort((a, b) => a.file.localeCompare(b.file))
+  const cur = chapters.length ? chapters[Math.min(chapterIx, chapters.length - 1)] : undefined
+  const curScenes = useMemo(
+    () => (cur ? scenes.filter(s => s.chapter === cur.id).sort((a, b) => a.file.localeCompare(b.file)) : []),
+    [scenes, cur],
+  )
+  const chapterNotes = useMemo(
+    () => notes.filter(x => curScenes.some(s => s.scene === x.anchor.scene))
+      .filter(x => x.status !== 'resolved' && x.status !== 'dropped'),
+    [notes, curScenes],
+  )
+
+  // Measure after paint: where each annotated paragraph sits, then stack the
+  // cards so none overlaps its neighbour. Cards keep their own height, so one
+  // extra pass settles it.
+  useLayoutEffect(() => {
+    const box = colsRef.current
+    if (!box) return
+    const measure = () => {
+      const base = box.getBoundingClientRect().top
+      const desired = chapterNotes.map(x => {
+        const key = `${x.anchor.scene}:${x.resolution.paragraph}`
+        const el = x.resolution.paragraph === null ? null : box.querySelector<HTMLElement>(`[data-para="${key}"]`)
+        return el ? el.getBoundingClientRect().top - base : 0
+      })
+      const heights = chapterNotes.map((_, i) => cardsRef.current[i]?.offsetHeight ?? 0)
+      const next = stack(desired, heights)
+      setTops(prev => (prev.length === next.length && prev.every((v, i) => Math.abs(v - next[i]) < 1) ? prev : next))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(box)
+    return () => ro.disconnect()
+  }, [chapterNotes, showChanges, diffs])
+
+  if (!chapters.length || !cur) return <div className="empty">No chapters in canon yet.</div>
   const curDeleted = draft.changes.filter(c => c.status === 'deleted' && c.main?.chapter === cur.id)
   const scenesOf = (id: string) => scenes.filter(s => s.chapter === id).length
   const spanText = [dateOf(cur.span.start), dateOf(cur.span.end)].filter(Boolean).join(' → ')
@@ -146,6 +282,19 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const mins = Math.max(1, Math.round(words / 230))
 
   const bodyClick = wikilinkClickHandler(onOpenWorld)
+
+  /** Text → the scene's own paragraph key, so a diffed paragraph anchors to
+   *  the same index the note recorded. Matched on a prefix: word-level
+   *  highlighting reassembles text with different spacing. */
+  const paraKeyFor = (s: ProseScene) => {
+    const paras = paragraphsOf(s.body).map(x => x.replace(/\s+/g, ' ').trim())
+    return (text: string): string | undefined => {
+      const needle = text.replace(/\s+/g, ' ').trim().slice(0, 60)
+      if (!needle) return undefined
+      const ix = paras.findIndex(x => x.startsWith(needle.slice(0, 40)))
+      return ix > -1 ? `${s.scene}:${ix}` : undefined
+    }
+  }
 
   const run = async (op: () => Promise<unknown>) => {
     setBusy(true); setErr(null)
@@ -163,6 +312,32 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     catch (e) { setAnErr((e as Error).message ?? String(e)) }
     finally { setAnBusy(false) }
   }
+  /** Capture the selection as an anchor: which scene, which paragraph, and
+   *  the exact words. The paragraph index is derived by matching the text,
+   *  not by counting DOM nodes — the resolver splits the same way. */
+  const captureSelection = (scene: ProseScene) => {
+    const s = window.getSelection()
+    const quote = s?.toString().trim() ?? ''
+    if (!quote) return
+    const paras = paragraphsOf(scene.body)
+    const ix = paras.findIndex(p => p.replace(/\s+/g, ' ').includes(quote.replace(/\s+/g, ' ')))
+    setSel({ scene: scene.scene, paragraph: ix > -1 ? ix : 0, quote })
+    setNoteText('')
+  }
+  const saveNote = async () => {
+    if (!sel || !noteText.trim()) return
+    setNoteBusy(true)
+    try { await createNote({ ...sel, body: noteText }); setSel(null); setNoteText(''); onRefreshNotes() }
+    catch (e) { setErr((e as Error).message ?? String(e)) }
+    finally { setNoteBusy(false) }
+  }
+  const noteStatus = async (id: string, status: string) => {
+    setNoteBusy(true)
+    try { await updateNote(id, status); onRefreshNotes() }
+    catch (e) { setErr((e as Error).message ?? String(e)) }
+    finally { setNoteBusy(false) }
+  }
+
   const discard = (file: string) => {
     if (armed !== file) { setArmed(file); return }
     setArmed(null)
@@ -170,6 +345,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   }
 
   const defaultMsg = `prose: accept draft (${n} scene${n === 1 ? '' : 's'})`
+
+
 
   const generate = async () => {
     setGenBusy(true); setGenErr(null); setGen(null)
@@ -224,6 +401,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         ))}
       </nav>
 
+      <div className="ms-scroll">
+      <div className="ms-cols" ref={colsRef}>
       <article className="ms-main">
         {draft.git && (
           <div className={n ? 'draftbar' : 'draftbar clean'}>
@@ -352,9 +531,20 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               </div>
               {s.contract && <ContractPanel c={s.contract} onOpenWorld={onOpenWorld} />}
               {diffed
-                ? <DiffBody d={diffed} />
-                : <div className="mdbody prose" onClick={bodyClick}
-                  dangerouslySetInnerHTML={{ __html: mdToHtml(s.body) }} />}
+                ? <DiffBody d={diffed} paraKey={paraKeyFor(s)} />
+                : <div className="mdbody prose" onClick={bodyClick} onMouseUp={() => captureSelection(s)}>
+                  {paragraphsOf(s.body).map((p, pi) => {
+                    const anchored = notes.some(n =>
+                      n.anchor.scene === s.scene && n.resolution.paragraph === pi &&
+                      n.status !== 'resolved' && n.status !== 'dropped')
+                    const isFocus = focused === `${s.scene}:${pi}`
+                    return (
+                      <p key={pi} data-para={`${s.scene}:${pi}`}
+                        className={`${anchored ? 'has-note' : ''}${isFocus ? ' note-focus' : ''}`}
+                        dangerouslySetInnerHTML={{ __html: mdToHtml(p).replace(/^<p>|<\/p>$/g, '') }} />
+                    )
+                  })}
+                </div>}
             </section>
           )
         })}
@@ -380,6 +570,31 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           </>
         )}
       </article>
+
+      <NotesRail
+        notes={chapterNotes} tops={tops} cardRef={setCard}
+        busy={noteBusy} onStatus={noteStatus}
+        onFocus={(scene, para) => setFocused(para === null ? null : `${scene}:${para}`)}
+        composer={sel && (
+          <div className="note-composer">
+            <blockquote className="note-quote">{sel.quote}</blockquote>
+            <textarea autoFocus value={noteText} rows={4}
+              placeholder="What did you notice? Write it as you would say it — arc works out the scope."
+              onChange={ev => setNoteText(ev.target.value)}
+              onKeyDown={ev => {
+                if (ev.key === 'Escape') setSel(null)
+                if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) void saveNote()
+              }} />
+            <div className="note-acts">
+              <button disabled={noteBusy || !noteText.trim()} onClick={saveNote}>
+                {noteBusy ? 'saving…' : 'Leave note'}
+              </button>
+              <button disabled={noteBusy} onClick={() => setSel(null)}>cancel</button>
+            </div>
+          </div>
+        )} />
+      </div>
+      </div>
     </div>
   )
 }
