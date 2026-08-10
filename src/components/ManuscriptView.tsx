@@ -6,7 +6,9 @@ import { acceptDraft, analyzeDraft, createNote, discardDraft, draftScene, update
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
-import { CopyRef } from './CopyRef'
+import { formatReadingTime, formatWords, totalWords, wordsByChapter } from '../wordcount'
+import { CopyProse, CopyRef } from './CopyRef'
+import { chapterText, copyableScenes, sceneText } from '../manuscript-text'
 
 /** The scene's stated intent (conventions §10), collapsed by default —
  *  the contract the prose must satisfy, not an outline of what happens. */
@@ -246,6 +248,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     [notes, curScenes],
   )
 
+  // Length in words — prose only, drafts included, because what stands in the
+  // working tree is what a reader would read. Chapters with no scenes are
+  // absent from the map rather than zero (wordcount.ts).
+  const wordsBy = useMemo(() => wordsByChapter(scenes), [scenes])
+  const bookWords = useMemo(() => totalWords(scenes), [scenes])
+
   // Measure after paint: where each annotated paragraph sits, then stack the
   // cards so none overlaps its neighbour. Cards keep their own height, so one
   // extra pass settles it.
@@ -277,9 +285,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
   // Kindle-style estimate over the chapter's drafted prose: ~250 words to a
   // page, ~230 words a minute; hidden while a chapter is outline-only.
-  const words = curScenes.reduce((acc, s) => acc + (s.body.trim() ? s.body.trim().split(/\s+/).length : 0), 0)
+  const words = wordsBy.get(cur.id) ?? 0
   const pages = Math.max(1, Math.round(words / 250))
-  const mins = Math.max(1, Math.round(words / 230))
 
   const bodyClick = wikilinkClickHandler(onOpenWorld)
 
@@ -393,12 +400,25 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     <div className="ms-layout">
       <nav className="side-nav">
         <h3>Chapters</h3>
-        {chapters.map((c, i) => (
+        {chapters.map((c, i) => {
+          const w = wordsBy.get(c.id) ?? 0
+          return (
           <button key={c.id} className={i === chapterIx ? 'navitem sel' : 'navitem'} onClick={() => gotoChapter(i)}>
             <span className="chn">{c.order === 0 ? 'P' : c.order}</span> {c.title}
-            <span className="chmeta">{scenesOf(c.id) ? `${scenesOf(c.id)} scene${scenesOf(c.id) === 1 ? '' : 's'}` : 'outline'}</span>
+            <span className="chmeta">{scenesOf(c.id) ? `${scenesOf(c.id)} scene${scenesOf(c.id) === 1 ? '' : 's'}` : 'outline'}
+              {w > 0 && <>
+                <span className="chwords">{formatWords(w)} words</span>
+                <span className="chwords">{formatReadingTime(w)}</span>
+              </>}
+            </span>
           </button>
-        ))}
+        )})}
+        {bookWords > 0 && (
+          <p className="nav-total">
+            <span>{formatWords(bookWords)} words drafted</span>
+            <span>{formatReadingTime(bookWords)} to read</span>
+          </p>
+        )}
       </nav>
 
       <div className="ms-scroll">
@@ -497,9 +517,15 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         )}
 
         <header className="ms-head">
-          <h1>{cur.order === 0 ? 'Prologue' : `Chapter ${cur.order}`} — {cur.title}</h1>
+          <h1>{cur.order === 0 ? 'Prologue' : `Chapter ${cur.order}`} — {cur.title}
+            <CopyProse get={() => chapterText(copyableScenes(curScenes, draft.changes))} label="copy chapter"
+              disabled={!curScenes.length}
+              title={curScenes.length
+                ? `Copy the prose of all ${curScenes.length} scene${curScenes.length === 1 ? '' : 's'} in this chapter`
+                : 'Nothing drafted in this chapter yet'} />
+          </h1>
           <p className="ms-meta">{spanText}{cur.part ? ` · ${cur.part}` : ''}
-            {words > 0 && ` · ~${pages} page${pages === 1 ? '' : 's'} · ${mins} min read`}
+            {words > 0 && ` · ${formatWords(words)} words · ~${pages} page${pages === 1 ? '' : 's'} · ${formatReadingTime(words)} read`}
             {' · '}<span className={`stpill ${cur.status}`}>{cur.status}</span>
             {curScenes.length > 0 && (
               <>{' · '}<a className="linklike" onClick={() => setShowGen(o => !o)}>
@@ -520,6 +546,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               <div className="scene-head">
                 <code>{s.scene}</code>
                 <CopyRef text={s.scene} />
+                <CopyProse get={() => sceneText(s)} label="copy text"
+                  title="Copy this scene's prose" disabled={!s.body.trim()} />
                 <span className={`stpill ${s.status}`}>{s.status}</span>
                 {change && <span className={`stpill ${change.status}`}>draft · {change.status}</span>}
                 {s.pov && <a className="linklike" onClick={() => onOpenWorld(s.pov!)}>POV {s.pov}</a>}
