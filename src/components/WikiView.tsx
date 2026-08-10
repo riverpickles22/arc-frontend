@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import type { Canon, DocArticle } from '../canon'
+import type { Canon, DocArticle, ProseScene } from '../canon'
 import { dateOf } from '../canon'
 import { mdToHtml, slugOf } from '../md'
 import { landingMd } from '../wiki-landing'
@@ -20,9 +20,11 @@ const DOC_TITLE: Record<string, string> = {
  *  (lead, infobox, plot by part, core characters, places, themes), entity
  *  articles with infobox + relationships, per-article TOC, search, and
  *  See also from backlinks. */
-export function WikiView({ canon, articles, onOpenWorld, sel, onSel }: {
+export function WikiView({ canon, articles, scenes, onOpenWorld, sel, onSel }: {
   canon: Canon
   articles: DocArticle[]
+  /** bound scenes — themes say where they appear on the page (§15) */
+  scenes: ProseScene[]
   onOpenWorld: (id: string) => void
   /** The open article's path; null = the story landing page. Lifted so the
    *  URL route can carry it and the position survives page switches. */
@@ -61,8 +63,8 @@ export function WikiView({ canon, articles, onOpenWorld, sel, onSel }: {
   }, [canon])
 
   const md = useMemo(
-    () => (home ? landingMd(canon, articles, byCanon) : article?.body ?? ''),
-    [home, canon, articles, byCanon, article],
+    () => (home ? landingMd(canon, articles, byCanon, scenes.map(s => ({ scene: s.scene, motifs: s.contract?.motifs }))) : article?.body ?? ''),
+    [home, canon, articles, byCanon, article, scenes],
   )
 
   // TOC from the article's own headings; shown when there is enough structure.

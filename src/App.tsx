@@ -226,7 +226,7 @@ function Shell({ canon, data, dark, onToggleDark }: {
         <StyleView style={data.style} tab={styleTab} onTab={setStyleTab} />
       )}
       {page === 'wiki' && (
-        <WikiView canon={canon} articles={data.docs} onOpenWorld={openWorld}
+        <WikiView canon={canon} articles={data.docs} scenes={data.prose} onOpenWorld={openWorld}
           sel={wikiPath} onSel={setWikiPath} />
       )}
 

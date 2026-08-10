@@ -79,3 +79,29 @@ test('landingMd prefers the article first paragraph as the excerpt', () => {
   const md = landingMd(canon, [a], new Map([['char.a', a]]))
   expect(md).toContain('**[[char.a|Ana]]** — The article paragraph.')
 })
+
+test('themes render from canon, saying what carries them and where they land', () => {
+  const canon = {
+    story: { title: 'T', logline: '', themes: ['a flat string nobody structured'], protagonists: [], status: 'x', slug: 't' },
+    chapters: [], entities: {}, events: {}, relationships: [], timeline: { eras: [] },
+    themes: [
+      { id: 'theme.hollowing', name: 'The hollowing', carriers: ['place.tree'], motifs: ['the hollowing'] },
+      { id: 'theme.carried', name: 'Carried but unwritten', carriers: ['char.x'] },
+      { id: 'theme.wish', name: 'A wish', carriers: [] },
+    ],
+  } as unknown as Canon
+  const md = landingMd(canon, [], new Map(), [{ scene: 'sc.00-1', motifs: ['The Hollowing'] }])
+  expect(md).toContain('**The hollowing** — [[place.tree]] · on the page in sc.00-1')
+  expect(md).toContain('**Carried but unwritten** — [[char.x]] · not yet on the page')
+  expect(md).toContain('**A wish** — *nothing carries this yet*')
+  expect(md).not.toContain('a flat string nobody structured')   // canon supersedes story.yaml
+})
+
+test('a story with no themes.yaml still falls back to the vision table', () => {
+  const canon = {
+    story: { title: 'T', logline: '', themes: [], protagonists: [], status: 'x', slug: 't' },
+    chapters: [], entities: {}, events: {}, relationships: [], timeline: { eras: [] },
+  } as unknown as Canon
+  const vision = { path: 'docs/vision.md', canon: null, body: '## Themes\n\n| Theme | Canon carriers |\n|---|---|\n| Old way | [[char.y]] |\n' }
+  expect(landingMd(canon, [vision], new Map())).toContain('**Old way** — [[char.y]]')
+})

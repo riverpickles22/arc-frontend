@@ -15,6 +15,27 @@ export function firstParagraph(body: string): string | undefined {
 
 /** The themes table from a hand-written vision doc, when the story has one.
  *  Hand-written docs win over anything we could synthesize. */
+/** Themes as canon records them (conventions §15): the name, what carries
+ *  it, and — when scene bindings are to hand — where it appears on the page.
+ *  Supersedes the vision.md scrape below, which stays as the fallback for a
+ *  story that has not given its themes identity yet. */
+export function themesFromCanon(
+  canon: Canon,
+  scenes: { scene: string; motifs?: string[] }[] = [],
+): { theme: string; carriers: string; scenes: string[]; uncarried: boolean }[] {
+  const norm = (s: string) => s.trim().toLowerCase()
+  return (canon.themes ?? []).map(th => {
+    const words = new Set([...(th.motifs ?? []), th.name].filter(Boolean).map(x => norm(x as string)))
+    const hits = scenes.filter(sc => (sc.motifs ?? []).some(m => words.has(norm(m)))).map(sc => sc.scene)
+    return {
+      theme: th.name ?? th.id,
+      carriers: (th.carriers ?? []).map(c => `[[${c}]]`).join(', '),
+      scenes: [...new Set(hits)].sort(),
+      uncarried: !(th.carriers ?? []).length,
+    }
+  })
+}
+
 export function themesFrom(articles: DocArticle[]): { theme: string; carriers: string }[] {
   const vision = articles.find(a => /(^|\/)vision\.md$/.test(a.path))
   // No /m flag: $ must mean end-of-document, not end-of-line, or the lazy
@@ -45,7 +66,10 @@ export function partsOf(chapters: Chapter[]): { label: string; chapters: Chapter
 
 /** The landing article, as markdown. Every fact comes from canon or the
  *  docs; nothing here is authored twice. */
-export function landingMd(canon: Canon, articles: DocArticle[], byCanon: Map<string, DocArticle>): string {
+export function landingMd(
+  canon: Canon, articles: DocArticle[], byCanon: Map<string, DocArticle>,
+  scenes: { scene: string; motifs?: string[] }[] = [],
+): string {
   const s = canon.story
   const chapters = [...canon.chapters].sort((a, b) => a.order - b.order)
   const md: string[] = [`# ${s.title}`, '']
@@ -90,10 +114,20 @@ export function landingMd(canon: Canon, articles: DocArticle[], byCanon: Map<str
     for (const e of places) md.push(`**[[${e.id}|${e.name}]]** — ${excerptOf(e)}`, '')
   }
 
-  const themes = themesFrom(articles)
   md.push('## Themes & metaphors', '')
-  if (themes.length) for (const t of themes) md.push(`- **${t.theme}** — ${t.carriers}`)
-  else for (const t of s.themes ?? []) md.push(`- ${t}`)
+  const canonThemes = themesFromCanon(canon, scenes)
+  if (canonThemes.length) {
+    for (const t of canonThemes) {
+      const where = t.uncarried
+        ? '*nothing carries this yet*'
+        : `${t.carriers}${t.scenes.length ? ` · on the page in ${t.scenes.join(', ')}` : ' · not yet on the page'}`
+      md.push(`- **${t.theme}** — ${where}`)
+    }
+  } else {
+    const themes = themesFrom(articles)
+    if (themes.length) for (const t of themes) md.push(`- **${t.theme}** — ${t.carriers}`)
+    else for (const t of s.themes ?? []) md.push(`- ${t}`)
+  }
 
   return md.join('\n')
 }

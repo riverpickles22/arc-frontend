@@ -103,6 +103,18 @@ export interface Era {
   notes?: string
 }
 
+/** What the book is about (conventions §15) — a collection, not an entity:
+ *  a theme sits in no place and joins no event. */
+export interface Theme {
+  id: string
+  name?: string
+  status?: string
+  summary?: string
+  carriers?: string[]
+  motifs?: string[]
+  narrative_notes?: string
+}
+
 export interface Chapter {
   id: string
   type: 'chapter'
@@ -130,6 +142,7 @@ export interface Canon {
   events: Record<string, EventDoc>
   relationships: Edge[]
   chapters: Chapter[]
+  themes?: Theme[]
 }
 
 // ---- time helpers ------------------------------------------------------
