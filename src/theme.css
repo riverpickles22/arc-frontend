@@ -474,7 +474,18 @@ svg text { font-family: inherit; }
 .note-head { display: flex; align-items: baseline; gap: 8px; font-size: 11px; color: var(--muted); }
 .note-state { color: var(--c4); text-transform: uppercase; letter-spacing: .06em; font-size: 10px; }
 .note-orphaned .note-state, .note-no-scene .note-state { color: var(--c8); }
-.note-quote { margin: 6px 0; padding-left: 9px; border-left: 2px solid var(--baseline); color: var(--text-secondary); font-size: 12.5px; font-style: italic; cursor: pointer; }
+.note-quote { margin: 6px 0; padding-left: 9px; border-left: 2px solid var(--baseline); color: var(--text-secondary); font-size: 12.5px; font-style: italic; }
+
+/* One note at a time. The active card comes forward; the rest recede but stay
+   readable — a dimmed note the author cannot scan is a note they have lost,
+   so this is opacity and contrast, never display:none. */
+.notes-rail > .note { cursor: pointer; transition: opacity .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.notes-rail > .note-active {
+  border-color: color-mix(in oklab, var(--c1) 55%, var(--border));
+  box-shadow: 0 2px 10px rgb(0 0 0 / .28);
+}
+.notes-rail > .note-dim, .notes-rail > .note-slot.note-dim { opacity: .42; }
+.notes-rail > .note-dim:hover { opacity: .78; }
 .note-why { color: var(--muted); font-size: 11.5px; margin-bottom: 4px; }
 .note-body { font-size: 13.5px; line-height: 1.5; }
 .note-acts { display: flex; gap: 8px; margin-top: 8px; }
@@ -489,5 +500,13 @@ svg text { font-family: inherit; }
   background: var(--page); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px;
 }
 /* a passage that already carries a note — visible, never loud */
-.mdbody.prose p.has-note { border-left: 2px solid var(--c1); padding-left: 10px; margin-left: -12px; }
-.mdbody.prose p.note-focus { background: color-mix(in oklab, var(--c1) 12%, transparent); }
+.mdbody.prose p.has-note { border-left: 2px solid var(--c1); padding-left: 10px; margin-left: -12px; cursor: pointer; }
+/* Two different statements. has-note is the standing mark: a thought lives
+   here. note-focus is the answer to "which passage is THIS note about" — it
+   has to read at a glance from across the column, so it carries weight the
+   standing mark does not. */
+.mdbody.prose p.note-focus {
+  background: color-mix(in oklab, var(--c1) 16%, transparent);
+  border-left-color: var(--c1); border-left-width: 3px;
+  border-radius: 0 4px 4px 0; transition: background .15s ease;
+}

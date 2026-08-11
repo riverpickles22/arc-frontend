@@ -96,7 +96,7 @@ const STATE_LABEL: Record<string, string> = {
  *  passages that provoked them (conventions §14). A note whose passage has
  *  moved says so; a note whose passage is gone keeps its quote and waits —
  *  arc never guesses where a thought now belongs. */
-function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, tops, cardRef }: {
+function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, tops, cardRef, active }: {
   notes: ResolvedAnnotation[]
   /** The cards actually rendered, in the same order `tops` was measured for.
    *  Kept as a prop rather than recomputed here: measuring one list and
@@ -105,7 +105,9 @@ function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, top
   closed: number
   busy: boolean
   onStatus: (id: string, status: string) => void
-  onFocus: (scene: string, paragraph: number | null) => void
+  onFocus: (id: string, scene: string, paragraph: number | null) => void
+  /** The card holding attention — a note id, 'composer', or null for none. */
+  active: string | null
   /** The note being written, rendered here rather than in the manuscript —
    *  a note is composed where it will live, and the prose never scrolls.
    *  Positioned like any other card; it holds index 0 of `tops`. */
@@ -121,7 +123,8 @@ function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, top
         <span className="chmeta">{open.length} open{closed ? ` · ${closed} closed` : ''}</span>
       )}</h3>
       {composer && (
-        <div className="note-slot" ref={el => cardRef(0, el)} style={{ top: tops[0] ?? 0 }}>
+        <div className={`note-slot${active && active !== 'composer' ? ' note-dim' : ''}`}
+          ref={el => cardRef(0, el)} style={{ top: tops[0] ?? 0 }}>
           {composer}
         </div>
       )}
@@ -131,14 +134,16 @@ function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, top
       )}
       {open.map((n, i) => (
         <div key={n.id} ref={el => cardRef(composer ? i + 1 : i, el)}
-          className={`note note-${n.resolution.state}`}
+          onClick={() => onFocus(n.id, n.anchor.scene, n.resolution.paragraph)}
+          className={`note note-${n.resolution.state}`
+            + (active === n.id ? ' note-active' : active ? ' note-dim' : '')}
           style={{ top: tops[composer ? i + 1 : i] ?? 0 }}>
           <div className="note-head">
             <code>{n.id.replace('note.', '#')}</code>
             {STATE_LABEL[n.resolution.state] && <span className="note-state">{STATE_LABEL[n.resolution.state]}</span>}
           </div>
           {n.anchor.quote && (
-            <blockquote className="note-quote" onClick={() => onFocus(n.anchor.scene, n.resolution.paragraph)}>
+            <blockquote className="note-quote">
               {n.anchor.quote}
             </blockquote>
           )}
@@ -198,6 +203,14 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const [noteText, setNoteText] = useState('')
   const [noteBusy, setNoteBusy] = useState(false)
   const [focused, setFocused] = useState<string | null>(null)
+  /** Which card has the author's attention: a note id, 'composer', or none.
+   *  Everything else recedes — the Google Docs convention every author
+   *  already knows. Recede, never hide: a dimmed card stays readable enough
+   *  to scan for the one you actually wanted. */
+  const [active, setActive] = useState<string | null>(null)
+  /** Step back out: the card and its passage lose attention together, so the
+   *  prose is never left with a highlight pointing at nothing. */
+  const clearAttention = useCallback(() => { setActive(null); setFocused(null) }, [])
 
   // Notes sit level with the paragraph that provoked them. Both columns
   // scroll as one region, so a card's y is measured against that region and
@@ -290,6 +303,15 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     return () => ro.disconnect()
   }, [openNotes, sel, showChanges, diffs])
 
+  // Escape steps back out of whatever holds attention, without discarding a
+  // half-written note unless the composer is what is focused.
+  useLayoutEffect(() => {
+    if (!active) return
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') clearAttention() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active, clearAttention])
+
   // Focus the composer only after the pass above has placed it, and never by
   // scrolling: autoFocus fires during commit, before the card has a top, so
   // the browser would scroll the whole region up to reveal it at y=0 — which
@@ -341,21 +363,48 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     finally { setAnBusy(false) }
   }
   /** Capture the selection as an anchor: which scene, which paragraph, and
-   *  the exact words. The paragraph index is derived by matching the text,
-   *  not by counting DOM nodes — the resolver splits the same way. */
+   *  the exact words.
+   *
+   *  The paragraph comes from where the selection STARTS in the DOM, not from
+   *  matching the quote against a paragraph's text. Text matching cannot place
+   *  a selection that spans more than one paragraph — no single paragraph
+   *  contains it — and the old fallback sent every such note to index 0, the
+   *  top of the scene. Selecting three paragraphs is ordinary; landing the
+   *  note far from them is not.
+   *
+   *  Text matching survives as the fallback for a diffed body, where a
+   *  paragraph the draft deleted carries no key of its own. */
   const captureSelection = (scene: ProseScene) => {
     const s = window.getSelection()
     const quote = s?.toString().trim() ?? ''
-    if (!quote) return
-    const paras = paragraphsOf(scene.body)
-    const ix = paras.findIndex(p => p.replace(/\s+/g, ' ').includes(quote.replace(/\s+/g, ' ')))
-    setSel({ scene: scene.scene, paragraph: ix > -1 ? ix : 0, quote })
+    if (!quote || !s || s.rangeCount === 0) return
+
+    // startContainer, not anchorNode: it is the earlier point in document
+    // order however the author dragged.
+    const start = s.getRangeAt(0).startContainer
+    const el = start.nodeType === Node.ELEMENT_NODE ? (start as Element) : start.parentElement
+    const key = el?.closest('[data-para]')?.getAttribute('data-para')
+    const fromDom = key?.startsWith(`${scene.scene}:`)
+      ? Number(key.slice(scene.scene.length + 1))
+      : NaN
+
+    let paragraph = fromDom
+    if (!Number.isInteger(paragraph)) {
+      const paras = paragraphsOf(scene.body)
+      const flat = quote.replace(/\s+/g, ' ')
+      const ix = paras.findIndex(x => x.replace(/\s+/g, ' ').includes(flat))
+      // A quote that matches nothing and has no key is anchored to the first
+      // paragraph the selection touches only as a last resort.
+      paragraph = ix > -1 ? ix : 0
+    }
+    setSel({ scene: scene.scene, paragraph, quote })
     setNoteText('')
+    setActive('composer')
   }
   const saveNote = async () => {
     if (!sel || !noteText.trim()) return
     setNoteBusy(true)
-    try { await createNote({ ...sel, body: noteText }); setSel(null); setNoteText(''); onRefreshNotes() }
+    try { await createNote({ ...sel, body: noteText }); setSel(null); setActive(null); setNoteText(''); onRefreshNotes() }
     catch (e) { setErr((e as Error).message ?? String(e)) }
     finally { setNoteBusy(false) }
   }
@@ -443,7 +492,16 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       </nav>
 
       <div className="ms-scroll">
-      <div className="ms-cols" ref={colsRef}>
+      <div className="ms-cols" ref={colsRef}
+        onClickCapture={ev => {
+          // Clicking away steps back out. An annotated paragraph and the rail
+          // set their own attention; anything else in the columns clears it,
+          // so the author never has to hunt for the way out.
+          if (!active) return
+          const t = ev.target as HTMLElement
+          if (t.closest('.notes-rail') || t.closest('p.has-note')) return
+          clearAttention()
+        }}>
       <article className="ms-main">
         {draft.git && (
           <div className={n ? 'draftbar' : 'draftbar clean'}>
@@ -587,8 +645,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                       n.anchor.scene === s.scene && n.resolution.paragraph === pi &&
                       n.status !== 'resolved' && n.status !== 'dropped')
                     const isFocus = focused === `${s.scene}:${pi}`
+                    const noteHere = notes.find(n =>
+                      n.anchor.scene === s.scene && n.resolution.paragraph === pi &&
+                      n.status !== 'resolved' && n.status !== 'dropped')
                     return (
                       <p key={pi} data-para={`${s.scene}:${pi}`}
+                        onClick={noteHere ? () => { setActive(noteHere.id); setFocused(`${s.scene}:${pi}`) } : undefined}
                         className={`${anchored ? 'has-note' : ''}${isFocus ? ' note-focus' : ''}`}
                         dangerouslySetInnerHTML={{ __html: mdToHtml(p).replace(/^<p>|<\/p>$/g, '') }} />
                     )
@@ -622,9 +684,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
       <NotesRail
         notes={chapterNotes} open={openNotes} closed={chapterNotes.length - openNotes.length}
-        tops={tops} cardRef={setCard}
+        tops={tops} cardRef={setCard} active={active}
         busy={noteBusy} onStatus={noteStatus}
-        onFocus={(scene, para) => setFocused(para === null ? null : `${scene}:${para}`)}
+        onFocus={(id, scene, para) => {
+          setActive(id)
+          setFocused(para === null ? null : `${scene}:${para}`)
+        }}
         composer={sel && (
           <div className="note-composer">
             <blockquote className="note-quote">{sel.quote}</blockquote>
@@ -632,14 +697,14 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               placeholder="What did you notice? Write it as you would say it — arc works out the scope."
               onChange={ev => setNoteText(ev.target.value)}
               onKeyDown={ev => {
-                if (ev.key === 'Escape') setSel(null)
+                if (ev.key === 'Escape') { setSel(null); setActive(null) }
                 if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) void saveNote()
               }} />
             <div className="note-acts">
               <button disabled={noteBusy || !noteText.trim()} onClick={saveNote}>
                 {noteBusy ? 'saving…' : 'Leave note'}
               </button>
-              <button disabled={noteBusy} onClick={() => setSel(null)}>cancel</button>
+              <button disabled={noteBusy} onClick={() => { setSel(null); setActive(null) }}>cancel</button>
             </div>
           </div>
         )} />
