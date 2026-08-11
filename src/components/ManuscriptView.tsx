@@ -9,6 +9,7 @@ import { diffProse, diffStats, type ParaDiff } from '../diff'
 import { formatReadingTime, formatWords, totalWords, wordsByChapter } from '../wordcount'
 import { CopyProse, CopyRef } from './CopyRef'
 import { chapterText, copyableScenes, sceneText } from '../manuscript-text'
+import { stack } from '../note-stack'
 
 /** The scene's stated intent (conventions §10), collapsed by default —
  *  the contract the prose must satisfy, not an outline of what happens. */
@@ -95,45 +96,43 @@ const STATE_LABEL: Record<string, string> = {
  *  passages that provoked them (conventions §14). A note whose passage has
  *  moved says so; a note whose passage is gone keeps its quote and waits —
  *  arc never guesses where a thought now belongs. */
-/** Stack cards at their desired tops without overlapping: each is pushed to
- *  its paragraph's line, or just below whatever precedes it. */
-function stack(desired: number[], heights: number[], gap = 10): number[] {
-  let floor = 34   // clears the rail's heading
-  return desired.map((d, i) => {
-    const top = Math.max(d, floor)
-    floor = top + (heights[i] || 0) + gap
-    return top
-  })
-}
-
-function NotesRail({ notes, busy, onStatus, onFocus, composer, tops, cardRef }: {
+function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, tops, cardRef }: {
   notes: ResolvedAnnotation[]
+  /** The cards actually rendered, in the same order `tops` was measured for.
+   *  Kept as a prop rather than recomputed here: measuring one list and
+   *  rendering another is what slid every card off its paragraph. */
+  open: ResolvedAnnotation[]
+  closed: number
   busy: boolean
   onStatus: (id: string, status: string) => void
   onFocus: (scene: string, paragraph: number | null) => void
   /** The note being written, rendered here rather than in the manuscript —
-   *  a note is composed where it will live, and the prose never scrolls. */
+   *  a note is composed where it will live, and the prose never scrolls.
+   *  Positioned like any other card; it holds index 0 of `tops`. */
   composer: ReactNode
-  /** Final y for each card, aligned to the paragraph it annotates. */
+  /** Final y for each card, aligned to the paragraph it annotates. The
+   *  composer, when present, is first. */
   tops: number[]
   cardRef: (i: number, el: HTMLDivElement | null) => void
 }) {
-  const open = notes.filter(n => n.status !== 'resolved' && n.status !== 'dropped')
-  const closed = notes.length - open.length
   return (
     <div className="notes-rail">
       <h3>Notes{notes.length > 0 && (
         <span className="chmeta">{open.length} open{closed ? ` · ${closed} closed` : ''}</span>
       )}</h3>
-      {composer}
+      {composer && (
+        <div className="note-slot" ref={el => cardRef(0, el)} style={{ top: tops[0] ?? 0 }}>
+          {composer}
+        </div>
+      )}
       {!notes.length && !composer && (
         <p className="fsummary">Select any passage to leave one. Notes stay anchored to the
           text that provoked them — and say so when the manuscript moves underneath.</p>
       )}
       {open.map((n, i) => (
-        <div key={n.id} ref={el => cardRef(i, el)}
+        <div key={n.id} ref={el => cardRef(composer ? i + 1 : i, el)}
           className={`note note-${n.resolution.state}`}
-          style={{ top: tops[i] ?? 0 }}>
+          style={{ top: tops[composer ? i + 1 : i] ?? 0 }}>
           <div className="note-head">
             <code>{n.id.replace('note.', '#')}</code>
             {STATE_LABEL[n.resolution.state] && <span className="note-state">{STATE_LABEL[n.resolution.state]}</span>}
@@ -205,6 +204,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // never needs re-measuring on scroll — only when the layout itself moves.
   const colsRef = useRef<HTMLDivElement>(null)
   const cardsRef = useRef<(HTMLDivElement | null)[]>([])
+  const composerRef = useRef<HTMLTextAreaElement>(null)
   const [tops, setTops] = useState<number[]>([])
   const setCard = useCallback((i: number, el: HTMLDivElement | null) => { cardsRef.current[i] = el }, [])
 
@@ -254,6 +254,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const wordsBy = useMemo(() => wordsByChapter(scenes), [scenes])
   const bookWords = useMemo(() => totalWords(scenes), [scenes])
 
+  // The rail renders open notes only; the measurement pass must walk the same
+  // list or the tops slide off their paragraphs the moment one is closed.
+  const openNotes = useMemo(
+    () => chapterNotes.filter(n => n.status !== 'resolved' && n.status !== 'dropped'),
+    [chapterNotes],
+  )
+
   // Measure after paint: where each annotated paragraph sits, then stack the
   // cards so none overlaps its neighbour. Cards keep their own height, so one
   // extra pass settles it.
@@ -262,12 +269,18 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     if (!box) return
     const measure = () => {
       const base = box.getBoundingClientRect().top
-      const desired = chapterNotes.map(x => {
-        const key = `${x.anchor.scene}:${x.resolution.paragraph}`
-        const el = x.resolution.paragraph === null ? null : box.querySelector<HTMLElement>(`[data-para="${key}"]`)
+      const lineOf = (key: string | null) => {
+        const el = key === null ? null : box.querySelector<HTMLElement>(`[data-para="${key}"]`)
         return el ? el.getBoundingClientRect().top - base : 0
-      })
-      const heights = chapterNotes.map((_, i) => cardsRef.current[i]?.offsetHeight ?? 0)
+      }
+      // Exactly the cards the rail renders, in render order: the composer
+      // first when open, then the notes it shows.
+      const keys = [
+        ...(sel ? [`${sel.scene}:${sel.paragraph}`] : []),
+        ...openNotes.map(x => (x.resolution.paragraph === null ? null : `${x.anchor.scene}:${x.resolution.paragraph}`)),
+      ]
+      const desired = keys.map(lineOf)
+      const heights = keys.map((_, i) => cardsRef.current[i]?.offsetHeight ?? 0)
       const next = stack(desired, heights)
       setTops(prev => (prev.length === next.length && prev.every((v, i) => Math.abs(v - next[i]) < 1) ? prev : next))
     }
@@ -275,7 +288,15 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     const ro = new ResizeObserver(measure)
     ro.observe(box)
     return () => ro.disconnect()
-  }, [chapterNotes, showChanges, diffs])
+  }, [openNotes, sel, showChanges, diffs])
+
+  // Focus the composer only after the pass above has placed it, and never by
+  // scrolling: autoFocus fires during commit, before the card has a top, so
+  // the browser would scroll the whole region up to reveal it at y=0 — which
+  // is exactly the jump to the top of the chapter this rail exists to avoid.
+  useLayoutEffect(() => {
+    if (sel) composerRef.current?.focus({ preventScroll: true })
+  }, [sel])
 
   if (!chapters.length || !cur) return <div className="empty">No chapters in canon yet.</div>
   const curDeleted = draft.changes.filter(c => c.status === 'deleted' && c.main?.chapter === cur.id)
@@ -600,13 +621,14 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       </article>
 
       <NotesRail
-        notes={chapterNotes} tops={tops} cardRef={setCard}
+        notes={chapterNotes} open={openNotes} closed={chapterNotes.length - openNotes.length}
+        tops={tops} cardRef={setCard}
         busy={noteBusy} onStatus={noteStatus}
         onFocus={(scene, para) => setFocused(para === null ? null : `${scene}:${para}`)}
         composer={sel && (
           <div className="note-composer">
             <blockquote className="note-quote">{sel.quote}</blockquote>
-            <textarea autoFocus value={noteText} rows={4}
+            <textarea ref={composerRef} value={noteText} rows={4}
               placeholder="What did you notice? Write it as you would say it — arc works out the scope."
               onChange={ev => setNoteText(ev.target.value)}
               onKeyDown={ev => {

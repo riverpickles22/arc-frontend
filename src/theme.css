@@ -462,7 +462,10 @@ svg text { font-family: inherit; }
 /* The rail is a positioning context: cards are placed at their paragraph's
    line rather than flowing, so the column has no scroll of its own. */
 .notes-rail { position: relative; padding: 24px 20px 60px; border-left: 1px solid var(--border); min-width: 0; }
-.notes-rail > .note { position: absolute; left: 20px; right: 20px; transition: top .15s ease; }
+.notes-rail > .note, .notes-rail > .note-slot { position: absolute; left: 20px; right: 20px; transition: top .15s ease; }
+/* The composer is a card like any other: it opens level with the passage
+   that provoked it, so the author's eye never leaves the sentence. */
+.notes-rail > .note-slot { transition: none; }
 .notes-rail h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
 .notes-rail h3 .chmeta { text-transform: none; letter-spacing: 0; margin-left: 6px; }
 .note { border: 1px solid var(--border); border-left: 3px solid var(--c1); border-radius: 8px; padding: 10px 12px; box-sizing: border-box; }
