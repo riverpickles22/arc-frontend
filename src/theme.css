@@ -504,6 +504,34 @@ svg text { font-family: inherit; }
 .note-body { font-size: 13.5px; line-height: 1.5; }
 /* Revising in place: the card becomes the editor, at the size the composer
    uses, so the thought is edited where it lives rather than in a dialog. */
+/* Accept one change where you see it. Held quiet until the paragraph is
+   hovered — a column of buttons down the page would read as chrome, and the
+   author is here to read the prose, not the affordances. */
+.mdbody.prose p.para-changed { position: relative; }
+.para-accept {
+  font: inherit; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-secondary); background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: 5px; padding: 1px 7px;
+  margin-left: 8px; cursor: pointer; vertical-align: middle;
+  opacity: 0; transition: opacity .12s ease;
+}
+p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
+.para-accept:hover { color: var(--text-primary); border-color: color-mix(in oklab, var(--c1) 50%, var(--border)); }
+
+/* Writing in the manuscript. A textarea over the raw markdown, set in the
+   reading face at the reading measure, so the page does not lurch when the
+   author switches between reading and writing. Cut, paste and undo come from
+   the platform — the prose is too important to hand to a reimplementation. */
+.scene-edit textarea {
+  width: 100%; box-sizing: border-box; min-height: 40vh;
+  font-family: var(--serif, Georgia, serif); font-size: 16px; line-height: 1.62;
+  color: var(--text-primary); background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px;
+  resize: vertical; tab-size: 2;
+}
+.scene-edit textarea:focus { outline: none; border-color: color-mix(in oklab, var(--c1) 50%, var(--border)); }
+.scene-edit .note-acts { align-items: center; }
+
 .note-edit {
   width: 100%; box-sizing: border-box; margin: 6px 0 0;
   font: inherit; font-size: 13.5px; line-height: 1.5;

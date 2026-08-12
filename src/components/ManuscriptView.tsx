@@ -2,7 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { AnalyzeResponse, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, SceneContract } from '../canon'
 import { dateOf } from '../canon'
-import { acceptDraft, analyzeDraft, createNote, discardDraft, draftScene, updateNote } from '../api'
+import { acceptDraft, acceptParagraph, analyzeDraft, createNote, discardDraft, draftScene, updateNote, writeScene } from '../api'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
@@ -53,7 +53,14 @@ function ContractPanel({ c, onOpenWorld }: { c: SceneContract; onOpenWorld: (id:
  *  its line whether or not the author is looking at changes. Indices come
  *  from the scene's own paragraphs, matched by text, because a diff's
  *  sequence includes deletions the body no longer has. */
-function DiffBody({ d, paraKey }: { d: ParaDiff[]; paraKey?: (text: string) => string | undefined }) {
+function DiffBody({ d, paraKey, onAccept, busy }: {
+  d: ParaDiff[]
+  paraKey?: (text: string) => string | undefined
+  /** Accept just this paragraph. The whole-draft button at the top takes
+   *  every change as one judgment; a chapter with four edits is four. */
+  onAccept?: (paragraphIndex: number) => void
+  busy?: boolean
+}) {
   const keyOf = (p: ParaDiff): string | undefined => {
     if (!paraKey) return undefined
     const text = p.kind === 'changed'
@@ -78,17 +85,29 @@ function DiffBody({ d, paraKey }: { d: ParaDiff[]; paraKey?: (text: string) => s
   return (
     <div className="mdbody prose" onCopy={onCopy}>
       {d.map((p, i) => {
+        const takeIt = (kp?: string) => {
+          const ix = kp ? Number(kp.slice(kp.lastIndexOf(':') + 1)) : NaN
+          return onAccept && Number.isInteger(ix)
+            ? <button className="para-accept" disabled={busy} title="Accept this change into the book"
+                onClick={() => onAccept(ix)}>accept</button>
+            : null
+        }
         if (p.kind === 'changed') {
+          const kp = keyOf(p)
           return (
-            <p key={i} data-para={keyOf(p)}>
+            <p key={i} data-para={kp} className="para-changed">
               {p.pieces!.map((pc, k) =>
                 pc.kind === 'same' ? <span key={k}>{pc.text} </span>
                   : pc.kind === 'ins' ? <ins key={k}>{pc.text} </ins>
                     : <del key={k}>{pc.text} </del>)}
+              {takeIt(kp)}
             </p>
           )
         }
-        if (p.kind === 'ins') return <p key={i} data-para={keyOf(p)}><ins>{p.text}</ins></p>
+        if (p.kind === 'ins') {
+          const kp = keyOf(p)
+          return <p key={i} data-para={kp} className="para-changed"><ins>{p.text}</ins>{takeIt(kp)}</p>
+        }
         if (p.kind === 'del') return <p key={i}><del>{p.text}</del></p>
         return <p key={i} data-para={keyOf(p)}>{p.text}</p>
       })}
@@ -259,6 +278,29 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  prose is never left with a highlight pointing at nothing. */
   const clearAttention = useCallback(() => { setActive(null); setFocused(null) }, [])
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
+
+  /** The scene being written in, its working text, and the body the edit
+   *  started from — the baseline is what lets the server tell an edit apart
+   *  from a clobber when the author also has the file open elsewhere.
+   *
+   *  Editing is a MODE. Selecting prose already opens the note composer and
+   *  clicking an annotated paragraph already focuses its note; prose editable
+   *  at rest would be a third meaning for those gestures and would break both.
+   *  Inside the mode a click puts the cursor anywhere, which is the part that
+   *  matters. */
+  const [writingIn, setWritingIn] = useState<{ file: string; text: string; baseline: string } | null>(null)
+  const [writeBusy, setWriteBusy] = useState(false)
+
+  const saveScene = async () => {
+    if (!writingIn) return
+    setWriteBusy(true)
+    try {
+      await writeScene(writingIn.file, writingIn.text, writingIn.baseline)
+      setWritingIn(null)
+      onRefresh()          // the draft layer picks it up as an ordinary change
+    } catch (e) { setErr((e as Error).message ?? String(e)) }
+    finally { setWriteBusy(false) }
+  }
 
   const saveEdit = async (text: string) => {
     if (!editing || !text.trim()) return
@@ -710,6 +752,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 <CopyRef text={s.scene} />
                 <CopyProse get={() => sceneText(s)} label="copy text"
                   title="Copy this scene's prose" disabled={!s.body.trim()} />
+                {view !== 'before' && (
+                  writingIn?.file === s.file
+                    ? <a className="linklike" onClick={() => setWritingIn(null)}>cancel edit</a>
+                    : <a className="linklike" title="Edit this scene — changes land in the draft layer"
+                        onClick={() => setWritingIn({ file: s.file, text: s.body, baseline: s.body })}>edit</a>
+                )}
                 <span className={`stpill ${s.status}`}>{s.status}</span>
                 {change && <span className={`stpill ${change.status}`}>draft · {change.status}</span>}
                 {s.pov && <a className="linklike" onClick={() => onOpenWorld(s.pov!)}>POV {s.pov}</a>}
@@ -720,7 +768,25 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 </span>
               </div>
               {s.contract && <ContractPanel c={s.contract} onOpenWorld={onOpenWorld} />}
-              {notYetInBook
+              {writingIn?.file === s.file
+                ? (
+                  <div className="scene-edit">
+                    <textarea autoFocus value={writingIn.text} spellCheck
+                      onChange={ev => setWritingIn(w => w && { ...w, text: ev.target.value })}
+                      onKeyDown={ev => {
+                        ev.stopPropagation()   // typing here is not a note
+                        if (ev.key === 'Escape') setWritingIn(null)
+                        if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) void saveScene()
+                      }} />
+                    <div className="note-acts">
+                      <button disabled={writeBusy || writingIn.text === writingIn.baseline}
+                        onClick={saveScene}>{writeBusy ? 'saving…' : 'Save to draft'}</button>
+                      <button disabled={writeBusy} onClick={() => setWritingIn(null)}>cancel</button>
+                      <span className="fsummary">Saved changes wait in the draft layer until you accept them.</span>
+                    </div>
+                  </div>
+                )
+                : notYetInBook
                 ? <p className="fsummary">This scene is not in the book yet — the draft adds it. Read it under <b>Changes</b> or <b>Proposed</b>.</p>
                 : beforeBody !== undefined
                 ? (
@@ -733,7 +799,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   </div>
                 )
                 : diffed
-                ? <DiffBody d={diffed} paraKey={paraKeyFor(s)} />
+                ? <DiffBody d={diffed} paraKey={paraKeyFor(s)} busy={busy}
+                    onAccept={ix => run(() => acceptParagraph(s.file, ix))} />
                 : <div className="mdbody prose" onClick={bodyClick} onMouseUp={() => captureSelection(s)}>
                   {paragraphsOf(s.body).map((p, pi) => {
                     const anchored = notes.some(n =>

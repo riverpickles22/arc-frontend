@@ -64,6 +64,16 @@ export const createNote = (n: { scene: string; paragraph: number; quote: string;
 export const updateNote = (id: string, patch: { status?: string; body?: string }): Promise<ResolvedAnnotation> =>
   post('/api/annotations/update', { id, ...patch })
 
+/** Accept one paragraph, leaving every other pending change alone. */
+export const acceptParagraph = (file: string, paragraph: number): Promise<{ hash: string; file: string }> =>
+  post('/api/prose/accept-paragraph', { file, paragraph })
+
+/** Write a scene's body into the working tree — the draft layer. `baseline`
+ *  is the body the edit started from; the server refuses if the file moved
+ *  underneath, which is how a clobber is told apart from an edit. */
+export const writeScene = (file: string, body: string, baseline?: string): Promise<ProseScene> =>
+  post('/api/prose/scene', { file, body, baseline })
+
 /** The style contract (conventions §10): both layers as they are on disk. */
 export const loadStyle = (signal?: AbortSignal): Promise<StyleResponse> =>
   getJson<StyleResponse>('/api/style', { signal })
