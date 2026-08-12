@@ -61,8 +61,22 @@ function DiffBody({ d, paraKey }: { d: ParaDiff[]; paraKey?: (text: string) => s
       : p.text ?? ''
     return paraKey(text)
   }
+  // A diff is two versions overlaid, so the browser's own copy takes both:
+  // selecting across an edit yields "For nine eleven days", text that exists in
+  // no version of the book. Copy the version the author is heading toward and
+  // drop what the draft removed.
+  const onCopy = (ev: React.ClipboardEvent) => {
+    const selection = window.getSelection()
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return
+    const frag = selection.getRangeAt(0).cloneContents()
+    frag.querySelectorAll('del').forEach(x => x.remove())
+    const text = (frag.textContent ?? '').replace(/[ \t]+/g, ' ').replace(/ ?\n ?/g, '\n').trim()
+    if (!text) return
+    ev.clipboardData.setData('text/plain', text)
+    ev.preventDefault()
+  }
   return (
-    <div className="mdbody prose">
+    <div className="mdbody prose" onCopy={onCopy}>
       {d.map((p, i) => {
         if (p.kind === 'changed') {
           return (
@@ -354,12 +368,32 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     return () => window.removeEventListener('keydown', onKey)
   }, [active, editing, clearAttention])
 
-  // Focus the composer only after the pass above has placed it, and never by
-  // scrolling: autoFocus fires during commit, before the card has a top, so
-  // the browser would scroll the whole region up to reveal it at y=0 — which
-  // is exactly the jump to the top of the chapter this rail exists to avoid.
+  // The composer does NOT take focus when it opens, and that is the whole
+  // point: focusing an input collapses the document selection, so the passage
+  // the author just highlighted stops being selected and Cmd+C copies an empty
+  // textarea. Copying your own manuscript is a more basic expectation than
+  // saving a keystroke.
+  //
+  // Typing claims focus instead. The first printable character moves into the
+  // textarea and is carried with it, so leaving a note is still select-and-
+  // type — the no-intermediate-prompt flow the annotation design asked for —
+  // while Cmd+C, Cmd+A and the browser's own menu keep working because the
+  // selection is still the document's.
   useLayoutEffect(() => {
-    if (sel) composerRef.current?.focus({ preventScroll: true })
+    if (!sel) return
+    const onKey = (ev: KeyboardEvent) => {
+      const el = ev.target as HTMLElement | null
+      if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.isContentEditable)) return
+      if (ev.key === 'Escape') { setSel(null); setActive(null); return }
+      // Let every shortcut through — copy, select-all, find, reload.
+      if (ev.metaKey || ev.ctrlKey || ev.altKey) return
+      if (ev.key.length !== 1) return
+      ev.preventDefault()
+      setNoteText(t => t + ev.key)
+      composerRef.current?.focus({ preventScroll: true })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [sel])
 
   if (!chapters.length || !cur) return <div className="empty">No chapters in canon yet.</div>
