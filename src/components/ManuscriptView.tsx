@@ -181,7 +181,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   onRefreshNotes: () => void
   onCanonChanged?: () => void
 }) {
-  const [showChanges, setShowChanges] = useState(true)
+  /** Which reading of the draft the author is on. A pending change is a
+   *  question — keep this, or keep what I had — and answering it means being
+   *  able to see both sides, not just the new prose with its markup toggled.
+   *  'before' is the accepted book, 'proposed' the draft as it would read. */
+  const [view, setView] = useState<'before' | 'changes' | 'proposed'>('changes')
+  const showChanges = view === 'changes'
   const [drawer, setDrawer] = useState(false)
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
@@ -301,7 +306,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     const ro = new ResizeObserver(measure)
     ro.observe(box)
     return () => ro.disconnect()
-  }, [openNotes, sel, showChanges, diffs])
+  }, [openNotes, sel, view, diffs])
 
   // Escape steps back out of whatever holds attention, without discarding a
   // half-written note unless the composer is what is focused.
@@ -509,10 +514,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               <>
                 <span className="db-sum"><b>Draft</b> — {n} scene{n === 1 ? '' : 's'} changed ·{' '}
                   <span className="ins-ct">+{totals.ins}</span> <span className="del-ct">−{totals.del}</span> words vs main</span>
-                <label className="db-toggle">
-                  <input type="checkbox" checked={showChanges} onChange={ev => setShowChanges(ev.target.checked)} />
-                  highlight changes
-                </label>
+                <div className="db-views" role="group" aria-label="Which version to read">
+                  {([['before', 'Before'], ['changes', 'Changes'], ['proposed', 'Proposed']] as const).map(([k, label]) => (
+                    <button key={k} className={view === k ? 'on' : ''}
+                      aria-pressed={view === k} onClick={() => setView(k)}>{label}</button>
+                  ))}
+                </div>
               </>
             ) : (
               <span className="db-sum">Manuscript matches main — no draft changes.</span>
@@ -620,6 +627,10 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         {curScenes.map(s => {
           const change = draft.changes.find(c => c.file === s.file)
           const diffed = change && showChanges ? diffs.get(s.file) : undefined
+          // Before reads the accepted scene. A scene the draft ADDS has no
+          // accepted version — say so rather than render an empty column.
+          const beforeBody = view === 'before' && change ? (change.main?.body ?? null) : undefined
+          const notYetInBook = view === 'before' && change?.status === 'added'
           return (
             <section key={s.scene} className="scene">
               <div className="scene-head">
@@ -637,7 +648,19 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 </span>
               </div>
               {s.contract && <ContractPanel c={s.contract} onOpenWorld={onOpenWorld} />}
-              {diffed
+              {notYetInBook
+                ? <p className="fsummary">This scene is not in the book yet — the draft adds it. Read it under <b>Changes</b> or <b>Proposed</b>.</p>
+                : beforeBody !== undefined
+                ? (
+                  // The accepted text, carrying no data-para keys: notes anchor
+                  // to the prose being annotated, and this is different prose.
+                  <div className="mdbody prose was-accepted" onClick={bodyClick}>
+                    {paragraphsOf(beforeBody ?? '').map((p, pi) => (
+                      <p key={pi} dangerouslySetInnerHTML={{ __html: mdToHtml(p).replace(/^<p>|<\/p>$/g, '') }} />
+                    ))}
+                  </div>
+                )
+                : diffed
                 ? <DiffBody d={diffed} paraKey={paraKeyFor(s)} />
                 : <div className="mdbody prose" onClick={bodyClick} onMouseUp={() => captureSelection(s)}>
                   {paragraphsOf(s.body).map((p, pi) => {
@@ -660,13 +683,22 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           )
         })}
 
-        {showChanges && curDeleted.map(c => (
+        {/* A scene the draft removes. In Before it is simply part of the book,
+            because that is what Before means; only Changes marks it as going.
+            Proposed omits it — it is meant to read as the finished book. */}
+        {view !== 'proposed' && curDeleted.map(c => (
           <section key={c.file} className="scene">
             <div className="scene-head">
               <code>{c.main!.scene}</code>
-              <span className="stpill deleted">draft · deleted</span>
+              {view === 'changes' && <span className="stpill deleted">draft · deleted</span>}
             </div>
-            <DiffBody d={diffs.get(c.file) ?? []} />
+            {view === 'before'
+              ? <div className="mdbody prose was-accepted" onClick={bodyClick}>
+                {paragraphsOf(c.main!.body).map((p, pi) => (
+                  <p key={pi} dangerouslySetInnerHTML={{ __html: mdToHtml(p).replace(/^<p>|<\/p>$/g, '') }} />
+                ))}
+              </div>
+              : <DiffBody d={diffs.get(c.file) ?? []} />}
           </section>
         ))}
 
