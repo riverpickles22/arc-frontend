@@ -96,7 +96,7 @@ const STATE_LABEL: Record<string, string> = {
  *  passages that provoked them (conventions §14). A note whose passage has
  *  moved says so; a note whose passage is gone keeps its quote and waits —
  *  arc never guesses where a thought now belongs. */
-function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, tops, cardRef, active }: {
+function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, tops, cardRef, active, editing, onEdit, onEditCancel, onEditSave }: {
   notes: ResolvedAnnotation[]
   /** The cards actually rendered, in the same order `tops` was measured for.
    *  Kept as a prop rather than recomputed here: measuring one list and
@@ -108,6 +108,13 @@ function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, top
   onFocus: (id: string, scene: string, paragraph: number | null) => void
   /** The card holding attention — a note id, 'composer', or null for none. */
   active: string | null
+  /** The note being revised, and its working text. First phrasings are rough;
+   *  a note the author cannot sharpen is one they drop and rewrite, losing
+   *  its anchor and its place in the record. */
+  editing: { id: string; text: string } | null
+  onEdit: (n: ResolvedAnnotation) => void
+  onEditCancel: () => void
+  onEditSave: (text: string) => void
   /** The note being written, rendered here rather than in the manuscript —
    *  a note is composed where it will live, and the prose never scrolls.
    *  Positioned like any other card; it holds index 0 of `tops`. */
@@ -148,11 +155,32 @@ function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, top
             </blockquote>
           )}
           {n.resolution.note && <div className="note-why">{n.resolution.note}</div>}
-          <div className="note-body">{n.body}</div>
-          <div className="note-acts">
-            <button disabled={busy} onClick={() => onStatus(n.id, 'resolved')}>resolve</button>
-            <button disabled={busy} onClick={() => onStatus(n.id, 'dropped')}>drop</button>
-          </div>
+          {editing?.id === n.id ? (
+            <>
+              <textarea className="note-edit" autoFocus rows={4} value={editing.text}
+                onChange={ev => onEdit({ ...n, body: ev.target.value })}
+                onKeyDown={ev => {
+                  if (ev.key === 'Escape') { ev.stopPropagation(); onEditCancel() }
+                  if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) onEditSave(editing.text)
+                }} />
+              <div className="note-acts">
+                <button disabled={busy || !editing.text.trim()} onClick={() => onEditSave(editing.text)}>
+                  {busy ? 'saving…' : 'Save'}
+                </button>
+                <button disabled={busy} onClick={onEditCancel}>cancel</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="note-body">{n.body}</div>
+              <div className="note-acts">
+                {/* Its own affordance: clicking the card already means focus. */}
+                <button disabled={busy} onClick={() => onEdit(n)}>edit</button>
+                <button disabled={busy} onClick={() => onStatus(n.id, 'resolved')}>resolve</button>
+                <button disabled={busy} onClick={() => onStatus(n.id, 'dropped')}>drop</button>
+              </div>
+            </>
+          )}
         </div>
       ))}
       {open.length === 0 && notes.length > 0 && <p className="fsummary">Nothing open on this chapter.</p>}
@@ -216,6 +244,15 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   /** Step back out: the card and its passage lose attention together, so the
    *  prose is never left with a highlight pointing at nothing. */
   const clearAttention = useCallback(() => { setActive(null); setFocused(null) }, [])
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
+
+  const saveEdit = async (text: string) => {
+    if (!editing || !text.trim()) return
+    setNoteBusy(true)
+    try { await updateNote(editing.id, { body: text }); setEditing(null); onRefreshNotes() }
+    catch (e) { setErr((e as Error).message ?? String(e)) }
+    finally { setNoteBusy(false) }
+  }
 
   // Notes sit level with the paragraph that provoked them. Both columns
   // scroll as one region, so a card's y is measured against that region and
@@ -312,10 +349,10 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // half-written note unless the composer is what is focused.
   useLayoutEffect(() => {
     if (!active) return
-    const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') clearAttention() }
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape' && !editing) clearAttention() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [active, clearAttention])
+  }, [active, editing, clearAttention])
 
   // Focus the composer only after the pass above has placed it, and never by
   // scrolling: autoFocus fires during commit, before the card has a top, so
@@ -415,7 +452,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   }
   const noteStatus = async (id: string, status: string) => {
     setNoteBusy(true)
-    try { await updateNote(id, status); onRefreshNotes() }
+    try { await updateNote(id, { status }); onRefreshNotes() }
     catch (e) { setErr((e as Error).message ?? String(e)) }
     finally { setNoteBusy(false) }
   }
@@ -505,6 +542,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           if (!active) return
           const t = ev.target as HTMLElement
           if (t.closest('.notes-rail') || t.closest('p.has-note')) return
+          if (editing) return   // a half-written revision is not clutter to clear
           clearAttention()
         }}>
       <article className="ms-main">
@@ -718,6 +756,10 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         notes={chapterNotes} open={openNotes} closed={chapterNotes.length - openNotes.length}
         tops={tops} cardRef={setCard} active={active}
         busy={noteBusy} onStatus={noteStatus}
+        editing={editing}
+        onEdit={n => { setEditing({ id: n.id, text: n.body }); setActive(n.id) }}
+        onEditCancel={() => setEditing(null)}
+        onEditSave={saveEdit}
         onFocus={(id, scene, para) => {
           setActive(id)
           setFocused(para === null ? null : `${scene}:${para}`)

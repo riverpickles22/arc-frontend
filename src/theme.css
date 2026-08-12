@@ -502,6 +502,15 @@ svg text { font-family: inherit; }
 .notes-rail > .note-dim:hover { opacity: .78; }
 .note-why { color: var(--muted); font-size: 11.5px; margin-bottom: 4px; }
 .note-body { font-size: 13.5px; line-height: 1.5; }
+/* Revising in place: the card becomes the editor, at the size the composer
+   uses, so the thought is edited where it lives rather than in a dialog. */
+.note-edit {
+  width: 100%; box-sizing: border-box; margin: 6px 0 0;
+  font: inherit; font-size: 13.5px; line-height: 1.5;
+  color: var(--text-primary); background: var(--page);
+  border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; resize: vertical;
+}
+.note-edit:focus { outline: none; border-color: color-mix(in oklab, var(--c1) 55%, var(--border)); }
 .note-acts { display: flex; gap: 8px; margin-top: 8px; }
 .note-acts button {
   font: inherit; font-size: 11.5px; color: var(--text-secondary); background: transparent;

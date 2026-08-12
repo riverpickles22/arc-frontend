@@ -59,8 +59,10 @@ export const loadAnnotations = (signal?: AbortSignal): Promise<ResolvedAnnotatio
 export const createNote = (n: { scene: string; paragraph: number; quote: string; body: string }): Promise<ResolvedAnnotation> =>
   post('/api/annotations', n)
 
-export const updateNote = (id: string, status: string): Promise<ResolvedAnnotation> =>
-  post('/api/annotations/update', { id, status })
+/** Change a note's status, its body, or both. The anchor is never sent —
+ *  revising a thought is not re-anchoring it. */
+export const updateNote = (id: string, patch: { status?: string; body?: string }): Promise<ResolvedAnnotation> =>
+  post('/api/annotations/update', { id, ...patch })
 
 /** The style contract (conventions §10): both layers as they are on disk. */
 export const loadStyle = (signal?: AbortSignal): Promise<StyleResponse> =>
