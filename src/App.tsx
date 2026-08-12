@@ -57,12 +57,43 @@ function parseHash(): Route {
   return { page: 'world' }
 }
 
+/** The author's theme choice, if they have made one. Storage can throw —
+ *  private windows, disabled cookies — and a viewer that will not open
+ *  because it could not read a preference is a worse failure than a viewer in
+ *  the wrong colours. */
+const THEME_KEY = 'arc.theme'
+function readTheme(): 'light' | 'dark' | null {
+  try {
+    const v = localStorage.getItem(THEME_KEY)
+    return v === 'light' || v === 'dark' ? v : null
+  } catch { return null }
+}
+function writeTheme(v: 'light' | 'dark'): void {
+  try { localStorage.setItem(THEME_KEY, v) } catch { /* preference is a nicety */ }
+}
+
 export default function App() {
   const data = useServerData()
-  const [dark, setDark] = useState<boolean>(() => matchMedia('(prefers-color-scheme: dark)').matches)
+  // Three states, not two. A stored choice is the author's and wins; with
+  // nothing stored arc follows the machine — and keeps following it, so a
+  // laptop that switches at dusk carries the viewer with it. Only an explicit
+  // toggle is remembered, so "follow the system" stays a real state rather
+  // than a value that happens to match today.
+  const [dark, setDark] = useState<boolean>(() => {
+    const stored = readTheme()
+    return stored ? stored === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
+  })
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+  }, [dark])
+
+  useEffect(() => {
+    if (readTheme()) return   // the author has chosen; the machine no longer speaks
+    const mq = matchMedia('(prefers-color-scheme: dark)')
+    const follow = (ev: MediaQueryListEvent) => setDark(ev.matches)
+    mq.addEventListener('change', follow)
+    return () => mq.removeEventListener('change', follow)
   }, [dark])
 
   if (data.canonError && !data.canon) {
@@ -75,7 +106,8 @@ export default function App() {
   }
   if (!data.canon) return <div className="empty">Loading canon…</div>
 
-  return <Shell canon={data.canon} data={data} dark={dark} onToggleDark={() => setDark(d => !d)} />
+  return <Shell canon={data.canon} data={data} dark={dark}
+    onToggleDark={() => setDark(d => { writeTheme(!d ? 'dark' : 'light'); return !d })} />
 }
 
 /** The app once canon exists — split out so the time cursor hook can rely
