@@ -742,3 +742,81 @@ p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
   .sp-skel span { animation: none; background: var(--baseline); }
   .sp-dots::after { animation: none; content: '…'; }
 }
+
+/* ---- capture (A18) ----
+   A compact control and a floating panel, NOT a field in the layout. The
+   first cut welded a flex:1 textarea into the page-nav row, which squeezed
+   the nav, put "File it" at the far edge of the screen, and let a newline
+   grow the whole top bar. Capture should cost nothing until it is used, and
+   nothing it does afterwards should move the page. */
+.capture { position: relative; flex: none; }
+.cap-trigger {
+  font: inherit; font-size: 12px; cursor: pointer;
+  color: var(--text-secondary); background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px;
+}
+.cap-trigger:hover, .cap-trigger.on { color: var(--text-primary); border-color: color-mix(in oklab, var(--c1) 55%, var(--border)); }
+
+/* Overlays the page — position:absolute, so typing cannot resize the bar. */
+.cap-panel {
+  position: absolute; top: calc(100% + 7px); left: 0; z-index: 50;
+  width: min(520px, 92vw); max-height: 72vh; overflow-y: auto;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / .34); padding: 12px;
+}
+.cap-box {
+  display: block; width: 100%; box-sizing: border-box; resize: vertical;
+  min-height: 92px; max-height: 40vh;
+  font: inherit; font-size: 13px; line-height: 1.55;
+  color: var(--text-primary); background: var(--page);
+  border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px;
+}
+.cap-box::placeholder { color: var(--muted); }
+.cap-box:focus { outline: none; border-color: color-mix(in oklab, var(--c1) 55%, var(--border)); }
+.cap-box:disabled { opacity: .7; cursor: default; }
+
+/* File it sits directly under the text, where the typing is. */
+.cap-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; }
+.cap-hint { font-size: 11.5px; color: var(--muted); }
+.cap-file {
+  font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap;
+  color: var(--text-primary); background: var(--page);
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 13px;
+}
+.cap-file:hover:not(:disabled) { border-color: color-mix(in oklab, var(--c1) 55%, var(--border)); }
+.cap-file:disabled { opacity: .45; cursor: default; }
+
+.capture .sp-working { margin: 11px 0 2px; }
+.cap-error { font-size: 12.5px; line-height: 1.5; color: var(--c8); margin: 10px 0 0; }
+
+.cap-filed { border-top: 1px solid var(--border); margin-top: 11px; padding-top: 10px; }
+.cap-filed-head { display: flex; align-items: baseline; gap: 9px; font-size: 13px; margin-bottom: 8px; }
+.cap-none { font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; margin: 0 0 8px; }
+.cap-item { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; }
+.cap-item:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+.cap-item-head { display: flex; align-items: baseline; gap: 8px; }
+.cap-item-head code { font-size: 12px; color: var(--c1); }
+.cap-type {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 3px; padding: 0 5px;
+}
+.cap-body { font-size: 12.5px; line-height: 1.55; color: var(--text-secondary); margin: 4px 0 0; }
+
+/* Questions arc raised and will not answer (conventions §11: `asked`). Set
+   apart because they are the easiest thing to lose and often the best thing
+   a dump produces. */
+.cap-asked { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; }
+.cap-asked-label {
+  display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); margin-bottom: 4px;
+}
+.cap-asked p { font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); font-style: italic; margin: 0 0 4px; }
+
+.cap-acts { display: flex; gap: 8px; margin-top: 12px; }
+.cap-acts button {
+  font: inherit; font-size: 12px; cursor: pointer; border-radius: 6px; padding: 5px 12px;
+  color: var(--text-primary); background: var(--page); border: 1px solid var(--border);
+}
+.cap-acts button:hover:not(:disabled) { border-color: color-mix(in oklab, var(--c1) 55%, var(--border)); }
+.cap-acts button.ghost { color: var(--muted); background: transparent; }
+.cap-acts button:disabled { opacity: .55; cursor: default; }

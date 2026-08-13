@@ -17,6 +17,7 @@ import { MaterialDrawer } from './components/MaterialDrawer'
 import { ManuscriptView } from './components/ManuscriptView'
 import { WikiView } from './components/WikiView'
 import { StyleView, type StyleTab } from './components/StyleView'
+import { CaptureBar } from './components/CaptureBar'
 
 type Page = 'world' | 'manuscript' | 'wiki' | 'style'
 
@@ -221,6 +222,9 @@ function Shell({ canon, data, dark, onToggleDark }: {
           <span className="logline">
             {canon.story.title} — {canon.story.logline}
           </span>
+          {/* Every page, not only the manuscript: an idea arrives while you
+              are in the world map as readily as mid-scene. */}
+          <CaptureBar engine={data.engine} onFiled={data.refreshMaterial} />
           <MaterialDrawer items={data.material} canon={canon} onOpen={openWorld} />
           <AttentionInbox attention={data.attention} canon={canon} onOpen={openWorld} />
           <button className="themeToggle" onClick={data.retry}
@@ -241,7 +245,10 @@ function Shell({ canon, data, dark, onToggleDark }: {
         {degraded.length > 0 && (
           <div className="degraded">
             {degraded.join(', ')} unavailable — is arc-backend running?{' '}
-            <MaterialDrawer items={data.material} canon={canon} onOpen={openWorld} />
+            {/* Every page, not only the manuscript: an idea arrives while you
+              are in the world map as readily as mid-scene. */}
+          <CaptureBar engine={data.engine} onFiled={data.refreshMaterial} />
+          <MaterialDrawer items={data.material} canon={canon} onOpen={openWorld} />
           <AttentionInbox attention={data.attention} canon={canon} onOpen={openWorld} />
           <button className="themeToggle" onClick={data.retry}>Retry</button>
           </div>

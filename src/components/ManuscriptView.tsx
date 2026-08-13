@@ -10,6 +10,7 @@ import { formatReadingTime, formatWords, totalWords, wordsByChapter } from '../w
 import { CopyProse, CopyRef } from './CopyRef'
 import { chapterText, copyableScenes, isSingleWord, paragraphAtOffset, sceneText } from '../manuscript-text'
 import { stack } from '../note-stack'
+import { Working } from './Working'
 
 /** The scene's stated intent (conventions §10), collapsed by default —
  *  the contract the prose must satisfy, not an outline of what happens. */
@@ -140,29 +141,6 @@ type Mode = 'notes' | 'edit' | 'read'
 const MODE_ORDER: Mode[] = ['edit', 'notes', 'read']
 const MODE_CHORD = 'Shift+Tab'
 const MODE_KEY = 'arc.manuscript.mode'
-
-/** The working state for a pass that has been asked but has not answered.
- *
- *  Deliberately indeterminate: these passes run against whichever engine is
- *  present, and on the keyless CLI path a rephrase can take tens of seconds.
- *  A bar that fills toward a known end would be a lie about a wait nobody can
- *  measure — so the sheen travels and nothing claims a percentage. What it
- *  does promise is that the box is alive, which a static sentence sitting
- *  there for thirty seconds actively fails to do.
- *
- *  The skeleton lines are the shape of the answer, not decoration: three
- *  alternatives are about what comes back, so the wait looks like the result
- *  it is about to become. */
-function Working({ label }: { label: string }) {
-  return (
-    <div className="sp-working" role="status" aria-live="polite">
-      <p className="sp-working-label">{label}<span className="sp-dots" aria-hidden="true" /></p>
-      <div className="sp-skel" aria-hidden="true">
-        <span /><span /><span />
-      </div>
-    </div>
-  )
-}
 
 /** Sticky for the tab's session, not forever — a mode is a stance the author
  *  takes on THIS visit, not a standing preference like the theme (A16). */

@@ -7,6 +7,7 @@
 // backend can no longer masquerade as an empty story.
 import type {
   AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, MaterialResponse,
+  DumpDecisionRequest, DumpDecisionResponse, DumpRequest, DumpResponse, HealthResponse,
   ProseAcceptResponse, ProseResponse, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
 } from 'arc-canon-graph'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, SuggestRequest, SuggestResponse } from './canon'
@@ -88,6 +89,20 @@ export const loadStyle = (signal?: AbortSignal): Promise<StyleResponse> =>
  *  the gate: no model runs on the far side of this call. */
 export const ratifyRule = (req: RatifyRuleRequest): Promise<RatifyRuleResponse> =>
   post('/api/style/proposed', req)
+
+/** Is the story valid, and is there an engine to run passes with? */
+export const loadHealth = (signal?: AbortSignal): Promise<HealthResponse> =>
+  getJson<HealthResponse>('/api/health', { signal })
+
+/** The brain dump: free text filed into the material layer (conventions §12).
+ *  The words are saved to disk before any model runs, so a failure here never
+ *  costs the author what they typed. */
+export const fileDump = (req: DumpRequest): Promise<DumpResponse> =>
+  post('/api/dump', req)
+
+/** Keep what a dump filed, or discard it. Either answer writes a receipt. */
+export const decideDump = (req: DumpDecisionRequest): Promise<DumpDecisionResponse> =>
+  post('/api/dump/decide', req)
 
 /** view.yaml from the story repo. A story without one renders from canon alone. */
 export const loadView = (signal?: AbortSignal): Promise<View> =>

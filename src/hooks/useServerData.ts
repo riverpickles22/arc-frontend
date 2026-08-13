@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AttentionResponse, Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, StyleResponse } from '../canon'
 import type { View } from '../presentation'
-import { loadAnnotations, loadAttention, loadCanon, loadDocs, loadDraft, loadMaterial, loadProse, loadStyle, loadView, NO_DRAFT } from '../api'
+import { loadAnnotations, loadAttention, loadCanon, loadDocs, loadDraft, loadHealth, loadMaterial, loadProse, loadStyle, loadView, NO_DRAFT } from '../api'
 
 export interface ServerData {
   canon: Canon | null
@@ -29,6 +29,9 @@ export interface ServerData {
   refreshNotes: () => void
   refreshProse: () => void
   refreshStyle: () => void
+  refreshMaterial: () => void
+  /** Which engine is live, or null when none is. */
+  engine: 'sdk' | 'claude-cli' | null
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -38,6 +41,7 @@ export function useServerData(): ServerData {
   const [canonError, setCanonError] = useState<string | null>(null)
   const [view, setView] = useState<View>({})
   const [style, setStyle] = useState<StyleResponse | null>(null)
+  const [engine, setEngine] = useState<'sdk' | 'claude-cli' | null>(null)
   const [notes, setNotes] = useState<ResolvedAnnotation[]>([])
   const [docs, setDocs] = useState<DocArticle[]>([])
   const [prose, setProse] = useState<ProseScene[]>([])
@@ -68,6 +72,9 @@ export function useServerData(): ServerData {
       // attention/material failing is not a degradation — the chips hide
       loadAttention(signal).then(setAttn).catch(() => {}),
       loadMaterial(signal).then(setMaterial).catch(() => {}),
+      // health failing is not a degradation either — the capture box simply
+      // behaves as though no engine is present, which is the safe reading
+      loadHealth(signal).then(h => setEngine(h.engine)).catch(() => {}),
     ])
     if (!signal?.aborted) setDegraded(failures)
   }, [])
@@ -90,6 +97,13 @@ export function useServerData(): ServerData {
   }, [])
 
   // The contract and its proposal queue: both change when a rule is ratified.
+  // The material layer changed — a dump was kept or dropped. Attention counts
+  // it too, so both move together.
+  const refreshMaterial = useCallback(() => {
+    loadMaterial().then(setMaterial).catch(() => {})
+    loadAttention().then(setAttn).catch(() => {})
+  }, [])
+
   const refreshStyle = useCallback(() => { loadStyle().then(setStyle).catch(() => {}) }, [])
 
   // Prose and its draft state refresh together: accept/discard change both.
@@ -99,5 +113,5 @@ export function useServerData(): ServerData {
     loadDraft().then(setDraft).catch(() => setDegraded(d => (d.includes('draft') ? d : [...d, 'draft'])))
   }, [])
 
-  return { canon, canonError, retry, view, style, notes, docs, prose, draft, attention: attn, material, degraded, refreshCanon, refreshProse, refreshNotes, refreshStyle }
+  return { canon, canonError, retry, view, style, notes, docs, prose, draft, attention: attn, material, degraded, refreshCanon, refreshProse, refreshNotes, refreshStyle, refreshMaterial, engine }
 }
