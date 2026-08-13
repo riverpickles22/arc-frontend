@@ -137,7 +137,7 @@ const STATE_LABEL: Record<string, string> = {
  *  `Shift+Tab`, not `Ctrl+Tab`: Chrome reserves Ctrl+Tab for switching
  *  browser tabs and never delivers the keystroke to the page at all. */
 type Mode = 'notes' | 'edit' | 'read'
-const MODE_ORDER: Mode[] = ['notes', 'edit', 'read']
+const MODE_ORDER: Mode[] = ['edit', 'notes', 'read']
 const MODE_CHORD = 'Shift+Tab'
 const MODE_KEY = 'arc.manuscript.mode'
 
@@ -955,17 +955,17 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   : 'Nothing drafted in this chapter yet'} />
             </h1>
             <div className="ms-modes" role="group" aria-label="Manuscript mode">
-              <button className={mode === 'notes' ? 'on' : ''} aria-pressed={mode === 'notes'}
-                onClick={() => switchMode('notes')}
-                title={`Select prose to leave a note, click a note to focus it. ${MODE_CHORD} cycles the mode.`}>
-                Notes
-              </button>
               <button className={mode === 'edit' ? 'on' : ''} aria-pressed={mode === 'edit'}
                 disabled={!draft.git} onClick={() => switchMode('edit')}
                 title={draft.git
                   ? `Click anywhere in the prose and type — it lands in the draft layer as you go. ${MODE_CHORD} cycles the mode.`
                   : 'Editing needs the story to be a git repository — there is no draft layer without one.'}>
                 Edit
+              </button>
+              <button className={mode === 'notes' ? 'on' : ''} aria-pressed={mode === 'notes'}
+                onClick={() => switchMode('notes')}
+                title={`Select prose to leave a note, click a note to focus it. ${MODE_CHORD} cycles the mode.`}>
+                Notes
               </button>
               <button className={mode === 'read' ? 'on' : ''} aria-pressed={mode === 'read'}
                 onClick={() => switchMode('read')}
