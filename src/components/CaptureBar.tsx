@@ -99,7 +99,7 @@ export function CaptureBar({ engine, onFiled }: {
         title={engine
           ? 'Write down whatever is on your mind — arc files it as story material'
           : 'Capture needs a generation engine — set ANTHROPIC_API_KEY, or log in to the claude CLI, and restart the backend'}>
-        Capture{text.trim() && !open ? ' ·' : ''}
+        Add a thought{text.trim() && !open ? ' ·' : ''}
       </button>
 
       {/* A floating panel, not an inline field. It overlays the page rather
