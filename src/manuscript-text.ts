@@ -48,3 +48,27 @@ export function sceneText(scene: ProseLike): string {
 export function chapterText(scenes: ProseLike[]): string {
   return scenes.map(sceneText).filter(Boolean).join('\n\n')
 }
+
+/** Which paragraph a character offset in a raw scene body falls in — the
+ *  index a note's anchor records, so it must match paragraphsOf exactly:
+ *  split on blank lines, trimmed, empties dropped. Counting separators
+ *  would drift on leading blank lines or runs of them; walking the split
+ *  and asking "does this paragraph's span contain the offset" cannot.
+ *
+ *  An offset inside the whitespace BETWEEN paragraphs anchors to the
+ *  following paragraph — a selection can only start there by starting at
+ *  the head of what follows. Past the end clamps to the last paragraph. */
+export function paragraphAtOffset(body: string, offset: number): number {
+  let searchFrom = 0
+  let index = -1
+  for (const para of body.split(/\n{2,}/)) {
+    const trimmed = para.trim()
+    if (!trimmed) { searchFrom += para.length; continue }
+    index += 1
+    const start = body.indexOf(trimmed, searchFrom)
+    const end = start + trimmed.length
+    if (offset <= end) return index
+    searchFrom = end
+  }
+  return Math.max(0, index)
+}

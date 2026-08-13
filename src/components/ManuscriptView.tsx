@@ -2,13 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ReactNode } from 'react'
 import type { AnalyzeResponse, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, SceneContract } from '../canon'
 import { dateOf } from '../canon'
-import { acceptDraft, acceptParagraph, analyzeDraft, createNote, discardDraft, draftScene, updateNote, writeScene } from '../api'
+import { acceptDraft, acceptParagraph, analyzeDraft, createNote, discardDraft, draftScene, suggestText, updateNote, writeScene } from '../api'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
 import { formatReadingTime, formatWords, totalWords, wordsByChapter } from '../wordcount'
 import { CopyProse, CopyRef } from './CopyRef'
-import { chapterText, copyableScenes, sceneText } from '../manuscript-text'
+import { chapterText, copyableScenes, paragraphAtOffset, sceneText } from '../manuscript-text'
 import { stack } from '../note-stack'
 
 /** The scene's stated intent (conventions §10), collapsed by default —
@@ -291,7 +291,10 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
   // Annotations: select prose, write the thought, keep reading. No
   // categorisation, no scope declaration — the author's only job is the note.
-  const [sel, setSel] = useState<{ scene: string; paragraph: number; quote: string } | null>(null)
+  // `yHint`: where the composer should sit when there is no [data-para]
+  // element to measure against — Edit mode renders a textarea, not
+  // paragraphs, so a note born there brings its own y (the click point).
+  const [sel, setSel] = useState<{ scene: string; paragraph: number; quote: string; yHint?: number } | null>(null)
   const [noteText, setNoteText] = useState('')
   const [noteBusy, setNoteBusy] = useState(false)
   const [focused, setFocused] = useState<string | null>(null)
@@ -364,9 +367,21 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // liberally costs nothing.
   useEffect(() => () => flushAllEdits(), [flushAllEdits])
 
-  const onEditChange = (file: string, text: string, currentBody: string) => {
+  /** Grow the editor to its content. `field-sizing: content` does this in
+   *  CSS where supported (Chrome); this is the fallback, called from the
+   *  callback ref on mount (first paint must be right, not just post-
+   *  keystroke) and from onEditChange as the text moves. Cheap enough to
+   *  run unconditionally rather than feature-detect. */
+  const autosize = useCallback((el: HTMLTextAreaElement | null) => {
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [])
+
+  const onEditChange = (file: string, text: string, currentBody: string, el?: HTMLTextAreaElement) => {
     if (lastSavedRef.current[file] === undefined) lastSavedRef.current[file] = currentBody
     setOverrides(prev => ({ ...prev, [file]: text }))
+    if (el) autosize(el)
     const timer = editTimers.current[file]
     if (timer) clearTimeout(timer)
     editTimers.current[file] = setTimeout(() => { void flushFile(file) }, 700)
@@ -387,6 +402,115 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const cycleMode = useCallback(() => {
     switchMode(MODE_ORDER[(MODE_ORDER.indexOf(mode) + 1) % MODE_ORDER.length])
   }, [mode, switchMode])
+
+  /** The selection menu: right-click on selected text in the editor. Holds
+   *  everything an action needs so the selection may collapse the moment the
+   *  menu opens without losing anything. Coordinates are viewport-relative
+   *  (the menu is position:fixed). */
+  const [selMenu, setSelMenu] = useState<{
+    file: string; scene: string; body: string
+    start: number; end: number; quote: string
+    x: number; y: number
+  } | null>(null)
+
+  /** The suggestion popover (A17-7): what was asked, and what came back.
+   *  Suggestions are argued — listed, never applied without a click. */
+  const [suggest, setSuggest] = useState<{
+    kind: 'rephrase' | 'synonyms'
+    menu: NonNullable<typeof selMenu>
+    items: string[] | null      // null = in flight
+    error: string | null
+  } | null>(null)
+
+  // One dismissal discipline for menu and popover: click-away, Escape, or
+  // scrolling anywhere puts them down.
+  useEffect(() => {
+    if (!selMenu && !suggest) return
+    const down = (ev: MouseEvent) => {
+      const t = ev.target as HTMLElement
+      if (t.closest('.sel-menu') || t.closest('.suggest-pop')) return
+      setSelMenu(null); setSuggest(null)
+    }
+    const key = (ev: KeyboardEvent) => { if (ev.key === 'Escape') { setSelMenu(null); setSuggest(null) } }
+    const scroll = () => { setSelMenu(null); setSuggest(null) }
+    window.addEventListener('mousedown', down)
+    window.addEventListener('keydown', key)
+    window.addEventListener('scroll', scroll, true)
+    return () => {
+      window.removeEventListener('mousedown', down)
+      window.removeEventListener('keydown', key)
+      window.removeEventListener('scroll', scroll, true)
+    }
+  }, [selMenu, suggest])
+
+  /** Right-click on selected editor text: our menu. With nothing selected the
+   *  browser's own menu stands — spell-check and paste live there, and a
+   *  custom menu that eats them makes the editor worse at being an editor. */
+  const onEditorContextMenu = (ev: React.MouseEvent<HTMLTextAreaElement>, s: ProseScene) => {
+    const el = ev.currentTarget
+    if (el.selectionStart === el.selectionEnd) return   // native menu
+    ev.preventDefault()
+    const body = overrides[s.file] ?? s.body
+    setSuggest(null)
+    setSelMenu({
+      file: s.file, scene: s.scene, body,
+      start: el.selectionStart, end: el.selectionEnd,
+      quote: body.slice(el.selectionStart, el.selectionEnd).trim(),
+      x: ev.clientX, y: ev.clientY,
+    })
+  }
+
+  /** Menu → Add note: the same composer, anchored by offset arithmetic
+   *  instead of DOM ranges, carrying its own y because Edit mode has no
+   *  [data-para] lines to measure against. */
+  const noteFromMenu = () => {
+    if (!selMenu) return
+    const box = colsRef.current
+    const yHint = box ? Math.max(0, selMenu.y - box.getBoundingClientRect().top) : 0
+    setSel({
+      scene: selMenu.scene,
+      paragraph: paragraphAtOffset(selMenu.body, selMenu.start),
+      quote: selMenu.quote,
+      yHint,
+    })
+    setNoteText('')
+    setActive('composer')
+    setSelMenu(null)
+  }
+
+  /** Menu → Rephrase/Synonyms: ask, list, and only ever apply on a click. */
+  const askSuggest = async (kind: 'rephrase' | 'synonyms') => {
+    if (!selMenu) return
+    const menu = selMenu
+    setSelMenu(null)
+    setSuggest({ kind, menu, items: null, error: null })
+    try {
+      const res = await suggestText({
+        kind, file: menu.file, selection: menu.quote,
+        paragraph: paragraphsOf(menu.body)[paragraphAtOffset(menu.body, menu.start)] ?? '',
+      })
+      setSuggest(cur => (cur && cur.menu === menu ? { ...cur, items: res.suggestions } : cur))
+    } catch (e) {
+      setSuggest(cur => (cur && cur.menu === menu ? { ...cur, error: (e as Error).message ?? String(e) } : cur))
+    }
+  }
+
+  /** Applying a suggestion is just typing: replace exactly the selection and
+   *  ride the ordinary autosave path, baseline guard included. */
+  const applySuggestion = (text: string) => {
+    if (!suggest) return
+    const { menu } = suggest
+    const current = overridesRef.current[menu.file] ?? menu.body
+    // The body may have moved since the menu opened (autosave round-trip);
+    // re-locate the quote rather than trusting the stale offsets blindly.
+    const at = current.slice(menu.start, menu.end).trim() === menu.quote
+      ? menu.start
+      : current.indexOf(menu.quote)
+    if (at < 0) { setSuggest({ ...suggest, error: 'the passage changed under this suggestion — reselect and try again' }); return }
+    const end = current.slice(menu.start, menu.end).trim() === menu.quote ? menu.end : at + menu.quote.length
+    onEditChange(menu.file, current.slice(0, at) + text + current.slice(end), menu.body)
+    setSuggest(null)
+  }
 
   const saveEdit = async (text: string) => {
     if (!editing || !text.trim()) return
@@ -478,6 +602,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         ...openNotes.map(x => (x.resolution.paragraph === null ? null : `${x.anchor.scene}:${x.resolution.paragraph}`)),
       ]
       const desired = keys.map(lineOf)
+      // A composer born in Edit mode measures against nothing (no [data-para]
+      // in a textarea) — it carries its own line instead.
+      if (sel?.yHint !== undefined && desired.length > 0 && desired[0] === 0) desired[0] = sel.yHint
       const heights = keys.map((_, i) => cardsRef.current[i]?.offsetHeight ?? 0)
       const next = stack(desired, heights)
       setTops(prev => (prev.length === next.length && prev.every((v, i) => Math.abs(v - next[i]) < 1) ? prev : next))
@@ -887,8 +1014,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   // Clicking a textarea places the caret natively; there is
                   // no caret math to get right or wrong.
                   <div className="scene-edit">
-                    <textarea value={overrides[s.file] ?? s.body} spellCheck
-                      onChange={ev => onEditChange(s.file, ev.target.value, s.body)} />
+                    <textarea value={overrides[s.file] ?? s.body} spellCheck ref={autosize}
+                      onChange={ev => onEditChange(s.file, ev.target.value, s.body, ev.target)}
+                      onContextMenu={ev => onEditorContextMenu(ev, s)} />
                   </div>
                 )
                 : notYetInBook
@@ -990,6 +1118,37 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         )} />
       </div>
       </div>
+
+      {selMenu && (
+        <div className="sel-menu" style={{ left: selMenu.x, top: selMenu.y }}>
+          <button onClick={noteFromMenu}>Add note</button>
+          <button onClick={() => void askSuggest('rephrase')}>Rephrase…</button>
+          <button onClick={() => void askSuggest('synonyms')}>Synonyms…</button>
+        </div>
+      )}
+      {suggest && (
+        <div className="suggest-pop" style={{ left: suggest.menu.x, top: suggest.menu.y }}>
+          <div className="sp-head">
+            <b>{suggest.kind === 'rephrase' ? 'Rephrase' : 'Synonyms'}</b>
+            <span className="an-register" title="Model suggestions — yours to take or leave, never applied on their own (conventions §11)">
+              suggestions — yours to take or leave
+            </span>
+          </div>
+          <blockquote className="note-quote">{suggest.menu.quote.length > 120 ? suggest.menu.quote.slice(0, 120) + '…' : suggest.menu.quote}</blockquote>
+          {suggest.items === null && !suggest.error && (
+            <p className="fsummary">{suggest.kind === 'rephrase'
+              ? 'Rewriting against your own style contract…'
+              : 'Looking for words that keep the period and the voice…'}</p>
+          )}
+          {suggest.error && <p className="db-err">{suggest.error}</p>}
+          {suggest.items?.map((it, i) => (
+            <button key={i} className="sp-item" onClick={() => applySuggestion(suggest.kind === 'synonyms' ? it.split(' — ')[0] : it)}>
+              {it}
+            </button>
+          ))}
+          {suggest.items?.length === 0 && <p className="fsummary">Nothing worth offering — the line may already be doing its work.</p>}
+        </div>
+      )}
     </div>
   )
 }

@@ -56,3 +56,33 @@ test('a chapter with no drafted prose copies as nothing', () => {
   expect(chapterText([])).toBe('')
   expect(chapterText([{ body: '\n' }])).toBe('')
 })
+
+import { paragraphAtOffset } from './manuscript-text'
+
+test('offsets map to the same indices paragraphsOf produces', () => {
+  const body = 'First paragraph here.\n\nSecond one.\n\nThird and last.'
+  expect(paragraphAtOffset(body, 0)).toBe(0)
+  expect(paragraphAtOffset(body, body.indexOf('Second') + 3)).toBe(1)
+  expect(paragraphAtOffset(body, body.indexOf('Third'))).toBe(2)
+})
+
+test('leading blank lines do not shift the count — the empty chunk is dropped, not counted', () => {
+  const body = '\n\nFirst real paragraph.\n\nSecond.'
+  expect(paragraphAtOffset(body, body.indexOf('First'))).toBe(0)
+  expect(paragraphAtOffset(body, body.indexOf('Second'))).toBe(1)
+})
+
+test('runs of blank lines between paragraphs count as one break', () => {
+  const body = 'One.\n\n\n\n\nTwo.'
+  expect(paragraphAtOffset(body, body.indexOf('Two.'))).toBe(1)
+})
+
+test('an offset in the gap anchors to the following paragraph', () => {
+  const body = 'One.\n\nTwo.'
+  expect(paragraphAtOffset(body, 5)).toBe(1)   // inside the \n\n
+})
+
+test('past the end clamps to the last paragraph', () => {
+  const body = 'Only one paragraph.'
+  expect(paragraphAtOffset(body, 9999)).toBe(0)
+})

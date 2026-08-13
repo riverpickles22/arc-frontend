@@ -9,7 +9,7 @@ import type {
   AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, MaterialResponse,
   ProseAcceptResponse, ProseResponse, StyleResponse,
 } from 'arc-canon-graph'
-import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation } from './canon'
+import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, SuggestRequest, SuggestResponse } from './canon'
 import type { View } from './presentation'
 import type { GeoJSON } from './map-geometry'
 
@@ -73,6 +73,11 @@ export const acceptParagraph = (file: string, paragraph: number): Promise<{ hash
  *  underneath, which is how a clobber is told apart from an edit. */
 export const writeScene = (file: string, body: string, baseline?: string): Promise<ProseScene> =>
   post('/api/prose/scene', { file, body, baseline })
+
+/** Selection suggestions: rephrase against the author's own contract, or
+ *  synonyms with nuance. Argued register — never applied without a click. */
+export const suggestText = (req: SuggestRequest): Promise<SuggestResponse> =>
+  post('/api/prose/suggest', req)
 
 /** The style contract (conventions §10): both layers as they are on disk. */
 export const loadStyle = (signal?: AbortSignal): Promise<StyleResponse> =>

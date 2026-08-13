@@ -536,14 +536,48 @@ p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
    author switches between reading and writing. Cut, paste and undo come from
    the platform — the prose is too important to hand to a reimplementation. */
 .scene-edit textarea {
-  width: 100%; box-sizing: border-box; min-height: 40vh;
+  width: 100%; box-sizing: border-box;
   font-family: var(--serif, Georgia, serif); font-size: 16px; line-height: 1.62;
   color: var(--text-primary); background: var(--surface-1);
   border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px;
-  resize: vertical; tab-size: 2;
+  resize: none; tab-size: 2;
+  /* The editor is exactly as tall as the scene: the page is the only
+     scrollbar. A box you scroll inside of is a form; this is the book. */
+  overflow: hidden;
+  field-sizing: content;
 }
 .scene-edit textarea:focus { outline: none; border-color: color-mix(in oklab, var(--c1) 50%, var(--border)); }
 .scene-edit .note-acts { align-items: center; }
+
+/* The selection menu: right-click on highlighted editor text. Small, fixed,
+   and gone at a touch — a menu, not a panel. */
+.sel-menu {
+  position: fixed; z-index: 60; min-width: 150px;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 6px 22px rgb(0 0 0 / .32); padding: 4px; display: flex; flex-direction: column;
+}
+.sel-menu button {
+  font: inherit; font-size: 13px; text-align: left; color: var(--text-primary);
+  background: transparent; border: 0; border-radius: 5px; padding: 6px 10px; cursor: pointer;
+}
+.sel-menu button:hover { background: var(--baseline); }
+
+/* The suggestion popover: alternatives in the argued register. Each is a
+   full-width button — clicking is applying, and nothing applies itself. */
+.suggest-pop {
+  position: fixed; z-index: 60; width: min(440px, 90vw); max-height: 60vh; overflow-y: auto;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / .36); padding: 12px 14px;
+}
+.suggest-pop .sp-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.suggest-pop .sp-head b { font-size: 13px; }
+.sp-item {
+  display: block; width: 100%; box-sizing: border-box; text-align: left; margin-top: 6px;
+  font-family: var(--serif, Georgia, serif); font-size: 14.5px; line-height: 1.5;
+  color: var(--text-primary); background: var(--page);
+  border: 1px solid var(--border); border-radius: 7px; padding: 8px 11px; cursor: pointer;
+}
+.sp-item:hover { border-color: color-mix(in oklab, var(--c1) 55%, var(--border)); }
 
 .note-edit {
   width: 100%; box-sizing: border-box; margin: 6px 0 0;
