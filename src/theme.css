@@ -579,6 +579,16 @@ p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
 }
 .sp-item:hover { border-color: color-mix(in oklab, var(--c1) 55%, var(--border)); }
 
+/* Read mode: the prose column is the page. One column — the rail is gone
+   from the DOM, not merely hidden — centered at a book measure, chrome
+   absent, and the standing note-marks receded to marginal facts. */
+.ms-cols.reading { grid-template-columns: 1fr; }
+.ms-cols.reading .ms-main { max-width: 68ch; margin: 0 auto; }
+.ms-cols.reading .mdbody.prose p.has-note {
+  border-left-color: color-mix(in oklab, var(--c1) 30%, transparent);
+  cursor: default;
+}
+
 .note-edit {
   width: 100%; box-sizing: border-box; margin: 6px 0 0;
   font: inherit; font-size: 13.5px; line-height: 1.5;

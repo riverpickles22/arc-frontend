@@ -129,14 +129,15 @@ const STATE_LABEL: Record<string, string> = {
  *  it, an explicit switch rather than one gesture trying to mean three
  *  things. NOTES is today's manuscript — select to compose, click a note to
  *  focus it. EDIT makes the prose itself a writing surface: click anywhere,
- *  type, and it lands in the draft layer as you go. A third position (read,
- *  A17-4) is designed to slot in beside these without changing this list's
- *  shape.
+ *  type, and it lands in the draft layer as you go. READ is the third
+ *  position: every gesture is inert — selection just selects, a click is
+ *  just a click — the chrome recedes, and the prose column is the page.
+ *  The mode where you meet the book the way a reader would.
  *
  *  `Shift+Tab`, not `Ctrl+Tab`: Chrome reserves Ctrl+Tab for switching
  *  browser tabs and never delivers the keystroke to the page at all. */
-type Mode = 'notes' | 'edit'
-const MODE_ORDER: Mode[] = ['notes', 'edit']
+type Mode = 'notes' | 'edit' | 'read'
+const MODE_ORDER: Mode[] = ['notes', 'edit', 'read']
 const MODE_CHORD = 'Shift+Tab'
 const MODE_KEY = 'arc.manuscript.mode'
 
@@ -144,7 +145,8 @@ const MODE_KEY = 'arc.manuscript.mode'
  *  takes on THIS visit, not a standing preference like the theme (A16). */
 function readMode(): Mode {
   try {
-    return sessionStorage.getItem(MODE_KEY) === 'edit' ? 'edit' : 'notes'
+    const v = sessionStorage.getItem(MODE_KEY)
+    return v === 'edit' || v === 'read' ? v : 'notes'
   } catch { return 'notes' }
 }
 function writeMode(m: Mode): void {
@@ -397,6 +399,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     // yet, `view` still at its 'changes' default) would leave the author
     // clicking Edit and finding nothing editable.
     if (next === 'edit') setView('proposed')
+    // Read leaves no arc furniture standing: an open composer, a focused
+    // note, a hanging menu — all of it is exactly the clutter the mode
+    // exists to clear.
+    if (next === 'read') {
+      setSel(null); setActive(null); setFocused(null)
+      setSelMenu(null); setSuggest(null); setEditing(null)
+    }
   }, [flushAllEdits])
 
   const cycleMode = useCallback(() => {
@@ -824,7 +833,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       </nav>
 
       <div className="ms-scroll">
-      <div className="ms-cols" ref={colsRef}
+      <div className={mode === 'read' ? 'ms-cols reading' : 'ms-cols'} ref={colsRef}
         onClickCapture={ev => {
           // Clicking away steps back out. An annotated paragraph and the rail
           // set their own attention; anything else in the columns clears it,
@@ -842,7 +851,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           if (ev.key === 'Tab' && ev.shiftKey) { ev.preventDefault(); cycleMode() }
         }}>
       <article className="ms-main">
-        {draft.git && (
+        {draft.git && mode !== 'read' && (
           <div className={n ? 'draftbar' : 'draftbar clean'}>
             {n ? (
               <>
@@ -862,7 +871,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           </div>
         )}
 
-        {draft.git && drawer && (
+        {draft.git && drawer && mode !== 'read' && (
           <div className="draftdrawer">
             {draft.changes.map(c => {
               const st = diffStats(diffs.get(c.file) ?? [])
@@ -958,21 +967,28 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   : 'Editing needs the story to be a git repository — there is no draft layer without one.'}>
                 Edit
               </button>
+              <button className={mode === 'read' ? 'on' : ''} aria-pressed={mode === 'read'}
+                onClick={() => switchMode('read')}
+                title={`Just the book — no notes, no chrome, nothing to click. Select still copies. ${MODE_CHORD} cycles the mode.`}>
+                Read
+              </button>
             </div>
           </div>
           <p className="ms-meta">{spanText}{cur.part ? ` · ${cur.part}` : ''}
             {words > 0 && ` · ${formatWords(words)} words · ~${pages} page${pages === 1 ? '' : 's'} · ${formatReadingTime(words)} read`}
             {' · '}<span className={`stpill ${cur.status}`}>{cur.status}</span>
-            {curScenes.length > 0 && (
+            {curScenes.length > 0 && mode !== 'read' && (
               <>{' · '}<a className="linklike" onClick={() => setShowGen(o => !o)}>
                 {showGen ? 'hide drafting' : 'draft next scene'}</a></>
             )}</p>
         </header>
 
-        <blockquote className="ms-outline">
-          <span className="olabel">Outline (canon)</span>
-          {cur.summary}
-        </blockquote>
+        {(mode !== 'read' || !curScenes.length) && (
+          <blockquote className="ms-outline">
+            <span className="olabel">Outline (canon)</span>
+            {cur.summary}
+          </blockquote>
+        )}
 
         {curScenes.map(s => {
           const change = draft.changes.find(c => c.file === s.file)
@@ -983,7 +999,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           const notYetInBook = view === 'before' && change?.status === 'added'
           return (
             <section key={s.scene} className="scene">
-              <div className="scene-head">
+              {mode !== 'read' && <div className="scene-head">
                 <code>{s.scene}</code>
                 <CopyRef text={s.scene} />
                 <CopyProse get={() => sceneText(s)} label="copy text"
@@ -1002,9 +1018,28 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                     <a key={id} className="wikilink" onClick={() => onOpenWorld(id)}>{id}</a>
                   ))}
                 </span>
-              </div>
-              {s.contract && <ContractPanel c={s.contract} onOpenWorld={onOpenWorld} />}
-              {mode === 'edit' && view === 'proposed'
+              </div>}
+              {mode !== 'read' && s.contract && <ContractPanel c={s.contract} onOpenWorld={onOpenWorld} />}
+              {mode === 'read'
+                ? (
+                  // The book, and only the book: the working tree's prose —
+                  // what a reader would meet if the draft were accepted —
+                  // with every arc gesture inert. Selection is the
+                  // browser's; a click is just a click. Note marks stay as
+                  // faint marginal facts, receded by the container class.
+                  <div className="mdbody prose">
+                    {paragraphsOf(s.body).map((p, pi) => {
+                      const anchored = notes.some(nn =>
+                        nn.anchor.scene === s.scene && nn.resolution.paragraph === pi &&
+                        nn.status !== 'resolved' && nn.status !== 'dropped')
+                      return (
+                        <p key={pi} className={anchored ? 'has-note' : ''}
+                          dangerouslySetInnerHTML={{ __html: mdToHtml(p).replace(/^<p>|<\/p>$/g, '') }} />
+                      )
+                    })}
+                  </div>
+                )
+                : mode === 'edit' && view === 'proposed'
                 ? (
                   // Click anywhere, type, and it lands in the draft layer a
                   // moment later — no button, no separate save step. A plain
@@ -1058,7 +1093,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         {/* A scene the draft removes. In Before it is simply part of the book,
             because that is what Before means; only Changes marks it as going.
             Proposed omits it — it is meant to read as the finished book. */}
-        {view !== 'proposed' && curDeleted.map(c => (
+        {mode !== 'read' && view !== 'proposed' && curDeleted.map(c => (
           <section key={c.file} className="scene">
             <div className="scene-head">
               <code>{c.main!.scene}</code>
@@ -1074,19 +1109,19 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           </section>
         ))}
 
-        {curScenes.length > 0 && showGen && genBar}
+        {curScenes.length > 0 && showGen && mode !== 'read' && genBar}
 
         {!curScenes.length && !curDeleted.length && (
           <>
             <p className="ms-empty">No scenes drafted yet — the outline above is this chapter's canon summary.
               Scenes land in <code>prose/ch-{String(cur.order).padStart(2, '0')}/</code> with frontmatter binding them to the facts they rest on.
               Write one by hand, or let arc draft it from the record's own context.</p>
-            {genBar}
+            {mode !== 'read' && genBar}
           </>
         )}
       </article>
 
-      <NotesRail
+      {mode !== 'read' && <NotesRail
         notes={chapterNotes} open={openNotes} closed={chapterNotes.length - openNotes.length}
         tops={tops} cardRef={setCard} active={active}
         busy={noteBusy} onStatus={noteStatus}
@@ -1115,7 +1150,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               <button disabled={noteBusy} onClick={() => { setSel(null); setActive(null) }}>cancel</button>
             </div>
           </div>
-        )} />
+        )} />}
       </div>
       </div>
 
