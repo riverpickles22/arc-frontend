@@ -256,6 +256,19 @@ svg text { font-family: inherit; }
    the column is not the author's to size. */
 .ms-main .mdbody { max-width: none; }
 .ms-head h1 { font-size: 24px; letter-spacing: -.01em; margin: 0 0 4px; }
+.ms-headrow { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+/* Same visual language as .db-views: one control, one place, naming the
+   mode rather than asking the author to remember which gesture means what. */
+.ms-modes { display: inline-flex; flex: none; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; margin-top: 2px; }
+.ms-modes button {
+  font: inherit; font-size: 11.5px; color: var(--text-secondary);
+  background: transparent; border: 0; border-right: 1px solid var(--border);
+  padding: 3px 12px; cursor: pointer;
+}
+.ms-modes button:last-child { border-right: 0; }
+.ms-modes button:hover:not(:disabled) { color: var(--text); }
+.ms-modes button.on { background: var(--baseline); color: var(--text); }
+.ms-modes button:disabled { opacity: .4; cursor: default; }
 .ms-meta { color: var(--text-secondary); font-size: 13px; margin: 0 0 18px; }
 .ms-outline { max-width: 74ch; margin: 0 0 22px; padding: 12px 16px; border-left: 3px solid var(--c1);
   background: var(--panel); border-radius: 0 8px 8px 0; color: var(--text-secondary); font-size: 14px; line-height: 1.6; }

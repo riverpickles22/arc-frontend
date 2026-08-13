@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { AnalyzeResponse, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, SceneContract } from '../canon'
 import { dateOf } from '../canon'
@@ -123,6 +123,32 @@ const paragraphsOf = (body: string): string[] =>
 
 const STATE_LABEL: Record<string, string> = {
   resolved: '', drifted: 'moved', orphaned: 'passage gone', 'no-scene': 'scene gone',
+}
+
+/** Manuscript modes, the Claude-Code pattern: one surface, two ways to touch
+ *  it, an explicit switch rather than one gesture trying to mean three
+ *  things. NOTES is today's manuscript — select to compose, click a note to
+ *  focus it. EDIT makes the prose itself a writing surface: click anywhere,
+ *  type, and it lands in the draft layer as you go. A third position (read,
+ *  A17-4) is designed to slot in beside these without changing this list's
+ *  shape.
+ *
+ *  `Shift+Tab`, not `Ctrl+Tab`: Chrome reserves Ctrl+Tab for switching
+ *  browser tabs and never delivers the keystroke to the page at all. */
+type Mode = 'notes' | 'edit'
+const MODE_ORDER: Mode[] = ['notes', 'edit']
+const MODE_CHORD = 'Shift+Tab'
+const MODE_KEY = 'arc.manuscript.mode'
+
+/** Sticky for the tab's session, not forever — a mode is a stance the author
+ *  takes on THIS visit, not a standing preference like the theme (A16). */
+function readMode(): Mode {
+  try {
+    return sessionStorage.getItem(MODE_KEY) === 'edit' ? 'edit' : 'notes'
+  } catch { return 'notes' }
+}
+function writeMode(m: Mode): void {
+  try { sessionStorage.setItem(MODE_KEY, m) } catch { /* preference is a nicety */ }
 }
 
 /** The notes rail: the author's thoughts on this chapter, anchored to the
@@ -279,28 +305,88 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const clearAttention = useCallback(() => { setActive(null); setFocused(null) }, [])
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
 
-  /** The scene being written in, its working text, and the body the edit
-   *  started from — the baseline is what lets the server tell an edit apart
-   *  from a clobber when the author also has the file open elsewhere.
-   *
-   *  Editing is a MODE. Selecting prose already opens the note composer and
-   *  clicking an annotated paragraph already focuses its note; prose editable
-   *  at rest would be a third meaning for those gestures and would break both.
-   *  Inside the mode a click puts the cursor anywhere, which is the part that
-   *  matters. */
-  const [writingIn, setWritingIn] = useState<{ file: string; text: string; baseline: string } | null>(null)
-  const [writeBusy, setWriteBusy] = useState(false)
+  /** Mode: which of the two things a click and a keystroke mean right now. */
+  const [mode, setModeState] = useState<Mode>(() => readMode())
 
-  const saveScene = async () => {
-    if (!writingIn) return
-    setWriteBusy(true)
+  /** Edit mode's working text, one entry per scene the author has typed into
+   *  — everything not in here just reads `s.body` straight from props, which
+   *  is also how a scene the author hasn't touched stays live if something
+   *  else (a discard, another session) changes it underneath.
+   *
+   *  `lastSavedRef` is the baseline each write is checked against — the
+   *  A17-1 guard, carried forward — kept as a ref rather than state because
+   *  nothing needs to re-render when it changes; it exists purely for the
+   *  next flush to read. Seeded once per file, in `onEditChange`, from the
+   *  prop value at the moment the author's first keystroke lands — the only
+   *  point a plain (unedited) scene body is known good. */
+  const [overrides, setOverrides] = useState<Record<string, string>>({})
+  /** No entry means idle. The message is carried here rather than through
+   *  the shared `err` banner (which lives inside the Review drawer, closed
+   *  by default) — a refused save has to be visible without an extra click
+   *  to find it. */
+  const [editStatus, setEditStatus] = useState<Record<string, { state: 'saving' | 'error'; message?: string }>>({})
+  const overridesRef = useRef(overrides)
+  useEffect(() => { overridesRef.current = overrides }, [overrides])
+  const lastSavedRef = useRef<Record<string, string>>({})
+  const editTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  /** Write one file's current text, if it actually differs from its last
+   *  known-saved baseline. Debounce timers and mode/chapter switches both
+   *  fall through here — a save is a save regardless of what triggered it.
+   *  A stale baseline (something else changed the file) is exactly what the
+   *  A17-1 guard is for: writeScene refuses rather than clobbers, and the
+   *  author sees why instead of losing work silently. */
+  const flushFile = useCallback(async (file: string) => {
+    const timer = editTimers.current[file]
+    if (timer) { clearTimeout(timer); delete editTimers.current[file] }
+    const text = overridesRef.current[file]
+    if (text === undefined) return
+    const baseline = lastSavedRef.current[file] ?? ''
+    if (text === baseline) return
+    setEditStatus(s => ({ ...s, [file]: { state: 'saving' } }))
     try {
-      await writeScene(writingIn.file, writingIn.text, writingIn.baseline)
-      setWritingIn(null)
-      onRefresh()          // the draft layer picks it up as an ordinary change
-    } catch (e) { setErr((e as Error).message ?? String(e)) }
-    finally { setWriteBusy(false) }
+      await writeScene(file, text, baseline)
+      lastSavedRef.current[file] = text
+      setEditStatus(s => { if (!(file in s)) return s; const next = { ...s }; delete next[file]; return next })   // idle = no entry
+      onRefresh()   // the draft layer picks it up as an ordinary change
+    } catch (e) {
+      setEditStatus(s => ({ ...s, [file]: { state: 'error', message: (e as Error).message ?? String(e) } }))
+    }
+  }, [onRefresh])
+
+  const flushAllEdits = useCallback(() => {
+    const files = new Set([...Object.keys(editTimers.current), ...Object.keys(overridesRef.current)])
+    files.forEach(file => { void flushFile(file) })
+  }, [flushFile])
+
+  // Never lose a keystroke to a mode switch, a chapter change, or leaving the
+  // page — flush is idempotent (a clean file is a no-op), so calling it
+  // liberally costs nothing.
+  useEffect(() => () => flushAllEdits(), [flushAllEdits])
+
+  const onEditChange = (file: string, text: string, currentBody: string) => {
+    if (lastSavedRef.current[file] === undefined) lastSavedRef.current[file] = currentBody
+    setOverrides(prev => ({ ...prev, [file]: text }))
+    const timer = editTimers.current[file]
+    if (timer) clearTimeout(timer)
+    editTimers.current[file] = setTimeout(() => { void flushFile(file) }, 700)
   }
+
+  const switchMode = useCallback((next: Mode) => {
+    flushAllEdits()
+    setModeState(next)
+    writeMode(next)
+    // Edit means edit the proposed text — force the reading onto it, since
+    // Before and Changes are exactly the two views the prose is NOT
+    // editable in. Without this, the ordinary case (a clean scene, no draft
+    // yet, `view` still at its 'changes' default) would leave the author
+    // clicking Edit and finding nothing editable.
+    if (next === 'edit') setView('proposed')
+  }, [flushAllEdits])
+
+  const cycleMode = useCallback(() => {
+    switchMode(MODE_ORDER[(MODE_ORDER.indexOf(mode) + 1) % MODE_ORDER.length])
+  }, [mode, switchMode])
 
   const saveEdit = async (text: string) => {
     if (!editing || !text.trim()) return
@@ -328,7 +414,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // A half-armed discard must not survive closing the drawer or moving to
   // another chapter; a stale briefing must not survive the move either.
   const toggleDrawer = () => { setArmed(null); setDrawer(o => !o) }
-  const gotoChapter = (i: number) => { setArmed(null); setGen(null); setGenErr(null); setShowGen(false); onChapter(i) }
+  const gotoChapter = (i: number) => { flushAllEdits(); setArmed(null); setGen(null); setGenErr(null); setShowGen(false); onChapter(i) }
 
   const byFile = useMemo(() => new Map(scenes.map(s => [s.file, s])), [scenes])
   const diffs = useMemo(() => {
@@ -353,6 +439,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     () => (cur ? scenes.filter(s => s.chapter === cur.id).sort((a, b) => a.file.localeCompare(b.file)) : []),
     [scenes, cur],
   )
+
   const chapterNotes = useMemo(
     () => notes.filter(x => curScenes.some(s => s.scene === x.anchor.scene))
       .filter(x => x.status !== 'resolved' && x.status !== 'dropped'),
@@ -620,6 +707,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           if (t.closest('.notes-rail') || t.closest('p.has-note')) return
           if (editing) return   // a half-written revision is not clutter to clear
           clearAttention()
+        }}
+        onKeyDownCapture={ev => {
+          // Capture phase, ahead of a textarea's own default: Shift+Tab would
+          // otherwise move focus to the previous element, which is not what
+          // "cycle the mode" should look like while the author is mid-word.
+          if (ev.key === 'Tab' && ev.shiftKey) { ev.preventDefault(); cycleMode() }
         }}>
       <article className="ms-main">
         {draft.git && (
@@ -717,13 +810,29 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         )}
 
         <header className="ms-head">
-          <h1>{cur.order === 0 ? 'Prologue' : `Chapter ${cur.order}`} — {cur.title}
-            <CopyProse get={() => chapterText(copyableScenes(curScenes, draft.changes))} label="copy chapter"
-              disabled={!curScenes.length}
-              title={curScenes.length
-                ? `Copy the prose of all ${curScenes.length} scene${curScenes.length === 1 ? '' : 's'} in this chapter`
-                : 'Nothing drafted in this chapter yet'} />
-          </h1>
+          <div className="ms-headrow">
+            <h1>{cur.order === 0 ? 'Prologue' : `Chapter ${cur.order}`} — {cur.title}
+              <CopyProse get={() => chapterText(copyableScenes(curScenes, draft.changes))} label="copy chapter"
+                disabled={!curScenes.length}
+                title={curScenes.length
+                  ? `Copy the prose of all ${curScenes.length} scene${curScenes.length === 1 ? '' : 's'} in this chapter`
+                  : 'Nothing drafted in this chapter yet'} />
+            </h1>
+            <div className="ms-modes" role="group" aria-label="Manuscript mode">
+              <button className={mode === 'notes' ? 'on' : ''} aria-pressed={mode === 'notes'}
+                onClick={() => switchMode('notes')}
+                title={`Select prose to leave a note, click a note to focus it. ${MODE_CHORD} cycles the mode.`}>
+                Notes
+              </button>
+              <button className={mode === 'edit' ? 'on' : ''} aria-pressed={mode === 'edit'}
+                disabled={!draft.git} onClick={() => switchMode('edit')}
+                title={draft.git
+                  ? `Click anywhere in the prose and type — it lands in the draft layer as you go. ${MODE_CHORD} cycles the mode.`
+                  : 'Editing needs the story to be a git repository — there is no draft layer without one.'}>
+                Edit
+              </button>
+            </div>
+          </div>
           <p className="ms-meta">{spanText}{cur.part ? ` · ${cur.part}` : ''}
             {words > 0 && ` · ${formatWords(words)} words · ~${pages} page${pages === 1 ? '' : 's'} · ${formatReadingTime(words)} read`}
             {' · '}<span className={`stpill ${cur.status}`}>{cur.status}</span>
@@ -752,14 +861,14 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 <CopyRef text={s.scene} />
                 <CopyProse get={() => sceneText(s)} label="copy text"
                   title="Copy this scene's prose" disabled={!s.body.trim()} />
-                {view !== 'before' && (
-                  writingIn?.file === s.file
-                    ? <a className="linklike" onClick={() => setWritingIn(null)}>cancel edit</a>
-                    : <a className="linklike" title="Edit this scene — changes land in the draft layer"
-                        onClick={() => setWritingIn({ file: s.file, text: s.body, baseline: s.body })}>edit</a>
-                )}
                 <span className={`stpill ${s.status}`}>{s.status}</span>
                 {change && <span className={`stpill ${change.status}`}>draft · {change.status}</span>}
+                {mode === 'edit' && view === 'proposed' && editStatus[s.file]?.state === 'saving' && (
+                  <span className="fsummary">saving…</span>
+                )}
+                {mode === 'edit' && view === 'proposed' && editStatus[s.file]?.state === 'error' && (
+                  <span className="db-err">not saved — {editStatus[s.file]?.message}</span>
+                )}
                 {s.pov && <a className="linklike" onClick={() => onOpenWorld(s.pov!)}>POV {s.pov}</a>}
                 <span className="rests">rests on{' '}
                   {[...s.facts, ...s.events].map(id => (
@@ -768,22 +877,18 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 </span>
               </div>
               {s.contract && <ContractPanel c={s.contract} onOpenWorld={onOpenWorld} />}
-              {writingIn?.file === s.file
+              {mode === 'edit' && view === 'proposed'
                 ? (
+                  // Click anywhere, type, and it lands in the draft layer a
+                  // moment later — no button, no separate save step. A plain
+                  // textarea rather than contenteditable over rendered HTML:
+                  // converting HTML back to markdown on every keystroke is
+                  // lossy, and the thing it would lose is the prose itself.
+                  // Clicking a textarea places the caret natively; there is
+                  // no caret math to get right or wrong.
                   <div className="scene-edit">
-                    <textarea autoFocus value={writingIn.text} spellCheck
-                      onChange={ev => setWritingIn(w => w && { ...w, text: ev.target.value })}
-                      onKeyDown={ev => {
-                        ev.stopPropagation()   // typing here is not a note
-                        if (ev.key === 'Escape') setWritingIn(null)
-                        if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) void saveScene()
-                      }} />
-                    <div className="note-acts">
-                      <button disabled={writeBusy || writingIn.text === writingIn.baseline}
-                        onClick={saveScene}>{writeBusy ? 'saving…' : 'Save to draft'}</button>
-                      <button disabled={writeBusy} onClick={() => setWritingIn(null)}>cancel</button>
-                      <span className="fsummary">Saved changes wait in the draft layer until you accept them.</span>
-                    </div>
+                    <textarea value={overrides[s.file] ?? s.body} spellCheck
+                      onChange={ev => onEditChange(s.file, ev.target.value, s.body)} />
                   </div>
                 )
                 : notYetInBook
