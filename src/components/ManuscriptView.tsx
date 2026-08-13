@@ -8,7 +8,7 @@ import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
 import { formatReadingTime, formatWords, totalWords, wordsByChapter } from '../wordcount'
 import { CopyProse, CopyRef } from './CopyRef'
-import { chapterText, copyableScenes, paragraphAtOffset, sceneText } from '../manuscript-text'
+import { chapterText, copyableScenes, isSingleWord, paragraphAtOffset, sceneText } from '../manuscript-text'
 import { stack } from '../note-stack'
 
 /** The scene's stated intent (conventions §10), collapsed by default —
@@ -140,6 +140,29 @@ type Mode = 'notes' | 'edit' | 'read'
 const MODE_ORDER: Mode[] = ['edit', 'notes', 'read']
 const MODE_CHORD = 'Shift+Tab'
 const MODE_KEY = 'arc.manuscript.mode'
+
+/** The working state for a pass that has been asked but has not answered.
+ *
+ *  Deliberately indeterminate: these passes run against whichever engine is
+ *  present, and on the keyless CLI path a rephrase can take tens of seconds.
+ *  A bar that fills toward a known end would be a lie about a wait nobody can
+ *  measure — so the sheen travels and nothing claims a percentage. What it
+ *  does promise is that the box is alive, which a static sentence sitting
+ *  there for thirty seconds actively fails to do.
+ *
+ *  The skeleton lines are the shape of the answer, not decoration: three
+ *  alternatives are about what comes back, so the wait looks like the result
+ *  it is about to become. */
+function Working({ label }: { label: string }) {
+  return (
+    <div className="sp-working" role="status" aria-live="polite">
+      <p className="sp-working-label">{label}<span className="sp-dots" aria-hidden="true" /></p>
+      <div className="sp-skel" aria-hidden="true">
+        <span /><span /><span />
+      </div>
+    </div>
+  )
+}
 
 /** Sticky for the tab's session, not forever — a mode is a stance the author
  *  takes on THIS visit, not a standing preference like the theme (A16). */
@@ -454,8 +477,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     error: string | null
   } | null>(null)
 
-  // One dismissal discipline for menu and popover: click-away, Escape, or
-  // scrolling anywhere puts them down.
+  // Click-away and Escape put both down — the ordinary two ways out.
   useEffect(() => {
     if (!selMenu && !suggest) return
     const down = (ev: MouseEvent) => {
@@ -464,16 +486,25 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       setSelMenu(null); setSuggest(null)
     }
     const key = (ev: KeyboardEvent) => { if (ev.key === 'Escape') { setSelMenu(null); setSuggest(null) } }
-    const scroll = () => { setSelMenu(null); setSuggest(null) }
     window.addEventListener('mousedown', down)
     window.addEventListener('keydown', key)
-    window.addEventListener('scroll', scroll, true)
     return () => {
       window.removeEventListener('mousedown', down)
       window.removeEventListener('keydown', key)
-      window.removeEventListener('scroll', scroll, true)
     }
   }, [selMenu, suggest])
+
+  // Scrolling closes the CONTEXT MENU only. A menu pinned to a point in the
+  // text is wrong the moment that point moves, so it goes. The suggestion
+  // popover stays: it is a result the author is reading, sometimes several
+  // sentences of it, and closing it out from under them means running the
+  // pass again to get it back. It leaves by click-away, Escape, or a pick.
+  useEffect(() => {
+    if (!selMenu) return
+    const scroll = () => setSelMenu(null)
+    window.addEventListener('scroll', scroll, true)
+    return () => window.removeEventListener('scroll', scroll, true)
+  }, [selMenu])
 
   /** Right-click on selected editor text: our menu. With nothing selected the
    *  browser's own menu stands — spell-check and paste live there, and a
@@ -1175,7 +1206,17 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         <div className="sel-menu" style={{ left: selMenu.x, top: selMenu.y }}>
           <button onClick={noteFromMenu}>Add note</button>
           <button onClick={() => void askSuggest('rephrase')}>Rephrase…</button>
-          <button onClick={() => void askSuggest('synonyms')}>Synonyms…</button>
+          {/* Synonyms answers with drop-in replacements — same part of speech,
+              same case — which only means anything for one word. Disabled
+              rather than hidden, so a menu that changes shape between
+              selections still explains itself. */}
+          <button disabled={!isSingleWord(selMenu.quote)}
+            onClick={() => void askSuggest('synonyms')}
+            title={isSingleWord(selMenu.quote)
+              ? 'Alternatives for this word, with a note on what each one carries'
+              : 'Synonyms works on one word at a time — select a single word, or use Rephrase for a passage.'}>
+            Synonyms…
+          </button>
         </div>
       )}
       {suggest && (
@@ -1188,9 +1229,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           </div>
           <blockquote className="note-quote">{suggest.menu.quote.length > 120 ? suggest.menu.quote.slice(0, 120) + '…' : suggest.menu.quote}</blockquote>
           {suggest.items === null && !suggest.error && (
-            <p className="fsummary">{suggest.kind === 'rephrase'
-              ? 'Rewriting against your own style contract…'
-              : 'Looking for words that keep the period and the voice…'}</p>
+            <Working label={suggest.kind === 'rephrase'
+              ? 'Rewriting against your own style contract'
+              : 'Looking for words that keep the period and the voice'} />
           )}
           {suggest.error && <p className="db-err">{suggest.error}</p>}
           {suggest.items?.map((it, i) => (

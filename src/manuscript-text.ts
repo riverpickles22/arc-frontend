@@ -72,3 +72,19 @@ export function paragraphAtOffset(body: string, offset: number): number {
   }
   return Math.max(0, index)
 }
+
+/** Is this selection a single word — the only shape a thesaurus answer means
+ *  anything for?
+ *
+ *  The synonym pass returns drop-in replacements: same part of speech, same
+ *  case. Asked about a whole sentence it has nothing coherent to return, so
+ *  the menu offers it only here. Surrounding whitespace does not count — a
+ *  double-click often takes the trailing space with it, and refusing that
+ *  selection would be refusing the commonest way to pick one word.
+ *
+ *  Internal punctuation is fine: "don't", "sea-grape", and "1848," are each
+ *  one word. Only whitespace inside the trimmed selection makes it more. */
+export const isSingleWord = (selection: string): boolean => {
+  const t = selection.trim()
+  return t.length > 0 && !/\s/.test(t)
+}

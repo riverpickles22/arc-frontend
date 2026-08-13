@@ -255,6 +255,35 @@ svg text { font-family: inherit; }
 /* The prose fills its column — the 74ch measure belongs to the wiki, where
    the column is not the author's to size. */
 .ms-main .mdbody { max-width: none; }
+/* The chapter header stays put while the chapter moves under it: on a long
+   chapter the title and the mode control would otherwise scroll away, and in
+   Read mode there is no other chrome left to change stance from.
+
+   Sticky rather than fixed — the header keeps its place in the flow, so the
+   notes rail's measured paragraph offsets are untouched. The outline below is
+   deliberately NOT sticky: it orients you on arrival, and holding it there
+   would cost the prose a third of the screen for something already read.
+
+   NO top margin, deliberately. Sticky constrains the MARGIN box, so a negative
+   top margin here would seat the painted background that far below the scroll
+   top and let a clipped line of prose show above the title. The horizontal
+   margins are negative on purpose — they widen the background band past the
+   column's padding, and the matching side padding puts the text back. */
+.ms-head {
+  position: sticky; top: 0; z-index: 6;
+  margin: 0 -32px 18px; padding: 14px 32px 10px;
+  background: var(--page);
+}
+/* The gap under the meta line has to be PADDING, not the margin it was: a
+   margin sits outside the background, so prose scrolled up into it arrives
+   at the header unfaded and touching the type. */
+.ms-head .ms-meta { margin-bottom: 0; }
+/* A soft edge under the header so prose passing beneath it ends, rather than
+   being cut off mid-line at a hard border. */
+.ms-head::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 14px;
+  background: linear-gradient(var(--page), transparent); pointer-events: none;
+}
 .ms-head h1 { font-size: 24px; letter-spacing: -.01em; margin: 0 0 4px; }
 .ms-headrow { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 /* Same visual language as .db-views: one control, one place, naming the
@@ -665,3 +694,39 @@ p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
 .prop-actions .btn:hover:not(:disabled) { border-color: color-mix(in oklab, var(--c1) 55%, var(--border)); }
 .prop-actions .btn.ghost { color: var(--muted); background: transparent; }
 .prop-actions .btn:disabled { opacity: .55; cursor: default; }
+
+/* ---- the working state (A17-11) ----
+   An indeterminate wait, shown as one. The passes run against whichever
+   engine is present and the keyless CLI path can take tens of seconds; a bar
+   filling toward a known end would be a lie about a wait nobody can measure.
+   So: a travelling sheen over skeleton lines shaped like the answer that is
+   coming, and no percentage anywhere. */
+.sp-working { margin: 8px 0 4px; }
+.sp-working-label { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin: 0 0 9px; }
+
+/* Three dots that fill and clear, so the sentence itself is never still. */
+.sp-dots::after { content: '…'; display: inline-block; width: 1em; text-align: left; animation: sp-dots 1.4s steps(4, end) infinite; }
+@keyframes sp-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75%, 100% { content: '…'; } }
+
+.sp-skel { display: flex; flex-direction: column; gap: 7px; }
+.sp-skel span {
+  display: block; height: 11px; border-radius: 4px;
+  background: linear-gradient(90deg,
+    var(--baseline) 0%, var(--baseline) 40%,
+    color-mix(in oklab, var(--c1) 26%, var(--baseline)) 50%,
+    var(--baseline) 60%, var(--baseline) 100%);
+  background-size: 280% 100%;
+  animation: sp-sheen 1.5s ease-in-out infinite;
+}
+/* Staggered, so the three lines read as one pass moving through them rather
+   than three things blinking together. */
+.sp-skel span:nth-child(2) { width: 88%; animation-delay: .12s; }
+.sp-skel span:nth-child(3) { width: 64%; animation-delay: .24s; }
+@keyframes sp-sheen { from { background-position: 140% 0; } to { background-position: -40% 0; } }
+
+/* Motion is the whole mechanism here, so the reduced-motion fallback has to
+   carry the meaning some other way: the lines stay, plainly unfinished. */
+@media (prefers-reduced-motion: reduce) {
+  .sp-skel span { animation: none; background: var(--baseline); }
+  .sp-dots::after { animation: none; content: '…'; }
+}

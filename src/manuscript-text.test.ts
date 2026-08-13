@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { chapterText, copyableScenes, sceneText } from './manuscript-text'
+import { chapterText, copyableScenes, isSingleWord, paragraphAtOffset, sceneText } from './manuscript-text'
 
 test('a scene copies as its prose, trimmed', () => {
   expect(sceneText({ body: '\n\nThe morning smelled of coffee.\n\n' }))
@@ -57,7 +57,6 @@ test('a chapter with no drafted prose copies as nothing', () => {
   expect(chapterText([{ body: '\n' }])).toBe('')
 })
 
-import { paragraphAtOffset } from './manuscript-text'
 
 test('offsets map to the same indices paragraphsOf produces', () => {
   const body = 'First paragraph here.\n\nSecond one.\n\nThird and last.'
@@ -85,4 +84,23 @@ test('an offset in the gap anchors to the following paragraph', () => {
 test('past the end clamps to the last paragraph', () => {
   const body = 'Only one paragraph.'
   expect(paragraphAtOffset(body, 9999)).toBe(0)
+})
+
+test('a single word, with or without the whitespace a double-click drags along', () => {
+  expect(isSingleWord('walked')).toBe(true)
+  expect(isSingleWord('  walked ')).toBe(true)
+  expect(isSingleWord('walked\n')).toBe(true)
+})
+
+test('punctuation inside a word does not make it two', () => {
+  expect(isSingleWord("don't")).toBe(true)
+  expect(isSingleWord('sea-grape')).toBe(true)
+  expect(isSingleWord('1848,')).toBe(true)
+})
+
+test('anything with whitespace inside it, or nothing at all, is not a single word', () => {
+  expect(isSingleWord('sea grape')).toBe(false)
+  expect(isSingleWord('He was very tired.')).toBe(false)
+  expect(isSingleWord('')).toBe(false)
+  expect(isSingleWord('   ')).toBe(false)
 })
