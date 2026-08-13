@@ -255,7 +255,7 @@ function Shell({ canon, data, dark, onToggleDark }: {
           onRefreshNotes={data.refreshNotes} onCanonChanged={data.refreshCanon} />
       )}
       {page === 'style' && (
-        <StyleView style={data.style} tab={styleTab} onTab={setStyleTab} />
+        <StyleView style={data.style} tab={styleTab} onTab={setStyleTab} onRefresh={data.refreshStyle} />
       )}
       {page === 'wiki' && (
         <WikiView canon={canon} articles={data.docs} scenes={data.prose} onOpenWorld={openWorld}

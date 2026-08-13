@@ -28,6 +28,7 @@ export interface ServerData {
   refreshCanon: () => void
   refreshNotes: () => void
   refreshProse: () => void
+  refreshStyle: () => void
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -88,6 +89,9 @@ export function useServerData(): ServerData {
     loadMaterial().then(setMaterial).catch(() => {})
   }, [])
 
+  // The contract and its proposal queue: both change when a rule is ratified.
+  const refreshStyle = useCallback(() => { loadStyle().then(setStyle).catch(() => {}) }, [])
+
   // Prose and its draft state refresh together: accept/discard change both.
   const refreshNotes = useCallback(() => { loadAnnotations().then(setNotes).catch(() => {}) }, [])
   const refreshProse = useCallback(() => {
@@ -95,5 +99,5 @@ export function useServerData(): ServerData {
     loadDraft().then(setDraft).catch(() => setDegraded(d => (d.includes('draft') ? d : [...d, 'draft'])))
   }, [])
 
-  return { canon, canonError, retry, view, style, notes, docs, prose, draft, attention: attn, material, degraded, refreshCanon, refreshProse, refreshNotes }
+  return { canon, canonError, retry, view, style, notes, docs, prose, draft, attention: attn, material, degraded, refreshCanon, refreshProse, refreshNotes, refreshStyle }
 }

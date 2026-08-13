@@ -618,3 +618,50 @@ p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
   border-left-color: var(--c1); border-left-width: 3px;
   border-radius: 0 4px 4px 0; transition: background .15s ease;
 }
+
+/* ---- proposed style rules (conventions §11: argued) ----
+   Arc's argument that a rule follows from what the author actually kept.
+   Deliberately NOT the visual language of a finding or an error: nothing
+   here is wrong, nothing needs fixing, and the author is free to ignore the
+   whole queue forever. The evidence carries the weight — a rule alone is an
+   assertion about their voice they cannot check, so the two paragraphs sit
+   right under it, arc's above and theirs below, in the reading face. */
+.reg-argued {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--muted); border: 1px solid var(--border); border-radius: 3px;
+  padding: 1px 4px; margin-left: 6px; vertical-align: 1px; font-weight: 400;
+}
+.proposed-rules { border-style: dashed; }
+.proposal {
+  border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px;
+}
+.proposal:first-of-type { border-top: 0; padding-top: 0; }
+.prop-section {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 3px;
+}
+.prop-rule { font-size: 13.5px; line-height: 1.55; color: var(--text-primary); margin: 0 0 8px; }
+.prop-evidence {
+  border-left: 2px solid color-mix(in oklab, var(--c1) 35%, transparent);
+  padding-left: 9px; margin-bottom: 8px;
+}
+.prop-scene { font-size: 10.5px; color: var(--muted); margin-bottom: 3px; }
+.prop-wrote, .prop-kept {
+  font-family: var(--serif, Georgia, serif); font-size: 12.5px; line-height: 1.5;
+  color: var(--text-secondary); margin-bottom: 4px;
+}
+.prop-kept { color: var(--text-primary); }
+.prop-wrote span, .prop-kept span {
+  display: block; font-family: inherit; font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--muted); margin-bottom: 1px;
+}
+.prop-wrote { text-decoration: line-through; text-decoration-color: color-mix(in oklab, var(--muted) 55%, transparent); }
+.prop-wrote span { text-decoration: none; }
+.prop-error { font-size: 12px; color: var(--danger, #c4553f); margin: 4px 0 0; }
+.prop-actions { display: flex; gap: 8px; margin-top: 8px; }
+.prop-actions .btn {
+  font: inherit; font-size: 12px; cursor: pointer; border-radius: 6px; padding: 5px 10px;
+  color: var(--text-primary); background: var(--page); border: 1px solid var(--border);
+}
+.prop-actions .btn:hover:not(:disabled) { border-color: color-mix(in oklab, var(--c1) 55%, var(--border)); }
+.prop-actions .btn.ghost { color: var(--muted); background: transparent; }
+.prop-actions .btn:disabled { opacity: .55; cursor: default; }

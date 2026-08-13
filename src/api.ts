@@ -7,7 +7,7 @@
 // backend can no longer masquerade as an empty story.
 import type {
   AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, MaterialResponse,
-  ProseAcceptResponse, ProseResponse, StyleResponse,
+  ProseAcceptResponse, ProseResponse, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
 } from 'arc-canon-graph'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, SuggestRequest, SuggestResponse } from './canon'
 import type { View } from './presentation'
@@ -79,9 +79,15 @@ export const writeScene = (file: string, body: string, baseline?: string): Promi
 export const suggestText = (req: SuggestRequest): Promise<SuggestResponse> =>
   post('/api/prose/suggest', req)
 
-/** The style contract (conventions §10): both layers as they are on disk. */
+/** The style contract (conventions §10): both layers as they are on disk,
+ *  plus the queue of rules arc has argued for and you have not ratified. */
 export const loadStyle = (signal?: AbortSignal): Promise<StyleResponse> =>
   getJson<StyleResponse>('/api/style', { signal })
+
+/** Ratify a proposed rule into a layer, or dismiss it. The author's click is
+ *  the gate: no model runs on the far side of this call. */
+export const ratifyRule = (req: RatifyRuleRequest): Promise<RatifyRuleResponse> =>
+  post('/api/style/proposed', req)
 
 /** view.yaml from the story repo. A story without one renders from canon alone. */
 export const loadView = (signal?: AbortSignal): Promise<View> =>
