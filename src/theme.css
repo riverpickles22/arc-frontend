@@ -591,6 +591,18 @@ p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
 }
 .sel-menu button:hover { background: var(--baseline); }
 
+/* An item that cannot be taken. It keeps its pointer events — it is
+   aria-disabled, not disabled, so a hover still reaches it — but offers no
+   pointer and no hover highlight, because nothing here is clickable. The
+   reason sits under the label rather than in a tooltip: a title on a
+   genuinely disabled control is written where the mouse can never go. */
+.sel-menu button.off { cursor: default; color: var(--muted); }
+.sel-menu button.off:hover { background: transparent; }
+.sel-menu button.off .mi-why {
+  display: block; font-size: 11px; line-height: 1.35; color: var(--muted);
+  margin-top: 1px; max-width: 24ch; opacity: .85;
+}
+
 /* The suggestion popover: alternatives in the argued register. Each is a
    full-width button — clicking is applying, and nothing applies itself. */
 .suggest-pop {

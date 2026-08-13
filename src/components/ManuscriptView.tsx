@@ -1207,16 +1207,25 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           <button onClick={noteFromMenu}>Add note</button>
           <button onClick={() => void askSuggest('rephrase')}>Rephrase…</button>
           {/* Synonyms answers with drop-in replacements — same part of speech,
-              same case — which only means anything for one word. Disabled
+              same case — which only means anything for one word. Unavailable
               rather than hidden, so a menu that changes shape between
-              selections still explains itself. */}
-          <button disabled={!isSingleWord(selMenu.quote)}
-            onClick={() => void askSuggest('synonyms')}
-            title={isSingleWord(selMenu.quote)
-              ? 'Alternatives for this word, with a note on what each one carries'
-              : 'Synonyms works on one word at a time — select a single word, or use Rephrase for a passage.'}>
-            Synonyms…
-          </button>
+              selections still accounts for itself.
+
+              aria-disabled, NOT disabled: a disabled button takes no pointer
+              events at all in Chrome, so its title never fires — the reason
+              would be written down somewhere the mouse can never reach it.
+              Hence the reason inline, where it needs no hover to be read. */}
+          {isSingleWord(selMenu.quote) ? (
+            <button onClick={() => void askSuggest('synonyms')}
+              title="Alternatives for this word, with a note on what each one carries">
+              Synonyms…
+            </button>
+          ) : (
+            <button className="off" aria-disabled="true" onClick={ev => ev.preventDefault()}>
+              Synonyms…
+              <span className="mi-why">one word at a time — use Rephrase for a passage</span>
+            </button>
+          )}
         </div>
       )}
       {suggest && (
