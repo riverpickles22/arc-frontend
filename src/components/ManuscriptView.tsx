@@ -412,6 +412,29 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     switchMode(MODE_ORDER[(MODE_ORDER.indexOf(mode) + 1) % MODE_ORDER.length])
   }, [mode, switchMode])
 
+  /** The mode chord belongs to the PAGE, not to one box on it.
+   *
+   *  It first lived on the prose columns, which meant it only answered once
+   *  focus was already inside them — arriving on the manuscript, or clicking a
+   *  chapter in the nav, left it dead, and a chord that works only sometimes
+   *  reads as broken rather than scoped. This component mounts only on the
+   *  manuscript page, so its own lifetime is exactly the right scope: the
+   *  listener cannot outlive the page or reach World, Wiki, or Style.
+   *
+   *  Capture phase, and preventDefault: Shift+Tab is the browser's reverse
+   *  focus move, and cycling the mode while focus also jumps somewhere else
+   *  is two effects from one chord. */
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key !== 'Tab' || !ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey) return
+      ev.preventDefault()
+      ev.stopPropagation()
+      cycleMode()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [cycleMode])
+
   /** The selection menu: right-click on selected text in the editor. Holds
    *  everything an action needs so the selection may collapse the moment the
    *  menu opens without losing anything. Coordinates are viewport-relative
@@ -843,12 +866,6 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           if (t.closest('.notes-rail') || t.closest('p.has-note')) return
           if (editing) return   // a half-written revision is not clutter to clear
           clearAttention()
-        }}
-        onKeyDownCapture={ev => {
-          // Capture phase, ahead of a textarea's own default: Shift+Tab would
-          // otherwise move focus to the previous element, which is not what
-          // "cycle the mode" should look like while the author is mid-word.
-          if (ev.key === 'Tab' && ev.shiftKey) { ev.preventDefault(); cycleMode() }
         }}>
       <article className="ms-main">
         {draft.git && mode !== 'read' && (
