@@ -820,3 +820,51 @@ p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
 .cap-acts button:hover:not(:disabled) { border-color: color-mix(in oklab, var(--c1) 55%, var(--border)); }
 .cap-acts button.ghost { color: var(--muted); background: transparent; }
 .cap-acts button:disabled { opacity: .55; cursor: default; }
+
+/* ---- the Thoughts page (A18-8/9) ----
+   Two records, disposed of differently on purpose: a filed thought is DROPPED
+   and keeps its file (conventions §12 — intent history is story history); a
+   raw dump is DELETED, because it is transient by design and a duplicate once
+   the thought has been filed. The page says which is which rather than making
+   the author infer it from button labels. */
+.th-head { position: static; margin: 0 0 18px; padding: 0; background: none; }
+.th-head::after { display: none; }
+.th-head .ms-meta { max-width: 74ch; margin-bottom: 0; }
+
+.thought {
+  border: 1px solid var(--border); border-radius: 9px;
+  padding: 12px 14px; margin-bottom: 12px; max-width: 78ch;
+  background: var(--surface-1);
+}
+.thought.is-dropped { opacity: .62; border-style: dashed; background: transparent; }
+.th-top { display: flex; align-items: baseline; gap: 9px; margin-bottom: 6px; }
+.th-top code { font-size: 12px; color: var(--c1); }
+.th-status {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+}
+.th-body {
+  font-size: 14px; line-height: 1.6; color: var(--text-primary); margin: 0;
+  cursor: text; border-radius: 5px;
+}
+.th-body:hover { background: color-mix(in oklab, var(--baseline) 26%, transparent); }
+/* A raw dump is the author's own typing, so it keeps their line breaks. */
+.th-body.raw { white-space: pre-wrap; cursor: default; }
+.th-body.raw:hover { background: transparent; }
+.th-purpose { font-size: 13px; line-height: 1.55; color: var(--text-secondary); margin: 7px 0 0; }
+.th-edit {
+  width: 100%; box-sizing: border-box; min-height: 110px; resize: vertical;
+  font: inherit; font-size: 14px; line-height: 1.6;
+  color: var(--text-primary); background: var(--page);
+  border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px;
+}
+.th-edit:focus { outline: none; border-color: color-mix(in oklab, var(--c1) 55%, var(--border)); }
+.th-acts { display: flex; gap: 8px; margin-top: 9px; }
+.th-acts button {
+  font: inherit; font-size: 12px; cursor: pointer; border-radius: 6px; padding: 5px 12px;
+  color: var(--text-primary); background: var(--page); border: 1px solid var(--border);
+}
+.th-acts button:hover:not(:disabled) { border-color: color-mix(in oklab, var(--c1) 55%, var(--border)); }
+.th-acts button.ghost { color: var(--muted); background: transparent; }
+.th-acts button:disabled { opacity: .55; cursor: default; }
+
+.th-dropped { border-top: 1px solid var(--border); margin-top: 22px; padding-top: 14px; max-width: 78ch; }

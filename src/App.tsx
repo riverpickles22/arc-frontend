@@ -18,13 +18,14 @@ import { ManuscriptView } from './components/ManuscriptView'
 import { WikiView } from './components/WikiView'
 import { StyleView, type StyleTab } from './components/StyleView'
 import { CaptureBar } from './components/CaptureBar'
+import { ThoughtsView } from './components/ThoughtsView'
 
-type Page = 'world' | 'manuscript' | 'wiki' | 'style'
+type Page = 'world' | 'manuscript' | 'wiki' | 'style' | 'thoughts'
 
 // Labels live in a lookup, not a ternary chain: a chain's final `else` label
 // silently mislabels every page added after it.
 const PAGE_LABEL: Record<Page, string> = {
-  world: 'World', manuscript: 'Manuscript', wiki: 'Wiki', style: 'Style',
+  world: 'World', manuscript: 'Manuscript', wiki: 'Wiki', style: 'Style', thoughts: 'Thoughts',
 }
 
 // ---- URL routes ---------------------------------------------------------
@@ -49,6 +50,7 @@ function parseHash(): Route {
   if (head === 'manuscript') return { page: 'manuscript', chapterId: rest[0] || undefined }
   if (head === 'wiki') return { page: 'wiki', wikiPath: rest.join('/') || undefined }
   if (head === 'style') return { page: 'style', styleTab: rest[0] === 'author' ? 'author' : 'book' }
+  if (head === 'thoughts') return { page: 'thoughts' }
   if (head === 'world') {
     const tail = rest.join('/')
     const at = tail.indexOf('@')
@@ -260,6 +262,9 @@ function Shell({ canon, data, dark, onToggleDark }: {
           chapterIx={time.chapterIx} onChapter={time.setChapterIx} onOpenWorld={openWorld}
           draft={data.draft} notes={data.notes} onRefresh={data.refreshProse}
           onRefreshNotes={data.refreshNotes} onCanonChanged={data.refreshCanon} />
+      )}
+      {page === 'thoughts' && (
+        <ThoughtsView items={data.material} onChanged={data.refreshMaterial} />
       )}
       {page === 'style' && (
         <StyleView style={data.style} tab={styleTab} onTab={setStyleTab} onRefresh={data.refreshStyle} />

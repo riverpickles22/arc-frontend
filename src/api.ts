@@ -7,7 +7,8 @@
 // backend can no longer masquerade as an empty story.
 import type {
   AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, MaterialResponse,
-  DumpDecisionRequest, DumpDecisionResponse, DumpRequest, DumpResponse, HealthResponse,
+  DeleteDumpRequest, DumpDecisionRequest, DumpDecisionResponse, DumpRequest, DumpResponse, DumpsResponse,
+  HealthResponse, OkResponse, UpdateMaterialRequest, UpdateMaterialResponse,
   ProseAcceptResponse, ProseResponse, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
 } from 'arc-canon-graph'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, SuggestRequest, SuggestResponse } from './canon'
@@ -99,6 +100,19 @@ export const loadHealth = (signal?: AbortSignal): Promise<HealthResponse> =>
  *  costs the author what they typed. */
 export const fileDump = (req: DumpRequest): Promise<DumpResponse> =>
   post('/api/dump', req)
+
+/** The raw dumps: what you typed, before any model read it. */
+export const listDumps = (signal?: AbortSignal): Promise<DumpsResponse> =>
+  getJson<DumpsResponse>('/api/dumps', { signal })
+
+/** Delete one raw dump. Real deletion — a dump is transient by design, unlike
+ *  a material item, which is dropped and kept (conventions §12). */
+export const deleteDump = (req: DeleteDumpRequest): Promise<OkResponse> =>
+  post('/api/dumps/delete', req)
+
+/** Correct a filed thought, or move it along its lifecycle. */
+export const updateMaterial = (req: UpdateMaterialRequest): Promise<UpdateMaterialResponse> =>
+  post('/api/material/update', req)
 
 /** Keep what a dump filed, or discard it. Either answer writes a receipt. */
 export const decideDump = (req: DumpDecisionRequest): Promise<DumpDecisionResponse> =>
