@@ -1,48 +1,51 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { MaterialItem, RawDump } from '../canon'
-import { deleteDump, listDumps, updateMaterial } from '../api'
+import { useMemo, useState } from 'react'
+import type { MaterialItem, Note, WorkResponse } from '../canon'
+import { decideWork, removeNote, reviseNote, updateMaterial, workNote } from '../api'
+import { Working } from './Working'
 
 /** Everything the author has thought at the story and not yet placed.
  *
- *  Two records sit here, and the difference between them is the whole point of
- *  the page. The FILED THOUGHTS are material (conventions §12) — arc's reading
- *  of what was said, structured, and the thing later passes actually consume.
- *  YOUR WORDS are the raw dumps: exactly what was typed, saved before any
- *  model ran.
+ *  Two records, in the order they happen. YOUR NOTES come first: exactly what
+ *  was written, kept the moment it was written, and never read by anything
+ *  until asked. STORY MATERIAL is what arc made of a note once the author
+ *  asked it to — structured, and what the later passes actually consume.
  *
- *  They are also disposed of differently, and that is deliberate rather than
- *  inconsistent. A filed thought is DROPPED — the file and its id survive,
- *  because "dropped beats deletion: intent history is story history" (§12). A
- *  raw dump is DELETED, because it is transient by design: it lives under
- *  .arc/, it is gitignored, and once the thought it carried has been filed it
- *  is a duplicate the author may reasonably want gone.
+ *  They are disposed of differently, and that is deliberate rather than
+ *  inconsistent. A note is the author's own, and DELETES. A material item is a
+ *  record of intent and is DROPPED — the file and the id survive, because
+ *  "dropped beats deletion: intent history is story history" (§12).
  */
-export function ThoughtsView({ items, onChanged }: {
+export function ThoughtsView({ notes, items, onNotesChanged, onMaterialChanged }: {
+  notes: Note[]
   items: MaterialItem[]
-  onChanged: () => void
+  onNotesChanged: () => void
+  onMaterialChanged: () => void
 }) {
-  const [tab, setTab] = useState<'filed' | 'raw'>('filed')
+  const [tab, setTab] = useState<'notes' | 'filed'>('notes')
   const [showDropped, setShowDropped] = useState(false)
 
   const live = useMemo(() => items.filter(i => i.status !== 'dropped'), [items])
   const dropped = useMemo(() => items.filter(i => i.status === 'dropped'), [items])
+  const worked = useMemo(() => notes.filter(n => n.worked.length).length, [notes])
 
   return (
     <div className="wiki-layout">
       <nav className="side-nav">
         <h3>Thoughts</h3>
-        <button className={tab === 'filed' ? 'navitem sel' : 'navitem'} onClick={() => setTab('filed')}>
-          Filed
-          <span className="chmeta">{live.length} in play{dropped.length ? ` · ${dropped.length} dropped` : ''}</span>
+        <button className={tab === 'notes' ? 'navitem sel' : 'navitem'} onClick={() => setTab('notes')}>
+          Your notes
+          <span className="chmeta">{notes.length || 'none'} kept{worked ? ` · ${worked} worked in` : ''}</span>
         </button>
-        <button className={tab === 'raw' ? 'navitem sel' : 'navitem'} onClick={() => setTab('raw')}>
-          Your words
-          <span className="chmeta">exactly as you typed them</span>
+        <button className={tab === 'filed' ? 'navitem sel' : 'navitem'} onClick={() => setTab('filed')}>
+          Story material
+          <span className="chmeta">{live.length} in play{dropped.length ? ` · ${dropped.length} dropped` : ''}</span>
         </button>
       </nav>
 
       <article className="ms-main">
-        {tab === 'filed' ? (
+        {tab === 'notes' ? (
+          <Notebook notes={notes} onChanged={onNotesChanged} onMaterialChanged={onMaterialChanged} />
+        ) : (
           <>
             <header className="ms-head th-head">
               <h1>Filed thoughts</h1>
@@ -59,7 +62,7 @@ export function ThoughtsView({ items, onChanged }: {
               </div>
             )}
 
-            {live.map(item => <Thought key={item.id} item={item} onChanged={onChanged} />)}
+            {live.map(item => <Thought key={item.id} item={item} onChanged={onMaterialChanged} />)}
 
             {dropped.length > 0 && (
               <div className="th-dropped">
@@ -68,12 +71,10 @@ export function ThoughtsView({ items, onChanged }: {
                 </button>
                 <p className="fsummary">Dropped thoughts keep their record — arc never forgets that you
                   once had them. Restore any of them at any time.</p>
-                {showDropped && dropped.map(item => <Thought key={item.id} item={item} onChanged={onChanged} />)}
+                {showDropped && dropped.map(item => <Thought key={item.id} item={item} onChanged={onMaterialChanged} />)}
               </div>
             )}
           </>
-        ) : (
-          <RawDumps />
         )}
       </article>
     </div>
@@ -148,56 +149,145 @@ function Thought({ item, onChanged }: { item: MaterialItem; onChanged: () => voi
   )
 }
 
-/** The raw dumps. Loaded here rather than in the app's shared fetch, because
- *  nothing outside this page needs them and they are the one thing here that
- *  can be genuinely deleted. */
-function RawDumps() {
-  const [dumps, setDumps] = useState<RawDump[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const load = () => { listDumps().then(r => setDumps(r.dumps)).catch(e => setError(String(e))) }
-  useEffect(load, [])
-
-  const remove = async (file: string) => {
-    try {
-      await deleteDump({ file })
-      setDumps(d => (d ?? []).filter(x => x.file !== file))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    }
-  }
-
+/** The notebook: what the author actually wrote, in their words.
+ *
+ *  Nothing here has been read by a model. A note sits exactly as typed until
+ *  the author asks arc to work it into the story — which is the whole point of
+ *  the split, and why keeping a thought can never fail or make them wait. */
+function Notebook({ notes, onChanged, onMaterialChanged }: {
+  notes: Note[]
+  onChanged: () => void
+  onMaterialChanged: () => void
+}) {
   return (
     <>
       <header className="ms-head th-head">
-        <h1>Your words</h1>
+        <h1>Your notes</h1>
         <p className="ms-meta">
-          What you typed, saved before anything read it — so a failed pass costs a retry and never a
-          thought. These are working notes, not the record: deleting one leaves everything it was
-          filed as untouched.
+          Exactly what you wrote, kept the moment you wrote it. Nothing reads these until you
+          ask — from here, or from a Claude Code session with{' '}
+          <code>npm run work</code>.
         </p>
       </header>
 
-      {error && <p className="cap-error">{error}</p>}
-      {dumps === null && <p className="fsummary">Reading…</p>}
-      {dumps?.length === 0 && (
-        <div className="ms-empty"><p>Nothing here yet — every thought you add is saved here first.</p></div>
+      {!notes.length && (
+        <div className="ms-empty">
+          <p>Nothing yet. Use <b>Add a thought</b> in the top bar — whatever you type there lands
+            here immediately, and no model sees it until you say so.</p>
+        </div>
       )}
 
-      {dumps?.map(d => (
-        <div className="thought" key={d.file}>
-          <div className="th-top">
-            <code>{d.at ? new Date(d.at).toLocaleString() : d.file}</code>
-          </div>
-          <p className="th-body raw">{d.text}</p>
+      {notes.map(n => <NoteCard key={n.file} note={n} onChanged={onChanged} onMaterialChanged={onMaterialChanged} />)}
+    </>
+  )
+}
+
+function NoteCard({ note, onChanged, onMaterialChanged }: {
+  note: Note
+  onChanged: () => void
+  onMaterialChanged: () => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const [busy, setBusy] = useState<'saving' | 'working' | 'deciding' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<WorkResponse | null>(null)
+
+  const act = async (fn: () => Promise<unknown>, phase: 'saving' | 'working' | 'deciding') => {
+    setBusy(phase)
+    setError(null)
+    try { await fn() } catch (e) { setError(e instanceof Error ? e.message : String(e)) } finally { setBusy(null) }
+  }
+
+  const save = () => act(async () => {
+    await reviseNote({ file: note.file, text: draft ?? '' })
+    setDraft(null); onChanged()
+  }, 'saving')
+
+  const remove = () => act(async () => { await removeNote({ file: note.file }); onChanged() }, 'saving')
+
+  const work = () => act(async () => { setResult(await workNote({ file: note.file })); onChanged() }, 'working')
+
+  const answer = (keep: boolean) => act(async () => {
+    await decideWork({ run: result!.run, keep })
+    setResult(null); onMaterialChanged()
+  }, 'deciding')
+
+  return (
+    <div className="thought">
+      <div className="th-top">
+        <code>{note.created ? new Date(note.created).toLocaleString() : note.file}</code>
+        {note.worked.length > 0 && <span className="th-status">worked in</span>}
+      </div>
+
+      {draft === null ? (
+        <p className="th-body raw" title="Click to edit" onClick={() => setDraft(note.text)}>{note.text}</p>
+      ) : (
+        <>
+          <textarea className="th-edit" value={draft} autoFocus
+            onChange={ev => setDraft(ev.target.value)}
+            onKeyDown={ev => {
+              if (ev.key === 'Escape') setDraft(null)
+              if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) void save()
+            }} />
           <div className="th-acts">
-            <button className="ghost" onClick={() => void remove(d.file)}
-              title="Deletes this copy of what you typed. Anything it was filed as stays.">
-              Delete
+            <button disabled={!!busy || !draft.trim()} onClick={() => void save()}>
+              {busy === 'saving' ? 'Saving…' : 'Save'}
             </button>
+            <button className="ghost" disabled={!!busy} onClick={() => setDraft(null)}>Cancel</button>
+          </div>
+        </>
+      )}
+
+      {busy === 'working' && <Working label="Reading your note and working it into the story" />}
+      {error && <p className="cap-error">{error}</p>}
+
+      {result && busy !== 'working' && (
+        <div className="cap-filed">
+          <div className="cap-filed-head">
+            <b>Filed {result.filed.length} item{result.filed.length === 1 ? '' : 's'}</b>
+            <span className="reg-argued">unplaced · binds nothing</span>
+          </div>
+          {result.filed.length === 0 && (
+            <p className="cap-none">Arc read this but filed nothing. Its account: {result.reply.trim().slice(0, 300)}</p>
+          )}
+          {result.filed.map(f => (
+            <div className="cap-item" key={f.path}>
+              <div className="cap-item-head"><code>{f.id}</code><span className="cap-type">{f.type}</span></div>
+              {f.body && <p className="cap-body">{f.body}</p>}
+            </div>
+          ))}
+          {result.asked.length > 0 && (
+            <div className="cap-asked">
+              <span className="cap-asked-label">left open</span>
+              {result.asked.map((q, i) => <p key={i}>{q.question}</p>)}
+            </div>
+          )}
+          <div className="cap-acts">
+            <button disabled={!!busy} onClick={() => void answer(true)}>
+              {busy === 'deciding' ? 'Keeping…' : result.filed.length ? 'Keep' : 'Done'}
+            </button>
+            {result.filed.length > 0 && (
+              <button className="ghost" disabled={!!busy} onClick={() => void answer(false)}
+                title="Marks these dropped rather than deleting them — intent history is story history">
+                Discard
+              </button>
+            )}
           </div>
         </div>
-      ))}
-    </>
+      )}
+
+      {draft === null && !result && busy !== 'working' && (
+        <div className="th-acts">
+          <button disabled={!!busy} onClick={() => void work()}
+            title="Ask arc to read this note and turn it into story material. Your note is untouched either way.">
+            {note.worked.length ? 'Work in again' : 'Work this into the story'}
+          </button>
+          <button className="ghost" disabled={!!busy} onClick={() => void remove()}
+            title="Deletes this note. Anything it was already filed as stays.">
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
   )
 }

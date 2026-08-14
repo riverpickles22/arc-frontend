@@ -7,8 +7,9 @@
 // backend can no longer masquerade as an empty story.
 import type {
   AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, MaterialResponse,
-  DeleteDumpRequest, DumpDecisionRequest, DumpDecisionResponse, DumpRequest, DumpResponse, DumpsResponse,
-  HealthResponse, OkResponse, UpdateMaterialRequest, UpdateMaterialResponse,
+  AddNoteRequest, DeleteNoteRequest, HealthResponse, NoteResponse, NotesResponse, OkResponse,
+  UpdateMaterialRequest, UpdateMaterialResponse, UpdateNoteRequest,
+  WorkDecisionRequest, WorkDecisionResponse, WorkNoteRequest, WorkResponse,
   ProseAcceptResponse, ProseResponse, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
 } from 'arc-canon-graph'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, SuggestRequest, SuggestResponse } from './canon'
@@ -95,28 +96,33 @@ export const ratifyRule = (req: RatifyRuleRequest): Promise<RatifyRuleResponse> 
 export const loadHealth = (signal?: AbortSignal): Promise<HealthResponse> =>
   getJson<HealthResponse>('/api/health', { signal })
 
-/** The brain dump: free text filed into the material layer (conventions §12).
- *  The words are saved to disk before any model runs, so a failure here never
- *  costs the author what they typed. */
-export const fileDump = (req: DumpRequest): Promise<DumpResponse> =>
-  post('/api/dump', req)
+/** Notes: whatever you wanted written down.
+ *
+ *  Filing is a WRITE — no model runs, nothing waits, and no engine is needed.
+ *  Turning a note into story material is a separate act you ask for. */
+export const loadNotes = (signal?: AbortSignal): Promise<NotesResponse> =>
+  getJson<NotesResponse>('/api/notes', { signal })
 
-/** The raw dumps: what you typed, before any model read it. */
-export const listDumps = (signal?: AbortSignal): Promise<DumpsResponse> =>
-  getJson<DumpsResponse>('/api/dumps', { signal })
+export const addNote = (req: AddNoteRequest): Promise<NoteResponse> =>
+  post('/api/notes', req)
 
-/** Delete one raw dump. Real deletion — a dump is transient by design, unlike
- *  a material item, which is dropped and kept (conventions §12). */
-export const deleteDump = (req: DeleteDumpRequest): Promise<OkResponse> =>
-  post('/api/dumps/delete', req)
+export const reviseNote = (req: UpdateNoteRequest): Promise<NoteResponse> =>
+  post('/api/notes/update', req)
+
+export const removeNote = (req: DeleteNoteRequest): Promise<OkResponse> =>
+  post('/api/notes/delete', req)
+
+/** Run the work graph over one note. A failure here leaves the note as it was. */
+export const workNote = (req: WorkNoteRequest): Promise<WorkResponse> =>
+  post('/api/notes/work', req)
+
+/** Keep what the run filed, or discard it. Either answer writes a receipt. */
+export const decideWork = (req: WorkDecisionRequest): Promise<WorkDecisionResponse> =>
+  post('/api/notes/work/decide', req)
 
 /** Correct a filed thought, or move it along its lifecycle. */
 export const updateMaterial = (req: UpdateMaterialRequest): Promise<UpdateMaterialResponse> =>
   post('/api/material/update', req)
-
-/** Keep what a dump filed, or discard it. Either answer writes a receipt. */
-export const decideDump = (req: DumpDecisionRequest): Promise<DumpDecisionResponse> =>
-  post('/api/dump/decide', req)
 
 /** view.yaml from the story repo. A story without one renders from canon alone. */
 export const loadView = (signal?: AbortSignal): Promise<View> =>

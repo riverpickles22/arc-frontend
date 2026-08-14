@@ -8,9 +8,9 @@
 // failure is recorded, so a down backend shows a banner rather than
 // masquerading as an empty story.
 import { useCallback, useEffect, useState } from 'react'
-import type { AttentionResponse, Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, StyleResponse } from '../canon'
+import type { AttentionResponse, Canon, DocArticle, MaterialItem, Note, ProseDraft, ProseScene, ResolvedAnnotation, StyleResponse } from '../canon'
 import type { View } from '../presentation'
-import { loadAnnotations, loadAttention, loadCanon, loadDocs, loadDraft, loadHealth, loadMaterial, loadProse, loadStyle, loadView, NO_DRAFT } from '../api'
+import { loadAnnotations, loadAttention, loadCanon, loadDocs, loadDraft, loadHealth, loadMaterial, loadNotes, loadProse, loadStyle, loadView, NO_DRAFT } from '../api'
 
 export interface ServerData {
   canon: Canon | null
@@ -30,6 +30,8 @@ export interface ServerData {
   refreshProse: () => void
   refreshStyle: () => void
   refreshMaterial: () => void
+  /** The author's notebook — whatever they wrote down. */
+  thoughts: Note[]
   /** Which engine is live, or null when none is. */
   engine: 'sdk' | 'claude-cli' | null
 }
@@ -42,6 +44,7 @@ export function useServerData(): ServerData {
   const [view, setView] = useState<View>({})
   const [style, setStyle] = useState<StyleResponse | null>(null)
   const [engine, setEngine] = useState<'sdk' | 'claude-cli' | null>(null)
+  const [thoughts, setThoughts] = useState<Note[]>([])
   const [notes, setNotes] = useState<ResolvedAnnotation[]>([])
   const [docs, setDocs] = useState<DocArticle[]>([])
   const [prose, setProse] = useState<ProseScene[]>([])
@@ -75,6 +78,7 @@ export function useServerData(): ServerData {
       // health failing is not a degradation either — the capture box simply
       // behaves as though no engine is present, which is the safe reading
       loadHealth(signal).then(h => setEngine(h.engine)).catch(() => {}),
+      loadNotes(signal).then(r => setThoughts(r.notes)).catch(() => {}),
     ])
     if (!signal?.aborted) setDegraded(failures)
   }, [])
@@ -107,11 +111,14 @@ export function useServerData(): ServerData {
   const refreshStyle = useCallback(() => { loadStyle().then(setStyle).catch(() => {}) }, [])
 
   // Prose and its draft state refresh together: accept/discard change both.
-  const refreshNotes = useCallback(() => { loadAnnotations().then(setNotes).catch(() => {}) }, [])
+  const refreshNotes = useCallback(() => {
+    loadAnnotations().then(setNotes).catch(() => {})
+    loadNotes().then(r => setThoughts(r.notes)).catch(() => {})
+  }, [])
   const refreshProse = useCallback(() => {
     loadProse().then(setProse).catch(() => setDegraded(d => (d.includes('prose') ? d : [...d, 'prose'])))
     loadDraft().then(setDraft).catch(() => setDegraded(d => (d.includes('draft') ? d : [...d, 'draft'])))
   }, [])
 
-  return { canon, canonError, retry, view, style, notes, docs, prose, draft, attention: attn, material, degraded, refreshCanon, refreshProse, refreshNotes, refreshStyle, refreshMaterial, engine }
+  return { canon, canonError, retry, view, style, notes, docs, prose, draft, attention: attn, material, degraded, refreshCanon, refreshProse, refreshNotes, refreshStyle, refreshMaterial, engine, thoughts }
 }

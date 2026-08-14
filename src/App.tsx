@@ -226,7 +226,7 @@ function Shell({ canon, data, dark, onToggleDark }: {
           </span>
           {/* Every page, not only the manuscript: an idea arrives while you
               are in the world map as readily as mid-scene. */}
-          <CaptureBar engine={data.engine} onFiled={data.refreshMaterial} />
+          <CaptureBar onFiled={data.refreshNotes} />
           <MaterialDrawer items={data.material} canon={canon} onOpen={openWorld} />
           <AttentionInbox attention={data.attention} canon={canon} onOpen={openWorld} />
           <button className="themeToggle" onClick={data.retry}
@@ -249,7 +249,7 @@ function Shell({ canon, data, dark, onToggleDark }: {
             {degraded.join(', ')} unavailable — is arc-backend running?{' '}
             {/* Every page, not only the manuscript: an idea arrives while you
               are in the world map as readily as mid-scene. */}
-          <CaptureBar engine={data.engine} onFiled={data.refreshMaterial} />
+          <CaptureBar onFiled={data.refreshNotes} />
           <MaterialDrawer items={data.material} canon={canon} onOpen={openWorld} />
           <AttentionInbox attention={data.attention} canon={canon} onOpen={openWorld} />
           <button className="themeToggle" onClick={data.retry}>Retry</button>
@@ -264,7 +264,8 @@ function Shell({ canon, data, dark, onToggleDark }: {
           onRefreshNotes={data.refreshNotes} onCanonChanged={data.refreshCanon} />
       )}
       {page === 'thoughts' && (
-        <ThoughtsView items={data.material} onChanged={data.refreshMaterial} />
+        <ThoughtsView notes={data.thoughts} items={data.material}
+          onNotesChanged={data.refreshNotes} onMaterialChanged={data.refreshMaterial} />
       )}
       {page === 'style' && (
         <StyleView style={data.style} tab={styleTab} onTab={setStyleTab} onRefresh={data.refreshStyle} />
