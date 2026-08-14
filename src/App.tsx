@@ -19,6 +19,8 @@ import { WikiView } from './components/WikiView'
 import { StyleView, type StyleTab } from './components/StyleView'
 import { CaptureBar } from './components/CaptureBar'
 import { ThoughtsView } from './components/ThoughtsView'
+import { AgentsChip } from './components/AgentsChip'
+import { useRunStream } from './hooks/useRunStream'
 
 type Page = 'world' | 'manuscript' | 'wiki' | 'style' | 'thoughts'
 
@@ -214,6 +216,10 @@ function Shell({ canon, data, dark, onToggleDark }: {
   )
   const graphDim = povDim ?? focusDim
 
+  // Additive: useServerData stays a one-shot fetch, so a dead stream costs
+  // liveness and never content.
+  const stream = useRunStream(data.refreshCanon)
+
   const degraded = [...data.degraded, ...(data.canonError ? ['canon refresh'] : [])]
 
   return (
@@ -227,6 +233,7 @@ function Shell({ canon, data, dark, onToggleDark }: {
           {/* Every page, not only the manuscript: an idea arrives while you
               are in the world map as readily as mid-scene. */}
           <CaptureBar onFiled={data.refreshNotes} />
+          <AgentsChip stream={stream} />
           <MaterialDrawer items={data.material} canon={canon} onOpen={openWorld} />
           <AttentionInbox attention={data.attention} canon={canon} onOpen={openWorld} />
           <button className="themeToggle" onClick={data.retry}
@@ -250,6 +257,7 @@ function Shell({ canon, data, dark, onToggleDark }: {
             {/* Every page, not only the manuscript: an idea arrives while you
               are in the world map as readily as mid-scene. */}
           <CaptureBar onFiled={data.refreshNotes} />
+          <AgentsChip stream={stream} />
           <MaterialDrawer items={data.material} canon={canon} onOpen={openWorld} />
           <AttentionInbox attention={data.attention} canon={canon} onOpen={openWorld} />
           <button className="themeToggle" onClick={data.retry}>Retry</button>

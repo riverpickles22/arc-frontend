@@ -7,7 +7,8 @@
 // backend can no longer masquerade as an empty story.
 import type {
   AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, MaterialResponse,
-  AddNoteRequest, DeleteNoteRequest, HealthResponse, NoteResponse, NotesResponse, OkResponse,
+  AddNoteRequest, AgentsResponse, DeleteNoteRequest, HealthResponse, NoteResponse, NotesResponse, OkResponse,
+  RunsResponse, RunDetailResponse,
   UpdateMaterialRequest, UpdateMaterialResponse, UpdateNoteRequest,
   WorkDecisionRequest, WorkDecisionResponse, WorkNoteRequest, WorkResponse,
   ProseAcceptResponse, ProseResponse, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
@@ -95,6 +96,17 @@ export const ratifyRule = (req: RatifyRuleRequest): Promise<RatifyRuleResponse> 
 /** Is the story valid, and is there an engine to run passes with? */
 export const loadHealth = (signal?: AbortSignal): Promise<HealthResponse> =>
   getJson<HealthResponse>('/api/health', { signal })
+
+/** Who is working on the story right now, and the runs they opened. Both are
+ *  one-shot reads; the SSE stream says WHEN to re-read them. */
+export const loadAgents = (signal?: AbortSignal): Promise<AgentsResponse> =>
+  getJson<AgentsResponse>('/api/agents', { signal })
+
+export const loadRuns = (signal?: AbortSignal): Promise<RunsResponse> =>
+  getJson<RunsResponse>('/api/runs', { signal })
+
+export const loadRun = (id: string, signal?: AbortSignal): Promise<RunDetailResponse> =>
+  getJson<RunDetailResponse>(`/api/runs/${encodeURIComponent(id)}`, { signal })
 
 /** Notes: whatever you wanted written down.
  *
