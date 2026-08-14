@@ -19,7 +19,7 @@ interface Node extends SimulationNodeDatum {
 }
 
 export function GraphView({
-  canon, tEnd, selected, onSelect, dimTo, focus,
+  canon, tEnd, selected, onSelect, dimTo, focus, touching, onOpenRun,
 }: {
   canon: Canon
   tEnd: number
@@ -29,6 +29,11 @@ export function GraphView({
   dimTo?: Set<string> | null
   /** The focus-mode control (Chapter / Selection / All). */
   focus?: { mode: FocusMode; onMode: (m: FocusMode) => void }
+  /** id → the run that holds write or propose over it. Presence marks intent
+   *  to CHANGE something, never attention: a run that read nine entities to
+   *  file one item lights nothing. */
+  touching?: Map<string, string>
+  onOpenRun?: (runId: string) => void
 }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const { tip, showTip, hideTip } = useTip(wrapRef)
@@ -115,16 +120,36 @@ export function GraphView({
           const sel = selected === n.id
           const dimmed = !!dimTo && !dimTo.has(n.id)
           const r = n.type === 'character' ? 10 : 7.5
+          // Proposed, not yet ratified: drawn as pending rather than hidden or
+          // drawn as though it had always been true. Decoration only — the
+          // layout above never sees status, so nothing moves when a record is
+          // ratified.
+          const pending = ent.status === 'proposed'
+          const run = touching?.get(n.id)
           return (
             <g key={n.id} style={{ cursor: 'pointer' }}
               onClick={() => onSelect(n.id)}
-              onMouseMove={ev => showTip(ev, ent.name, alive ? ent.summary.slice(0, 100) + '…' : 'not extant at this time')}
+              onMouseMove={ev => showTip(ev, ent.name,
+                pending ? 'proposed — not yet ratified' : alive ? ent.summary.slice(0, 100) + '…' : 'not extant at this time')}
               onMouseLeave={hideTip}>
               {sel && <circle cx={n.x} cy={n.y} r={r + 5} fill="none" stroke="var(--c1)" strokeWidth={2} />}
+              {pending && (
+                <circle cx={n.x} cy={n.y} r={r + 3} fill="none"
+                  stroke="var(--c6)" strokeWidth={1.5} strokeDasharray="3 3"
+                  opacity={dimmed ? 0.2 : 0.9} />
+              )}
               <circle cx={n.x} cy={n.y} r={r}
                 fill={TYPE_COLORS[n.type] ?? 'var(--c7)'}
-                opacity={dimmed ? 0.12 : alive ? 1 : 0.28}
+                opacity={dimmed ? 0.12 : pending ? 0.4 : alive ? 1 : 0.28}
                 stroke="var(--surface-1)" strokeWidth={2} />
+              {run && (
+                <circle cx={(n.x ?? 0) + r} cy={(n.y ?? 0) - r} r={3.5}
+                  fill="var(--c1)" stroke="var(--surface-1)" strokeWidth={1.5}
+                  style={{ cursor: 'pointer' }}
+                  onClick={ev => { ev.stopPropagation(); onOpenRun?.(run) }}
+                  onMouseMove={ev => showTip(ev, run, 'a run is working on this — click to see it')}
+                  onMouseLeave={hideTip} />
+              )}
               <text x={n.x} y={(n.y ?? 0) + r + 13} fontSize={11} textAnchor="middle"
                 opacity={dimmed ? 0.25 : 1}
                 fill={alive ? 'var(--text-primary)' : 'var(--muted)'} fontWeight={sel ? 650 : 400}>
@@ -144,7 +169,14 @@ export function GraphView({
           ))}
         </div>
       )}
-      <Legend items={Object.entries(TYPE_COLORS).map(([type, color]) => ({ label: type, color }))}>
+      <Legend items={[
+        ...Object.entries(TYPE_COLORS).map(([type, color]) => ({ label: type, color })),
+        // Only when there is something to explain: a legend entry for a state
+        // nothing is in reads as clutter.
+        ...(Object.values(canon.entities).some(e => e.status === 'proposed')
+          ? [{ label: 'proposed (dashed)', color: 'var(--c6)' }] : []),
+        ...(touching?.size ? [{ label: 'a run is changing this', color: 'var(--c1)' }] : []),
+      ]}>
         <span className="item"><span className="swatch" style={{ background: 'transparent', border: '1px dashed var(--c1)', borderRadius: 0, width: 12, height: 0 }} />perception at T (selected)</span>
         <span className="item" style={{ opacity: 0.4 }}>● faded = not extant at T</span>
       </Legend>

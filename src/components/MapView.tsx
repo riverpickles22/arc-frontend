@@ -25,7 +25,7 @@ const heightFor = (b: BBox) => {
 }
 
 export function MapView({
-  canon, view, colors, tEnd, selected, onSelect,
+  canon, view, colors, tEnd, selected, onSelect, touching, onOpenRun,
 }: {
   canon: Canon
   view: View
@@ -33,6 +33,10 @@ export function MapView({
   tEnd: number
   selected: string | null
   onSelect: (id: string) => void
+  /** id → the run holding write or propose over it. Same register as the
+   *  graph: a place a run merely read is never marked. */
+  touching?: Map<string, string>
+  onOpenRun?: (runId: string) => void
 }) {
   const [geo, setGeo] = useState<GeoJSON | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -157,8 +161,23 @@ export function MapView({
             onMouseMove={ev => showTip(ev, c.e.name, c.cond)}
             onMouseLeave={hideTip}
           >
+            {/* Proposed places read as pending in the same register the graph
+                uses — dashed, and lighter. Position is unaffected: this is
+                decoration over a marker the projection already placed. */}
+            {c.e.status === 'proposed' && (
+              <circle cx={mx} cy={my} r={(sel ? 11 : 9.5) * scale} fill="none"
+                stroke="var(--c6)" strokeWidth={1.5} strokeDasharray="3 3" opacity={0.9} />
+            )}
             <circle cx={mx} cy={my} r={(sel ? 8 : 6.5) * scale} fill={colors[c.e.id] ?? 'var(--c7)'}
+              opacity={c.e.status === 'proposed' ? 0.45 : 1}
               stroke="var(--surface-1)" strokeWidth={2} />
+            {touching?.get(c.e.id) && (
+              <circle cx={mx + 7 * scale} cy={my - 7 * scale} r={3.5 * scale}
+                fill="var(--c1)" stroke="var(--surface-1)" strokeWidth={1.5}
+                onClick={ev => { ev.stopPropagation(); onOpenRun?.(touching.get(c.e.id)!) }}
+                onMouseMove={ev => showTip(ev, touching.get(c.e.id)!, 'a run is working on this — click to see it')}
+                onMouseLeave={hideTip} />
+            )}
             <text x={lx} y={my + 4} fontSize={11.5 * scale} textAnchor={labelLeft ? 'end' : 'start'}
               fill="var(--text-primary)" fontWeight={sel ? 650 : 400}>
               {c.e.name}
@@ -179,7 +198,19 @@ export function MapView({
           <g key={p.id + box.lon0} style={{ cursor: 'pointer' }} onClick={() => onSelect(p.id)}
             onMouseMove={ev => showTip(ev, p.name, p.summary.slice(0, 90) + '…')}
             onMouseLeave={hideTip}>
-            <circle cx={x} cy={y} r={3} fill="var(--muted)" />
+            {/* Proposed places read as pending in the same register the graph
+                uses — dashed, and lighter. Decoration over a marker the
+                projection already placed, so nothing moves when it ratifies. */}
+            {p.status === 'proposed' && (
+              <circle cx={x} cy={y} r={6} fill="none"
+                stroke="var(--c6)" strokeWidth={1.2} strokeDasharray="3 3" opacity={0.9} />
+            )}
+            <circle cx={x} cy={y} r={3} fill="var(--muted)" opacity={p.status === 'proposed' ? 0.5 : 1} />
+            {touching?.get(p.id) && (
+              <circle cx={x + 5} cy={y - 5} r={2.5} fill="var(--c1)"
+                stroke="var(--surface-1)" strokeWidth={1}
+                onClick={ev => { ev.stopPropagation(); onOpenRun?.(touching.get(p.id)!) }} />
+            )}
             <text x={opts?.labelBelow ? x : x + 6} y={opts?.labelBelow ? y + 14 : y - 4}
               fontSize={10} textAnchor={opts?.labelBelow ? 'middle' : 'start'}
               fill="var(--muted)">{p.name}</text>

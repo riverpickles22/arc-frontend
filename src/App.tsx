@@ -220,6 +220,18 @@ function Shell({ canon, data, dark, onToggleDark }: {
   // liveness and never content.
   const stream = useRunStream(data.refreshCanon)
 
+  // id → the run changing it. Only runs still open, and only WRITE/PROPOSE —
+  // presence marks intent to change, never attention.
+  const touching = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const r of stream.runs) {
+      if (r.state === 'closed') continue
+      for (const id of r.touching ?? []) m.set(id, r.id)
+    }
+    return m
+  }, [stream.runs])
+  const [openRun, setOpenRun] = useState<string | null>(null)
+
   const degraded = [...data.degraded, ...(data.canonError ? ['canon refresh'] : [])]
 
   return (
@@ -233,7 +245,7 @@ function Shell({ canon, data, dark, onToggleDark }: {
           {/* Every page, not only the manuscript: an idea arrives while you
               are in the world map as readily as mid-scene. */}
           <CaptureBar onFiled={data.refreshNotes} />
-          <AgentsChip stream={stream} />
+          <AgentsChip stream={stream} openRun={openRun} onOpened={() => setOpenRun(null)} />
           <MaterialDrawer items={data.material} canon={canon} onOpen={openWorld} />
           <AttentionInbox attention={data.attention} canon={canon} onOpen={openWorld} />
           <button className="themeToggle" onClick={data.retry}
@@ -257,7 +269,7 @@ function Shell({ canon, data, dark, onToggleDark }: {
             {/* Every page, not only the manuscript: an idea arrives while you
               are in the world map as readily as mid-scene. */}
           <CaptureBar onFiled={data.refreshNotes} />
-          <AgentsChip stream={stream} />
+          <AgentsChip stream={stream} openRun={openRun} onOpened={() => setOpenRun(null)} />
           <MaterialDrawer items={data.material} canon={canon} onOpen={openWorld} />
           <AttentionInbox attention={data.attention} canon={canon} onOpen={openWorld} />
           <button className="themeToggle" onClick={data.retry}>Retry</button>
@@ -295,12 +307,12 @@ function Shell({ canon, data, dark, onToggleDark }: {
       <div className="main">
         <section className="panel col-map">
           <h2>Map — where everyone is {time.bookChapter ? `at the end of ch. ${time.bookChapter.order} (${time.displayYear})` : `in ${time.year}`}</h2>
-          <MapView canon={canon} view={data.view} colors={colors} tEnd={time.tEnd}
+          <MapView touching={touching} onOpenRun={setOpenRun} canon={canon} view={data.view} colors={colors} tEnd={time.tEnd}
             selected={selected} onSelect={selectAndShow} />
         </section>
         <section className="panel col-graph">
           <h2>Graph — entities &amp; relationships</h2>
-          <GraphView canon={canon} tEnd={time.tEnd} selected={selected} onSelect={selectAndShow} dimTo={graphDim}
+          <GraphView touching={touching} onOpenRun={setOpenRun} canon={canon} tEnd={time.tEnd} selected={selected} onSelect={selectAndShow} dimTo={graphDim}
             focus={{ mode: focusMode, onMode: setFocusMode }} />
         </section>
         <section className="panel col-profile">

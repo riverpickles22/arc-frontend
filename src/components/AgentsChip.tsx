@@ -14,11 +14,25 @@ import type { StreamState } from '../hooks/useRunStream'
  *  it — the author's own editor, a git checkout, a shell script — it says so
  *  plainly rather than being dressed up as governed work.
  */
-export function AgentsChip({ stream, onOpenRun }: {
+export function AgentsChip({ stream, onOpenRun, openRun, onOpened }: {
   stream: StreamState
   onOpenRun?: (id: string) => void
+  /** Set when something elsewhere — a presence marker on the graph or map —
+   *  wants the run explained. Opening here is the explanation. */
+  openRun?: string | null
+  onOpened?: () => void
 }) {
   const [open, setOpen] = useState(false)
+
+  // DERIVED, not synced. A presence marker asking for a run to be explained
+  // opens the drawer by making `openRun` truthy — writing that into state
+  // from an effect would be the same fact stored twice, and the compiler is
+  // right to refuse it.
+  const shown = open || !!openRun
+  const toggle = () => {
+    if (shown) { setOpen(false); onOpened?.() } else setOpen(true)
+  }
+
   const { agents, runs, external, connected } = stream
 
   const working = agents.filter(a => a.state === 'working')
@@ -37,14 +51,14 @@ export function AgentsChip({ stream, onOpenRun }: {
 
   return (
     <>
-      <button className={quiet ? 'attn-chip quiet' : 'attn-chip'} onClick={() => setOpen(o => !o)}
+      <button className={quiet ? 'attn-chip quiet' : 'attn-chip'} onClick={toggle}
         title={connected
           ? 'Agents working on this story, and changes made outside arc'
           : 'Not receiving live updates — the backend may be restarting. Everything else still works.'}>
         {connected ? '' : '○ '}{label}
       </button>
 
-      {open && (
+      {shown && (
         <div className="attn-drawer">
           {!connected && (
             <p className="fsummary">
