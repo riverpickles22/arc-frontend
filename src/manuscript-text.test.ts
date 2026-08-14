@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest'
-import { chapterText, copyableScenes, isSingleWord, paragraphAtOffset, sceneText } from './manuscript-text'
+import {
+  chapterText, copyableScenes, isSingleWord, offsetOfParagraph, paragraphAtOffset, sceneText,
+} from './manuscript-text'
 
 test('a scene copies as its prose, trimmed', () => {
   expect(sceneText({ body: '\n\nThe morning smelled of coffee.\n\n' }))
@@ -103,4 +105,35 @@ test('anything with whitespace inside it, or nothing at all, is not a single wor
   expect(isSingleWord('He was very tired.')).toBe(false)
   expect(isSingleWord('')).toBe(false)
   expect(isSingleWord('   ')).toBe(false)
+})
+
+
+test('a paragraph index maps back to where that paragraph starts', () => {
+  const body = 'First paragraph here.\n\nSecond one.\n\nThird and last.'
+  expect(offsetOfParagraph(body, 0)).toBe(0)
+  expect(offsetOfParagraph(body, 1)).toBe(body.indexOf('Second'))
+  expect(offsetOfParagraph(body, 2)).toBe(body.indexOf('Third'))
+})
+
+test('offsetOfParagraph is the inverse of paragraphAtOffset', () => {
+  const body = '\n\nOne.\n\n\n\nTwo is a longer one, with a comma in it.\n\nThree.\n'
+  for (const i of [0, 1, 2]) {
+    expect(paragraphAtOffset(body, offsetOfParagraph(body, i))).toBe(i)
+  }
+})
+
+test('leading and repeated blank lines do not shift where a paragraph starts', () => {
+  const body = '\n\nFirst real paragraph.\n\n\n\nSecond.'
+  expect(offsetOfParagraph(body, 0)).toBe(body.indexOf('First'))
+  expect(offsetOfParagraph(body, 1)).toBe(body.indexOf('Second'))
+})
+
+test('an index past the end lands on the last paragraph, never back at zero', () => {
+  const body = 'One.\n\nTwo.\n\nThree.'
+  expect(offsetOfParagraph(body, 99)).toBe(body.indexOf('Three'))
+})
+
+test('an empty body has nowhere to be but the start', () => {
+  expect(offsetOfParagraph('', 0)).toBe(0)
+  expect(offsetOfParagraph('   \n\n  ', 2)).toBe(0)
 })

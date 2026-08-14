@@ -11,7 +11,9 @@ import {
   type ProgressRegister,
 } from '../wordcount'
 import { CopyProse, CopyRef } from './CopyRef'
-import { chapterText, copyableScenes, isSingleWord, paragraphAtOffset, sceneText } from '../manuscript-text'
+import {
+  chapterText, copyableScenes, isSingleWord, offsetOfParagraph, paragraphAtOffset, sceneText,
+} from '../manuscript-text'
 import { stack } from '../note-stack'
 import { Working } from './Working'
 
@@ -124,6 +126,80 @@ function DiffBody({ d, paraKey, onAccept, busy }: {
  *  note records has to mean the same thing on both sides. */
 const paragraphsOf = (body: string): string[] =>
   body.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
+
+/** Where every paragraph sits, vertically, inside an editor.
+ *
+ *  A textarea has no DOM inside it — you cannot ask it where its fourth
+ *  paragraph is. So measure a copy: one off-screen element set in the same
+ *  type at the same width, holding the same text, with a marker at the head
+ *  of each paragraph. One insertion, one layout, every position.
+ *
+ *  Reliable because the editor never scrolls inside itself (field-sizing:
+ *  content, overflow hidden — theme.css): the box is exactly as tall as its
+ *  text, so a copy of the text lays out exactly as the box does.
+ *
+ *  Measured against the textarea's LIVE value, never the file on disk —
+ *  otherwise the position drifts by however much the author has typed. */
+function paragraphTopsIn(ta: HTMLTextAreaElement): number[] {
+  const text = ta.value
+  const count = paragraphsOf(text).length
+  if (!count) return []
+
+  const cs = getComputedStyle(ta)
+  const mirror = document.createElement('div')
+  const st = mirror.style
+  st.position = 'absolute'; st.top = '0'; st.left = '-99999px'
+  st.visibility = 'hidden'; st.pointerEvents = 'none'
+  st.whiteSpace = 'pre-wrap'; st.overflowWrap = cs.overflowWrap; st.wordBreak = cs.wordBreak
+  st.font = cs.font; st.letterSpacing = cs.letterSpacing; st.lineHeight = cs.lineHeight
+  st.width = `${ta.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)}px`
+
+  // The marker is the paragraph's own first character rather than an inserted
+  // one, so nothing about the text being measured differs from the text in
+  // the box. A zero-width space only stands in for a paragraph that is empty.
+  const marks: HTMLElement[] = []
+  let cursor = 0
+  for (let i = 0; i < count; i++) {
+    const start = offsetOfParagraph(text, i)
+    if (start < cursor) continue
+    mirror.append(document.createTextNode(text.slice(cursor, start)))
+    const mark = document.createElement('span')
+    mark.textContent = text.slice(start, start + 1) || '​'
+    mirror.append(mark)
+    marks.push(mark)
+    cursor = start + 1
+  }
+  mirror.append(document.createTextNode(text.slice(cursor)))
+
+  document.body.appendChild(mirror)
+  const base = mirror.getBoundingClientRect().top
+  const tops = marks.map(m => m.getBoundingClientRect().top - base)
+  mirror.remove()
+  return tops
+}
+
+/** The top of an editor's text in page coordinates — the box, past its padding. */
+const textTopOf = (ta: HTMLTextAreaElement): number =>
+  ta.getBoundingClientRect().top + parseFloat(getComputedStyle(ta).paddingTop)
+
+/** The top of the page a reader can actually SEE: the scroll region's top,
+ *  past whatever is stuck to it.
+ *
+ *  The chapter header is sticky, and it is a different height in each mode —
+ *  taller in Notes and Edit, where the draft bar and the scene's furniture
+ *  stand above the prose. A position measured against the region's own top
+ *  would put the anchored paragraph behind that header, by a different amount
+ *  in each mode, so changing stance would appear to lose the line even though
+ *  the arithmetic was faithful. Measure against the first line instead. */
+function visibleTopOf(box: HTMLElement): number {
+  const top = box.getBoundingClientRect().top
+  const head = box.querySelector('.ms-head')
+  if (!head) return top
+  const r = head.getBoundingClientRect()
+  // Only while it is actually stuck there — scrolled into the page it is
+  // ordinary content and covers nothing.
+  return r.top <= top + 1 ? Math.max(top, r.bottom) : top
+}
 
 const STATE_LABEL: Record<string, string> = {
   resolved: '', drifted: 'moved', orphaned: 'passage gone', 'no-scene': 'scene gone',
@@ -361,10 +437,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  on screen — so `switchMode` below has to be able to reach it. */
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  /** Which paragraph the top of the page is cutting through, if any. Returns
-   *  null in Edit mode, which renders textareas and has no paragraphs to
-   *  anchor to — a null is "do not overwrite what we remembered", never
-   *  "the reader is at the top". */
+  /** Which paragraph the top of the page is cutting through, if any. Null
+   *  means "do not overwrite what we remembered" — never "the reader is at
+   *  the top". */
   const anchorNow = useCallback((): Anchor | null => {
     const box = scrollRef.current
     if (!box) return null
@@ -373,12 +448,32 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     // layout was tall enough to show.
     const put = restoredRef.current
     if (put && Math.abs(box.scrollTop - put.scrollTop) < 1) return put.anchor
-    const top = box.getBoundingClientRect().top
+    const top = visibleTopOf(box)
+
+    // Reading or annotating: the paragraphs are elements, so ask them.
     for (const el of box.querySelectorAll<HTMLElement>('[data-para]')) {
       const r = el.getBoundingClientRect()
       if (r.bottom <= top + 1) continue          // scrolled past
       const frac = r.height > 0 ? Math.min(1, Math.max(0, (top - r.top) / r.height)) : 0
       return { key: el.dataset.para!, frac }
+    }
+
+    // Writing: the paragraphs are inside a textarea, so measure a copy.
+    for (const section of box.querySelectorAll<HTMLElement>('[data-scene]')) {
+      const ta = section.querySelector('textarea')
+      if (!ta) continue
+      const r = ta.getBoundingClientRect()
+      if (r.bottom <= top + 1) continue
+      const scene = section.dataset.scene!
+      if (r.top >= top) return { key: `${scene}:0`, frac: 0 }   // page starts above this editor
+      const tops = paragraphTopsIn(ta)
+      if (!tops.length) return { key: `${scene}:0`, frac: 0 }
+      const y = top - textTopOf(ta)
+      let i = 0
+      while (i + 1 < tops.length && tops[i + 1] <= y) i++
+      const end = tops[i + 1] ?? (ta.clientHeight - parseFloat(getComputedStyle(ta).paddingTop) * 2)
+      const height = Math.max(1, end - tops[i])
+      return { key: `${scene}:${i}`, frac: Math.min(1, Math.max(0, (y - tops[i]) / height)) }
     }
     return null
   }, [])
@@ -391,12 +486,28 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     const box = scrollRef.current
     if (!box) return
     const scene = a.key.slice(0, a.key.lastIndexOf(':'))
+    const boxTop = visibleTopOf(box)
+
+    // Writing: the target is inside an editor, so measure a copy of its text
+    // to find out where. A scene that is no longer being edited falls through
+    // to the element path below.
+    const ta = box.querySelector<HTMLTextAreaElement>(`[data-scene="${scene}"] textarea`)
+    if (ta) {
+      const tops = paragraphTopsIn(ta)
+      if (!tops.length) { box.scrollTop += ta.getBoundingClientRect().top - boxTop; return }
+      const i = Math.min(tops.length - 1, Math.max(0, Number(a.key.slice(scene.length + 1)) || 0))
+      const end = tops[i + 1] ?? (ta.clientHeight - parseFloat(getComputedStyle(ta).paddingTop) * 2)
+      box.scrollTop += (textTopOf(ta) - boxTop) + tops[i] + a.frac * Math.max(0, end - tops[i])
+      restoredRef.current = { anchor: a, scrollTop: box.scrollTop }
+      return
+    }
+
     const inScene = box.querySelectorAll<HTMLElement>(`[data-para^="${scene}:"]`)
     if (!inScene.length && !box.querySelector('[data-para]')) return   // nothing rendered yet
     const el = box.querySelector<HTMLElement>(`[data-para="${a.key}"]`) ?? inScene[inScene.length - 1]
     if (!el) { box.scrollTop = box.scrollHeight; return }              // the browser clamps
     const r = el.getBoundingClientRect()
-    box.scrollTop += (r.top - box.getBoundingClientRect().top) + a.frac * r.height
+    box.scrollTop += (r.top - boxTop) + a.frac * r.height
     // Read back what the browser actually accepted, so we can tell later
     // whether the reader has moved from here or whether this is simply as
     // close as this layout could get.
@@ -790,18 +901,18 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // scroll after paint is a visible jump, and the whole point is that
   // changing stance does not lose your place.
   //
-  // Edit mode is skipped deliberately — it renders textareas, which carry no
-  // paragraphs to anchor to. Nothing is remembered on the way out of it
-  // either, so a trip through Edit leaves the reading position untouched
-  // rather than overwriting it with a guess.
+  // All three modes, Edit included: reading a passage and then opening it to
+  // write is the commonest reason to change stance at all, and arriving at
+  // the top of the chapter is exactly the thing this is for.
   useLayoutEffect(() => {
-    if (mode === 'edit') return
     const box = scrollRef.current
-    if (!box || !box.querySelector('[data-para]')) return   // prose not on screen yet
+    // Prose on screen, as paragraphs or as editors — until then there is
+    // nothing to anchor to and the position must not be consumed.
+    if (!box || !(box.querySelector('[data-para]') || box.querySelector('[data-scene] textarea'))) return
     const a = pendingRef.current ?? readPositions()[chapterKey]
     pendingRef.current = null
     if (a) restoreAnchor(a)
-  }, [mode, chapterKey, scenes.length, restoreAnchor])
+  }, [mode, chapterKey, scenes.length, view, restoreAnchor])
 
   /** The register the footer states position in, and the click that cycles it. */
   const [register, setRegister] = useState<ProgressRegister>(() => readRegister())
@@ -1218,7 +1329,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           const beforeBody = view === 'before' && change ? (change.main?.body ?? null) : undefined
           const notYetInBook = view === 'before' && change?.status === 'added'
           return (
-            <section key={s.scene} className="scene">
+            <section key={s.scene} className="scene" data-scene={s.scene}>
               {mode !== 'read' && <div className="scene-head">
                 <code>{s.scene}</code>
                 <CopyRef text={s.scene} />

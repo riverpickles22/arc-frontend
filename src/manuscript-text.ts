@@ -73,6 +73,31 @@ export function paragraphAtOffset(body: string, offset: number): number {
   return Math.max(0, index)
 }
 
+/** Where a paragraph starts, as a character offset into the raw body — the
+ *  exact inverse of `paragraphAtOffset`, and it walks the split the same way
+ *  so the two cannot disagree about what paragraph three is.
+ *
+ *  Used to find a paragraph inside a textarea, which has no DOM to measure:
+ *  the offset is what you slice the text at before measuring a copy of it.
+ *  An index past the end clamps to the start of the last paragraph, because
+ *  the honest answer to "where is paragraph nine of six" is the end of the
+ *  prose, never zero. */
+export function offsetOfParagraph(body: string, index: number): number {
+  let searchFrom = 0
+  let seen = -1
+  let last = 0
+  for (const para of body.split(/\n{2,}/)) {
+    const trimmed = para.trim()
+    if (!trimmed) { searchFrom += para.length; continue }
+    seen += 1
+    const start = body.indexOf(trimmed, searchFrom)
+    if (seen === index) return start
+    last = start
+    searchFrom = start + trimmed.length
+  }
+  return last
+}
+
 /** Is this selection a single word — the only shape a thesaurus answer means
  *  anything for?
  *
