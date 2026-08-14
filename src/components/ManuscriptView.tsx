@@ -6,7 +6,10 @@ import { acceptDraft, acceptParagraph, analyzeDraft, createNote, discardDraft, d
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
-import { formatReadingTime, formatWords, totalWords, wordsByChapter } from '../wordcount'
+import {
+  formatReadingTime, formatWords, nextRegister, pageCount, progressLabel, totalWords, wordsByChapter,
+  type ProgressRegister,
+} from '../wordcount'
 import { CopyProse, CopyRef } from './CopyRef'
 import { chapterText, copyableScenes, isSingleWord, paragraphAtOffset, sceneText } from '../manuscript-text'
 import { stack } from '../note-stack'
@@ -152,6 +155,47 @@ function readMode(): Mode {
 }
 function writeMode(m: Mode): void {
   try { sessionStorage.setItem(MODE_KEY, m) } catch { /* preference is a nicety */ }
+}
+
+/** Which register the progress footer states position in. A Kindle asks the
+ *  reader once and then remembers; a reader who thinks in minutes should not
+ *  have to say so again at the top of every chapter. Session-scoped for the
+ *  same reason the mode is — it belongs to this sitting. */
+const PROGRESS_KEY = 'arc.manuscript.progress'
+
+function readRegister(): ProgressRegister {
+  try {
+    const v = sessionStorage.getItem(PROGRESS_KEY)
+    return v === 'pages' || v === 'minutes' || v === 'words' ? v : 'page'
+  } catch { return 'page' }
+}
+function writeRegister(r: ProgressRegister): void {
+  try { sessionStorage.setItem(PROGRESS_KEY, r) } catch { /* preference is a nicety */ }
+}
+
+/** Where the reader had got to, remembered per chapter for this sitting.
+ *
+ *  A PARAGRAPH, not a pixel. Notes mode and Read mode set the same prose at
+ *  different measures, with different furniture above it, so a scroll offset
+ *  taken in one means nothing in the other — the only thing the two layouts
+ *  agree on is which paragraph of which scene the reader was looking at.
+ *  `frac` is how far into that paragraph the top of the page had cut, which
+ *  keeps a long paragraph from snapping back to its first line. */
+const POS_KEY = 'arc.manuscript.pos'
+interface Anchor { key: string; frac: number }
+
+function readPositions(): Record<string, Anchor> {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(POS_KEY) ?? '{}')
+    return v && typeof v === 'object' ? v as Record<string, Anchor> : {}
+  } catch { return {} }
+}
+function writePosition(chapter: string, a: Anchor): void {
+  try {
+    const all = readPositions()
+    all[chapter] = a
+    sessionStorage.setItem(POS_KEY, JSON.stringify(all))
+  } catch { /* a remembered place is a nicety */ }
 }
 
 /** The notes rail: the author's thoughts on this chapter, anchored to the
@@ -311,6 +355,79 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const clearAttention = useCallback(() => { setActive(null); setFocused(null) }, [])
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
 
+  /** The scroll region the manuscript lives in. Declared up here rather than
+   *  beside the notes-rail refs because the reading position is captured on
+   *  the way OUT of a mode — before the switch, while the old layout is still
+   *  on screen — so `switchMode` below has to be able to reach it. */
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  /** Which paragraph the top of the page is cutting through, if any. Returns
+   *  null in Edit mode, which renders textareas and has no paragraphs to
+   *  anchor to — a null is "do not overwrite what we remembered", never
+   *  "the reader is at the top". */
+  const anchorNow = useCallback((): Anchor | null => {
+    const box = scrollRef.current
+    if (!box) return null
+    // Untouched since we put them here: the reader has not moved, so their
+    // place is still the one we were asked to restore — not whatever this
+    // layout was tall enough to show.
+    const put = restoredRef.current
+    if (put && Math.abs(box.scrollTop - put.scrollTop) < 1) return put.anchor
+    const top = box.getBoundingClientRect().top
+    for (const el of box.querySelectorAll<HTMLElement>('[data-para]')) {
+      const r = el.getBoundingClientRect()
+      if (r.bottom <= top + 1) continue          // scrolled past
+      const frac = r.height > 0 ? Math.min(1, Math.max(0, (top - r.top) / r.height)) : 0
+      return { key: el.dataset.para!, frac }
+    }
+    return null
+  }, [])
+
+  /** Put the reader back. A paragraph that no longer exists lands on the
+   *  nearest one still in its scene, and a scene that is gone entirely lands
+   *  at the end of what is left — the point is never to answer "come back to
+   *  where I was" with a blank page. */
+  const restoreAnchor = useCallback((a: Anchor): void => {
+    const box = scrollRef.current
+    if (!box) return
+    const scene = a.key.slice(0, a.key.lastIndexOf(':'))
+    const inScene = box.querySelectorAll<HTMLElement>(`[data-para^="${scene}:"]`)
+    if (!inScene.length && !box.querySelector('[data-para]')) return   // nothing rendered yet
+    const el = box.querySelector<HTMLElement>(`[data-para="${a.key}"]`) ?? inScene[inScene.length - 1]
+    if (!el) { box.scrollTop = box.scrollHeight; return }              // the browser clamps
+    const r = el.getBoundingClientRect()
+    box.scrollTop += (r.top - box.getBoundingClientRect().top) + a.frac * r.height
+    // Read back what the browser actually accepted, so we can tell later
+    // whether the reader has moved from here or whether this is simply as
+    // close as this layout could get.
+    restoredRef.current = { anchor: a, scrollTop: box.scrollTop }
+  }, [])
+
+  /** The chapter a remembered place belongs to. Positions are per chapter:
+   *  reading seven, glancing at two and coming back to seven has to land
+   *  where seven was left, not where two was. */
+  const chapterKey = chapters.length ? chapters[Math.min(chapterIx, chapters.length - 1)].id : ''
+
+  /** Where "read from here" wants to start, held until the mode has actually
+   *  switched and the reading layout exists to scroll. A ref, not state: it
+   *  is consumed by the effect that restores position and never renders. */
+  const pendingRef = useRef<Anchor | null>(null)
+
+  /** The last place we put the reader, and the scroll offset it produced.
+   *
+   *  This exists because the two layouts are not the same height: Read sets
+   *  the prose in a 68-character column and runs nearly twice as long as
+   *  Notes. A paragraph near the end of the reading layout can sit inside the
+   *  last screenful of the working layout, where no amount of scrolling will
+   *  bring it to the top — the browser clamps, and re-reading the position
+   *  from that clamped view would quietly move the reader backwards and then
+   *  remember the wrong place.
+   *
+   *  So the place only changes when the reader actually moves. If the scroll
+   *  offset is still exactly where we left it, we keep the anchor we put
+   *  there rather than re-deriving one from a view that could not honour it. */
+  const restoredRef = useRef<{ anchor: Anchor; scrollTop: number } | null>(null)
+
   /** Mode: which of the two things a click and a keystroke mean right now. */
   const [mode, setModeState] = useState<Mode>(() => readMode())
 
@@ -392,6 +509,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
   const switchMode = useCallback((next: Mode) => {
     flushAllEdits()
+    // Mark the place BEFORE the layout changes under it. Notes and Read set
+    // the same paragraphs at different measures with different furniture
+    // above them, so the anchor is only meaningful while the layout it was
+    // taken in is still the one on screen.
+    const here = anchorNow()
+    if (here && chapterKey) writePosition(chapterKey, here)
     setModeState(next)
     writeMode(next)
     // Edit means edit the proposed text — force the reading onto it, since
@@ -407,11 +530,20 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       setSel(null); setActive(null); setFocused(null)
       setSelMenu(null); setSuggest(null); setEditing(null)
     }
-  }, [flushAllEdits])
+  }, [flushAllEdits, anchorNow, chapterKey])
 
   const cycleMode = useCallback(() => {
     switchMode(MODE_ORDER[(MODE_ORDER.indexOf(mode) + 1) % MODE_ORDER.length])
   }, [mode, switchMode])
+
+  /** Start reading at this scene. The affordance lives on the scene head,
+   *  beside "copy text" — never on the prose, whose gestures are already
+   *  spent three times over, and never a right-click menu, which would cost
+   *  the author the browser's own. */
+  const readFrom = useCallback((scene: string) => {
+    pendingRef.current = { key: `${scene}:0`, frac: 0 }
+    switchMode('read')
+  }, [switchMode])
 
   /** The mode chord belongs to the PAGE, not to one box on it.
    *
@@ -579,7 +711,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // A half-armed discard must not survive closing the drawer or moving to
   // another chapter; a stale briefing must not survive the move either.
   const toggleDrawer = () => { setArmed(null); setDrawer(o => !o) }
-  const gotoChapter = (i: number) => { flushAllEdits(); setArmed(null); setGen(null); setGenErr(null); setShowGen(false); onChapter(i) }
+  const gotoChapter = (i: number) => {
+    // Leaving a chapter is leaving off somewhere in it.
+    const here = anchorNow()
+    if (here && chapterKey) writePosition(chapterKey, here)
+    flushAllEdits(); setArmed(null); setGen(null); setGenErr(null); setShowGen(false); onChapter(i)
+  }
 
   const byFile = useMemo(() => new Map(scenes.map(s => [s.file, s])), [scenes])
   const diffs = useMemo(() => {
@@ -616,6 +753,61 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // absent from the map rather than zero (wordcount.ts).
   const wordsBy = useMemo(() => wordsByChapter(scenes), [scenes])
   const bookWords = useMemo(() => totalWords(scenes), [scenes])
+
+  // Where the reader is, 0 at the top of the chapter and 1 at its end.
+  //
+  // Measured from the scroll region rather than from the prose element,
+  // because in Read mode the region IS the chapter: the rail is gone from
+  // the DOM, the draft bar and the drawer do not render, and what is left
+  // above the prose is a header two lines tall.
+  //
+  // Read mode only. Nothing else on the page states a position, and a scroll
+  // listener that runs while the author is writing is a cost with no reader.
+  const [progress, setProgress] = useState(0)
+  useEffect(() => {
+    const box = scrollRef.current
+    if (!box || mode !== 'read') return
+    const measure = () => {
+      const max = box.scrollHeight - box.clientHeight
+      // A chapter that fits on one screen is a chapter the reader has already
+      // reached the end of — there is nothing further to scroll to, and
+      // claiming they are at the top of it would be the false statement.
+      setProgress(max > 1 ? Math.min(1, Math.max(0, box.scrollTop / max)) : 1)
+    }
+    measure()
+    box.addEventListener('scroll', measure, { passive: true })
+    // The content's height, not the window's: prose arriving, a chapter
+    // changing under the same scroll position, an accepted draft shortening
+    // the page — all move the end of the chapter without any scrolling.
+    const ro = new ResizeObserver(measure)
+    ro.observe(box)
+    if (colsRef.current) ro.observe(colsRef.current)
+    return () => { box.removeEventListener('scroll', measure); ro.disconnect() }
+  }, [mode, chapterIx, view])
+
+  // Put the reader back where they were, after the layout they are going
+  // into has been laid out. A layout effect, not an effect: restoring the
+  // scroll after paint is a visible jump, and the whole point is that
+  // changing stance does not lose your place.
+  //
+  // Edit mode is skipped deliberately — it renders textareas, which carry no
+  // paragraphs to anchor to. Nothing is remembered on the way out of it
+  // either, so a trip through Edit leaves the reading position untouched
+  // rather than overwriting it with a guess.
+  useLayoutEffect(() => {
+    if (mode === 'edit') return
+    const box = scrollRef.current
+    if (!box || !box.querySelector('[data-para]')) return   // prose not on screen yet
+    const a = pendingRef.current ?? readPositions()[chapterKey]
+    pendingRef.current = null
+    if (a) restoreAnchor(a)
+  }, [mode, chapterKey, scenes.length, restoreAnchor])
+
+  /** The register the footer states position in, and the click that cycles it. */
+  const [register, setRegister] = useState<ProgressRegister>(() => readRegister())
+  const cycleRegister = useCallback(() => {
+    setRegister(r => { const next = nextRegister(r); writeRegister(next); return next })
+  }, [])
 
   // The rail renders open notes only; the measurement pass must walk the same
   // list or the tops slide off their paragraphs the moment one is closed.
@@ -700,9 +892,11 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const n = draft.changes.length
 
   // Kindle-style estimate over the chapter's drafted prose: ~250 words to a
-  // page, ~230 words a minute; hidden while a chapter is outline-only.
+  // page, ~230 words a minute; hidden while a chapter is outline-only. The
+  // arithmetic lives in wordcount.ts so the header and the reading footer
+  // cannot round the same chapter to different lengths.
   const words = wordsBy.get(cur.id) ?? 0
-  const pages = Math.max(1, Math.round(words / 250))
+  const pages = pageCount(words)
 
   const bodyClick = wikilinkClickHandler(onOpenWorld)
 
@@ -864,7 +1058,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         )}
       </nav>
 
-      <div className="ms-scroll">
+      <div className="ms-scroll" ref={scrollRef}>
       <div className={mode === 'read' ? 'ms-cols reading' : 'ms-cols'} ref={colsRef}
         onClickCapture={ev => {
           // Clicking away steps back out. An annotated paragraph and the rail
@@ -1030,6 +1224,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 <CopyRef text={s.scene} />
                 <CopyProse get={() => sceneText(s)} label="copy text"
                   title="Copy this scene's prose" disabled={!s.body.trim()} />
+                {s.body.trim() && (
+                  <a className="linklike" onClick={() => readFrom(s.scene)}
+                    title="Read the book from this scene — no notes, no chrome, nothing to click">
+                    read from here
+                  </a>
+                )}
                 <span className={`stpill ${s.status}`}>{s.status}</span>
                 {change && <span className={`stpill ${change.status}`}>draft · {change.status}</span>}
                 {mode === 'edit' && view === 'proposed' && editStatus[s.file]?.state === 'saving' && (
@@ -1053,13 +1253,20 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   // with every arc gesture inert. Selection is the
                   // browser's; a click is just a click. Note marks stay as
                   // faint marginal facts, receded by the container class.
+                  //
+                  // It carries the same data-para keys the notes renderer
+                  // does, and for the same reason it is the same prose:
+                  // that key is how a reading position survives the switch
+                  // between reading the book and working on it. (The
+                  // was-accepted renderer still omits them — that really is
+                  // different prose.)
                   <div className="mdbody prose">
                     {paragraphsOf(s.body).map((p, pi) => {
                       const anchored = notes.some(nn =>
                         nn.anchor.scene === s.scene && nn.resolution.paragraph === pi &&
                         nn.status !== 'resolved' && nn.status !== 'dropped')
                       return (
-                        <p key={pi} className={anchored ? 'has-note' : ''}
+                        <p key={pi} data-para={`${s.scene}:${pi}`} className={anchored ? 'has-note' : ''}
                           dangerouslySetInnerHTML={{ __html: mdToHtml(p).replace(/^<p>|<\/p>$/g, '') }} />
                       )
                     })}
@@ -1144,6 +1351,18 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               Write one by hand, or let arc draft it from the record's own context.</p>
             {mode !== 'read' && genBar}
           </>
+        )}
+
+        {/* Where you are, in the register you chose. Last in the flow and
+            sticky to the foot of the column, so it pins itself over the
+            prose while reading and moves no line that was already set. An
+            outline-only chapter renders none: there is no position in prose
+            that does not exist yet. */}
+        {mode === 'read' && words > 0 && (
+          <button className="ms-progress" onClick={cycleRegister}
+            title="Click to count in pages, minutes or words instead">
+            {progressLabel(register, progress, words)}
+          </button>
         )}
       </article>
 

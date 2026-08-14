@@ -26,6 +26,15 @@
   --c8: light-dark(#e34948, #e66767); /* red */
   --land: light-dark(#f0efec, #262624);
   --water: light-dark(#e4ecf4, #16202a);
+
+  /* Two faces, named once. The interface is set in the UI face; the book is
+     set in the reading face. They are variables rather than repeated stacks
+     because a measure given in `ch` is only meaningful against the exact face
+     the text is set in — a rule that asks for "68 characters of the book" and
+     a rule that sets the book's type must not be able to drift apart. */
+  --ui-face: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --reading-face: Georgia, 'Times New Roman', serif;
+  --reading-size: 16.5px;
 }
 :root[data-theme='light'] { color-scheme: light; }
 :root[data-theme='dark'] { color-scheme: dark; }
@@ -33,7 +42,7 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
 body {
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--ui-face);
   background: var(--page);
   color: var(--text-primary);
   font-size: 14px;
@@ -209,7 +218,7 @@ svg text { font-family: inherit; }
 .mdbody hr { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
 .mdbody .wikilink { color: var(--c1); cursor: pointer; text-decoration: none; }
 .mdbody .wikilink:hover { text-decoration: underline; }
-.mdbody.prose { font-family: Georgia, 'Times New Roman', serif; font-size: 16.5px; line-height: 1.75; }
+.mdbody.prose { font-family: var(--reading-face); font-size: var(--reading-size); line-height: 1.75; }
 
 /* ---- wiki ---- */
 .wiki-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 230px minmax(0,1fr) 280px; gap: 0; overflow: hidden; }
@@ -624,10 +633,52 @@ p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
    from the DOM, not merely hidden — centered at a book measure, chrome
    absent, and the standing note-marks receded to marginal facts. */
 .ms-cols.reading { grid-template-columns: 1fr; }
-.ms-cols.reading .ms-main { max-width: 68ch; margin: 0 auto; }
+/* The measure is 68 characters OF THE BOOK. `ch` is measured against the
+   element's own font, and this element's font is the UI sans — so a column
+   asking for 68ch was getting 68 characters of the interface, which came out
+   as 53 characters of Georgia. Setting the reading face here is what makes
+   the number in this rule the number on the page; the prose keeps its own
+   type from .mdbody.prose either way. Change 68 to change the measure. */
+.ms-cols.reading .ms-main {
+  font-family: var(--reading-face); font-size: var(--reading-size);
+  /* content-box against the app's global border-box: the measure is the
+     width of the LINE, not of the box the line sits in. Under border-box the
+     column's 32px of side padding comes out of the 68, costing the reader
+     another six characters. */
+  box-sizing: content-box;
+  max-width: 68ch; margin: 0 auto;
+}
+/* Everything in that column that is chrome rather than book stays in the
+   interface face — the header and its controls, the outline of a chapter
+   with nothing drafted, and the progress footer. */
+.ms-cols.reading .ms-head,
+.ms-cols.reading .ms-outline,
+.ms-cols.reading .ms-empty,
+.ms-cols.reading .ms-progress { font-family: var(--ui-face); }
 .ms-cols.reading .mdbody.prose p.has-note {
   border-left-color: color-mix(in oklab, var(--c1) 30%, transparent);
   cursor: default;
+}
+
+/* Where you are in the chapter — the one thing Read mode does say. Sticky to
+   the foot of the reading column: pinned over the prose while there is
+   chapter left, settling into place at the end of it. Last in the flow, so
+   adding it moved no line that was already set. Clicking cycles the register
+   (page → pages left → minutes → words); nothing else about it is clickable. */
+.ms-progress {
+  position: sticky; bottom: 0; z-index: 5;
+  display: block; width: 100%; box-sizing: border-box;
+  margin: 30px 0 0; padding: 9px 0 11px;
+  font: inherit; font-size: 11.5px; letter-spacing: .02em; text-align: center;
+  color: var(--text-secondary); background: var(--page);
+  border: 0; cursor: pointer;
+}
+.ms-progress:hover { color: var(--text); }
+/* The mirror of .ms-head::after: a soft edge above, so prose passing beneath
+   the footer ends rather than being cut off mid-line at a hard border. */
+.ms-progress::before {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: 14px;
+  background: linear-gradient(transparent, var(--page)); pointer-events: none;
 }
 
 .note-edit {
