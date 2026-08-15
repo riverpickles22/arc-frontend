@@ -22,6 +22,11 @@ export interface View {
     basemap?: string
     inset?: BBox & { label: string }
     periods?: MapPeriod[]
+    /** A finer asset for one area — streets, the true shore — drawn only
+     *  when the window is near it (A24-5). */
+    detail?: BBox & { asset: string }
+    /** Rendered on the chart. Data licences (ODbL) may require it. */
+    attribution?: string
   }
 }
 

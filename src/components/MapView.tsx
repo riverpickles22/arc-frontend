@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Canon, Entity } from '../canon'
 import { extantAt, nameOf, stateAt, timeRefKey } from '../canon'
 import type { BBox, GeoJSON } from '../map-geometry'
-import { bestCorner, fitBBox, geoCoords, graticule, panWindow, pickGraticuleStep, resolveCoords, scaleBar, windowForInset, zoomWindow } from '../map-geometry'
+import { bestCorner, detailVisible, fitAspect, fitBBox, geoCoords, graticule, kindOf, panWindow, pickGraticuleStep, resolveCoords, scaleBar, svgPath, windowForInset, zoomWindow } from '../map-geometry'
 import { loadBasemap } from '../api'
 import { periodFor } from '../presentation'
 import type { View } from '../presentation'
@@ -18,12 +18,6 @@ const proj = (b: BBox, w: number, h: number, ox = 0, oy = 0) =>
   ]
 const inBox = (b: BBox, lon: number, lat: number) =>
   lon >= b.lon0 && lon <= b.lon1 && lat >= b.lat0 && lat <= b.lat1
-
-/** Height that keeps degrees square at the bbox's own latitude. */
-const heightFor = (b: BBox) => {
-  const midLat = ((b.lat0 + b.lat1) / 2) * (Math.PI / 180)
-  return Math.round((W * (b.lat1 - b.lat0)) / ((b.lon1 - b.lon0) * Math.cos(midLat)))
-}
 
 export function MapView({
   canon, view, colors, tEnd, selected, onSelect, onClear, touching, onOpenRun,
@@ -53,23 +47,43 @@ export function MapView({
     () => fitBBox(canon.entities, geoCoords(geo)) ?? FALLBACK,
     [canon.entities, geo],
   )
-  // H is derived from the FULL extent and never changes with navigation —
-  // the frame keeps its shape; only what it looks at moves (A24-3).
-  const H = useMemo(() => heightFor(MAIN), [MAIN])
+
+  // The PANEL decides the frame's shape, not the extent (A24-6): a wide
+  // island in a tall panel used to letterbox. The window grows along its
+  // shorter axis to fill whatever shape the panel has — more sea, no bars.
+  const svgRef = useRef<SVGSVGElement>(null)
+  const [pxAspect, setPxAspect] = useState(0.55)
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    const ro = new ResizeObserver(es => {
+      const r = es[0]?.contentRect
+      if (r && r.width > 0) setPxAspect(Math.min(Math.max(r.height / r.width, 0.25), 1.6))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const H = useMemo(() => Math.round(W * pxAspect), [pxAspect])
+
+  // The full view, shaped to the frame. Degrees-per-pixel stays square: the
+  // pixel aspect converts to a degree ratio at the extent's own latitude.
+  const FULL = useMemo(() => {
+    const cos = Math.cos((((MAIN.lat0 + MAIN.lat1) / 2) * Math.PI) / 180) || 1
+    return fitAspect(MAIN, (H / W) * cos)
+  }, [MAIN, H])
 
   // The geographic window: null = the full extent. Zoom shrinks it toward
   // the cursor, pan slides it, the inset sets it, Back restores null. One
   // mechanism, and everything below re-projects vector-crisp through it.
-  // The window remembers which extent it was made for, so a new story or
-  // basemap derives back to the full view with no resetting effect.
+  // The window remembers which frame it was made for, so a new story,
+  // basemap or panel shape derives back to the full view with no effect.
   const [winState, setWinState] = useState<{ for: BBox; box: BBox } | null>(null)
-  const win = winState && winState.for === MAIN ? winState.box : null
-  const setWin = useCallback((b: BBox | null) => setWinState(b ? { for: MAIN, box: b } : null), [MAIN])
-  const box = win ?? MAIN
+  const win = winState && winState.for === FULL ? winState.box : null
+  const setWin = useCallback((b: BBox | null) => setWinState(b ? { for: FULL, box: b } : null), [FULL])
+  const box = win ?? FULL
 
   const pMain = useMemo(() => proj(box, W, H), [box, H])
 
-  const svgRef = useRef<SVGSVGElement>(null)
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
 
   /** Client px → geographic point, through the svg's live on-screen size. */
@@ -83,21 +97,31 @@ export function MapView({
 
   // Wheel zoom, native and non-passive: React registers wheel passively, so
   // a synthetic handler could never preventDefault the page scroll away.
-  // Re-registered per window change — cheaper than it sounds, and it keeps
-  // the handler reading current geometry without render-time ref writes.
+  // Registered ONCE and fed current geometry through a ref — re-registering
+  // per window change dropped events mid-gesture, which read as stutter.
+  const wheelGeom = useRef({ box, FULL, toGeo, setWin })
+  useEffect(() => { wheelGeom.current = { box, FULL, toGeo, setWin } })
   useEffect(() => {
     const el = svgRef.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
-      const factor = e.deltaY > 0 ? 1.18 : 1 / 1.18
-      const next = zoomWindow(box, MAIN, factor, toGeo(e.clientX, e.clientY))
-      const atFull = Math.abs(next.lon1 - next.lon0 - (MAIN.lon1 - MAIN.lon0)) < 1e-9
-      setWin(atFull ? null : next)
+      const g = wheelGeom.current
+      // Delta-proportional, exponential: a trackpad's stream of small deltas
+      // and a wheel's single big notch zoom at the same speed for the same
+      // physical gesture. Clamped so one violent notch cannot leap the range.
+      const factor = Math.exp(Math.min(Math.max(e.deltaY, -80), 80) * 0.0035)
+      const next = zoomWindow(g.box, g.FULL, factor, g.toGeo(e.clientX, e.clientY))
+      const atFull = Math.abs(next.lon1 - next.lon0 - (g.FULL.lon1 - g.FULL.lon0)) < 1e-9
+      // Compound against our own last result immediately: a fast gesture
+      // delivers several events per frame, and waiting for React's render to
+      // refresh the ref would collapse them all into one step.
+      wheelGeom.current = { ...g, box: atFull ? g.FULL : next }
+      g.setWin(atFull ? null : next)
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [box, MAIN, toGeo, setWin])
+  }, [])
 
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (e.button !== 0) return
@@ -115,7 +139,7 @@ export function MapView({
     const r = svgRef.current?.getBoundingClientRect()
     if (!r) return
     // dragging the map right slides the window left — the map follows the hand
-    setWin(panWindow(box, MAIN,
+    setWin(panWindow(box, FULL,
       (-dx / r.width) * (box.lon1 - box.lon0),
       (dy / r.height) * (box.lat1 - box.lat0)))
   }
@@ -169,18 +193,15 @@ export function MapView({
 
   const pIns = useMemo(() => (inset && INS ? proj(inset, INS.w, INS.h, INS.x, INS.y) : null), [inset, INS])
 
-  const coastPath = useMemo(() => {
-    if (!geo) return ''
-    const rings: number[][][] = []
-    for (const f of geo.features) {
-      const g = f.geometry
-      if (g.type === 'Polygon') rings.push(...(g.coordinates as number[][][]))
-      else for (const poly of g.coordinates as number[][][][]) rings.push(...poly)
-    }
-    return rings
-      .map(r => 'M' + r.map(([lon, lat]) => pMain(lon, lat).map(v => v.toFixed(1)).join(',')).join('L') + 'Z')
-      .join(' ')
-  }, [geo, pMain])
+  const coastPath = useMemo(
+    () => (geo ? svgPath(geo.features.filter(f => kindOf(f) === 'land'), pMain) : ''),
+    [geo, pMain],
+  )
+  // City footprints at island scale — the first hint a dot is a city.
+  const urbanPath = useMemo(
+    () => (geo ? svgPath(geo.features.filter(f => kindOf(f) === 'urban'), pMain) : ''),
+    [geo, pMain],
+  )
 
   // Characters positioned at T
   const chars = useMemo(() => {
@@ -314,6 +335,17 @@ export function MapView({
     return () => { live = false }
   }, [periodBasemap])
 
+  // The detail layer (A24-5): a finer asset for one declared area, drawn only
+  // when the window is close enough that its streets mean something.
+  const detail = view.map?.detail
+  const [detailGeo, setDetailGeo] = useState<GeoJSON | null>(null)
+  useEffect(() => {
+    let live = true
+    loadBasemap(detail?.asset).then(g => { if (live) setDetailGeo(g) })
+    return () => { live = false }
+  }, [detail?.asset])
+  const detailOn = !!detail && !!detailGeo && detailVisible(box, detail)
+
   return (
     <div ref={wrapRef}
       className={period?.face ? `map-face-${period.face}` : undefined}
@@ -340,6 +372,7 @@ export function MapView({
           </filter>
           <clipPath id="arcFrame"><rect x={0} y={0} width={W} height={H} rx={8} /></clipPath>
         </defs>
+        <g clipPath="url(#arcFrame)">
         <rect x={0} y={0} width={W} height={H} fill="url(#arcWater)" rx={8} />
         <g clipPath="url(#arcFrame)" pointerEvents="none">
           {/* graticule: where on Earth this is */}
@@ -371,6 +404,29 @@ export function MapView({
         {coastPath && (
           <path d={coastPath} fill="url(#arcLand)" stroke="var(--land-edge)" strokeWidth={1.1}
             filter="url(#arcLandLift)" />
+        )}
+        {urbanPath && (
+          <path d={urbanPath} fill="var(--map-urban)" clipPath="url(#arcFrame)" pointerEvents="none" />
+        )}
+        {detailOn && detail && detailGeo && (() => {
+          // Water first — the coastline's bays carve into it — then the true
+          // shore, then the streets. The layer replaces the generalised coast
+          // wherever it is drawn, which is only ever near its own area.
+          const [dx0, dy0] = pMain(detail.lon0, detail.lat1)
+          const [dx1, dy1] = pMain(detail.lon1, detail.lat0)
+          const landD = svgPath(detailGeo.features.filter(f => kindOf(f) === 'land'), pMain)
+          const roadD = svgPath(detailGeo.features.filter(f => kindOf(f) === 'road'), pMain)
+          return (
+            <g clipPath="url(#arcFrame)" pointerEvents="none">
+              <rect x={dx0} y={dy0} width={dx1 - dx0} height={dy1 - dy0} fill="url(#arcWater)" />
+              {landD && <path d={landD} fill="url(#arcLand)" stroke="var(--land-edge)" strokeWidth={1} />}
+              {roadD && <path d={roadD} fill="none" stroke="var(--map-road)" strokeWidth={0.8} opacity={0.75} />}
+            </g>
+          )
+        })()}
+        {view.map?.attribution && (
+          <text x={16} y={H - 8} fontSize={8.5} fill="var(--map-label)" opacity={0.7}
+            pointerEvents="none">{view.map.attribution}</text>
         )}
         {period && (
           <g pointerEvents="none">
@@ -423,14 +479,14 @@ export function MapView({
               <rect x={src.x0} y={src.y0} width={src.x1 - src.x0} height={src.y1 - src.y0}
                 fill="transparent" stroke="var(--c1)" strokeWidth={1.2} strokeDasharray="3 3" opacity={0.8}
                 style={{ cursor: 'zoom-in' }}
-                onClick={ev => { ev.stopPropagation(); setWin(windowForInset(inset, MAIN)) }} />
+                onClick={ev => { ev.stopPropagation(); setWin(windowForInset(inset, FULL)) }} />
               <line x1={scx} y1={scy} x2={lx} y2={ly}
                 stroke="var(--c1)" strokeWidth={1} strokeDasharray="3 3" opacity={0.5} />
               {/* The panel is a door: click it and its area fills the frame. */}
               <rect x={INS.x} y={INS.y} width={INS.w} height={INS.h} rx={8}
                 fill="url(#arcLand)" stroke="var(--c1)" strokeWidth={1}
                 filter="url(#arcLandLift)" style={{ cursor: 'zoom-in' }}
-                onClick={ev => { ev.stopPropagation(); setWin(windowForInset(inset, MAIN)) }}>
+                onClick={ev => { ev.stopPropagation(); setWin(windowForInset(inset, FULL)) }}>
                 <title>Open {inset.label} full-frame</title>
               </rect>
               <text x={INS.x + 10} y={INS.y + 18} fontSize={10} fontWeight={650}
@@ -439,9 +495,20 @@ export function MapView({
               </text>
               {placeDots(inset, pIns, { labelBelow: true })}
               {markers(inset, pIns)}
+              {/* The whole panel is the door. A cover on top, not handlers on
+                  the contents: the panel is dense with dots, and a click that
+                  meant "take me there" kept landing on one and selecting it
+                  instead. The mini map is a navigation control — selection
+                  happens in the full frame it opens. */}
+              <rect x={INS.x} y={INS.y} width={INS.w} height={INS.h} rx={8}
+                fill="transparent" style={{ cursor: 'zoom-in' }}
+                onClick={ev => { ev.stopPropagation(); setWin(windowForInset(inset, FULL)) }}>
+                <title>Open {inset.label} — fills the map</title>
+              </rect>
             </g>
           )
         })()}
+        </g>
       </svg>
       <TipOverlay tip={tip} />
       {win && (

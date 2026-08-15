@@ -4,8 +4,44 @@ import type { Entity } from './canon'
 
 export interface BBox { lon0: number; lon1: number; lat0: number; lat1: number }
 
+export interface GeoFeature {
+  /** kind steers rendering: land (default), water, urban, road. Generic —
+   *  arc knows registers, never place names. */
+  properties?: { kind?: string }
+  geometry: { type: string; coordinates: unknown }
+}
+
 export interface GeoJSON {
-  features: { geometry: { type: string; coordinates: number[][][] | number[][][][] } }[]
+  features: GeoFeature[]
+}
+
+export const kindOf = (f: GeoFeature): string => f.properties?.kind ?? 'land'
+
+/** One svg path for a set of features, through a projection. Polygons close;
+ *  lines don't. Pure string-building, so the tests can pin it exactly. */
+export function svgPath(
+  features: GeoFeature[],
+  project: (lon: number, lat: number) => [number, number],
+): string {
+  const run = (ring: number[][], close: boolean) =>
+    'M' + ring.map(([lon, lat]) => project(lon, lat).map(v => v.toFixed(1)).join(',')).join('L') + (close ? 'Z' : '')
+  const out: string[] = []
+  for (const f of features) {
+    const g = f.geometry
+    const c = g.coordinates
+    if (g.type === 'Polygon') for (const ring of c as number[][][]) out.push(run(ring, true))
+    else if (g.type === 'MultiPolygon') for (const poly of c as number[][][][]) for (const ring of poly) out.push(run(ring, true))
+    else if (g.type === 'LineString') out.push(run(c as number[][], false))
+    else if (g.type === 'MultiLineString') for (const line of c as number[][][]) out.push(run(line, false))
+  }
+  return out.join(' ')
+}
+
+/** Is the window close enough for a detail area's streets to mean anything?
+ *  Shown when the view spans at most a few widths of the detail box — at
+ *  island scale a street grid is noise, entered into the city it is the city. */
+export function detailVisible(win: BBox, detail: BBox, factor = 3): boolean {
+  return win.lon1 - win.lon0 <= factor * (detail.lon1 - detail.lon0)
 }
 
 /** Resolve a place id to coordinates, walking part_of up the hierarchy. */
@@ -193,21 +229,27 @@ export function panWindow(win: BBox, full: BBox, dLon: number, dLat: number): BB
   }, full)
 }
 
+/** Grow a bbox along its shorter axis until dLat/dLon equals `ratio` —
+ *  centred, never cropped. The frame's shape decides what the window shows:
+ *  a squarer panel simply sees more sea, which is what a chart does. */
+export function fitAspect(b: BBox, ratio: number): BBox {
+  const dLon = b.lon1 - b.lon0
+  const dLat = b.lat1 - b.lat0
+  const cLon = (b.lon0 + b.lon1) / 2
+  const cLat = (b.lat0 + b.lat1) / 2
+  if (dLat / dLon < ratio) {
+    const want = dLon * ratio
+    return { lon0: b.lon0, lon1: b.lon1, lat0: cLat - want / 2, lat1: cLat + want / 2 }
+  }
+  const want = dLat / ratio
+  return { lon0: cLon - want / 2, lon1: cLon + want / 2, lat0: b.lat0, lat1: b.lat1 }
+}
+
 /** The window that shows an inset's area in a frame of the full extent's
  *  aspect: the inset bbox, grown along its shorter axis to match. The frame
  *  never changes shape — only what it looks at. */
 export function windowForInset(inset: BBox, full: BBox): BBox {
-  const ratio = (full.lat1 - full.lat0) / (full.lon1 - full.lon0)
-  const dLon = inset.lon1 - inset.lon0
-  const dLat = inset.lat1 - inset.lat0
-  const cLon = (inset.lon0 + inset.lon1) / 2
-  const cLat = (inset.lat0 + inset.lat1) / 2
-  if (dLat / dLon < ratio) {
-    const want = dLon * ratio
-    return { lon0: inset.lon0, lon1: inset.lon1, lat0: cLat - want / 2, lat1: cLat + want / 2 }
-  }
-  const want = dLat / ratio
-  return { lon0: cLon - want / 2, lon1: cLon + want / 2, lat0: inset.lat0, lat1: inset.lat1 }
+  return fitAspect(inset, (full.lat1 - full.lat0) / (full.lon1 - full.lon0))
 }
 
 // Keep the drawn map within a sane aspect range. A story with one place, or

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { bestCorner, fitBBox, geoCoords, graticule, panWindow, pickGraticuleStep, resolveCoords, scaleBar, windowForInset, zoomWindow } from './map-geometry'
+import { bestCorner, detailVisible, fitAspect, fitBBox, geoCoords, graticule, panWindow, pickGraticuleStep, resolveCoords, scaleBar, svgPath, windowForInset, zoomWindow } from './map-geometry'
 import type { Entity } from './canon'
 
 const ent = (id: string, extra: Partial<Entity>): Entity =>
@@ -138,4 +138,33 @@ test('windowForInset: the frame keeps its aspect and the inset fits inside', () 
   expect(w.lon1).toBeGreaterThanOrEqual(inset.lon1)
   expect(w.lat0).toBeLessThanOrEqual(inset.lat0)
   expect(w.lat1).toBeGreaterThanOrEqual(inset.lat1)
+})
+
+test('svgPath: polygons close, lines do not, every geometry type drawn', () => {
+  const id = (lon: number, lat: number): [number, number] => [lon, lat]
+  const path = svgPath([
+    { properties: { kind: 'land' }, geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1]]] } },
+    { geometry: { type: 'LineString', coordinates: [[2, 2], [3, 3]] } },
+    { geometry: { type: 'MultiLineString', coordinates: [[[4, 4], [5, 5]], [[6, 6], [7, 7]]] } },
+  ], id)
+  expect(path).toBe('M0.0,0.0L1.0,0.0L1.0,1.0Z M2.0,2.0L3.0,3.0 M4.0,4.0L5.0,5.0 M6.0,6.0L7.0,7.0')
+})
+
+test('detailVisible: streets appear only near the detail area', () => {
+  const detail = { lon0: -82.48, lon1: -82.28, lat0: 23.05, lat1: 23.2 }   // 0.2° wide
+  expect(detailVisible(FULL, detail)).toBe(false)                          // 11° island view
+  expect(detailVisible({ lon0: -82.6, lon1: -82.2, lat0: 23, lat1: 23.3 }, detail)).toBe(true)
+  expect(detailVisible({ lon0: -83, lon1: -82, lat0: 22.8, lat1: 23.5 }, detail)).toBe(false)  // 1° > 3×0.2
+})
+
+test('fitAspect: reaches the ratio, contains and centres on the input', () => {
+  const b = { lon0: -82.48, lon1: -82.28, lat0: 23.05, lat1: 23.2 }
+  for (const ratio of [0.3, 0.75, 2]) {
+    const f = fitAspect(b, ratio)
+    expect((f.lat1 - f.lat0) / (f.lon1 - f.lon0)).toBeCloseTo(ratio, 6)
+    expect(f.lon0).toBeLessThanOrEqual(b.lon0)
+    expect(f.lat0).toBeLessThanOrEqual(b.lat0)
+    expect(f.lon0 + f.lon1).toBeCloseTo(b.lon0 + b.lon1, 6)   // centred
+    expect(f.lat0 + f.lat1).toBeCloseTo(b.lat0 + b.lat1, 6)
+  }
 })

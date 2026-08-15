@@ -37,6 +37,8 @@
   --map-grid: light-dark(rgba(30, 70, 110, 0.12), rgba(160, 195, 225, 0.1));
   --map-label: light-dark(#63727f, #8ba0ae);
   --graph-vignette: light-dark(#8a897f, #000000);
+  --map-urban: light-dark(rgba(140, 105, 65, 0.16), rgba(210, 180, 130, 0.09));
+  --map-road: light-dark(#ab9d84, #6e6555);
 
   /* Two faces, named once. The interface is set in the UI face; the book is
      set in the reading face. They are variables rather than repeated stacks
