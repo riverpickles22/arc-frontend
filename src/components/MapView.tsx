@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Canon, Entity } from '../canon'
 import { extantAt, nameOf, stateAt, timeRefKey } from '../canon'
 import type { BBox, GeoJSON } from '../map-geometry'
-import { bestCorner, fitBBox, geoCoords, resolveCoords } from '../map-geometry'
+import { bestCorner, fitBBox, geoCoords, graticule, panWindow, pickGraticuleStep, resolveCoords, scaleBar, windowForInset, zoomWindow } from '../map-geometry'
 import { loadBasemap } from '../api'
+import { periodFor } from '../presentation'
 import type { View } from '../presentation'
 import { Legend, TipOverlay, useTip } from './overlays'
 
@@ -44,13 +45,6 @@ export function MapView({
   const wrapRef = useRef<HTMLDivElement>(null)
   const { tip, showTip, hideTip } = useTip(wrapRef)
 
-  const basemap = view.map?.basemap
-  useEffect(() => {
-    let live = true
-    loadBasemap(basemap).then(g => { if (live) setGeo(g) })
-    return () => { live = false }
-  }, [basemap])
-
   const inset = view.map?.inset
 
   // The map covers whatever is being drawn — the coastline plus every located
@@ -59,14 +53,99 @@ export function MapView({
     () => fitBBox(canon.entities, geoCoords(geo)) ?? FALLBACK,
     [canon.entities, geo],
   )
+  // H is derived from the FULL extent and never changes with navigation —
+  // the frame keeps its shape; only what it looks at moves (A24-3).
   const H = useMemo(() => heightFor(MAIN), [MAIN])
 
-  const pMain = useMemo(() => proj(MAIN, W, H), [MAIN, H])
+  // The geographic window: null = the full extent. Zoom shrinks it toward
+  // the cursor, pan slides it, the inset sets it, Back restores null. One
+  // mechanism, and everything below re-projects vector-crisp through it.
+  // The window remembers which extent it was made for, so a new story or
+  // basemap derives back to the full view with no resetting effect.
+  const [winState, setWinState] = useState<{ for: BBox; box: BBox } | null>(null)
+  const win = winState && winState.for === MAIN ? winState.box : null
+  const setWin = useCallback((b: BBox | null) => setWinState(b ? { for: MAIN, box: b } : null), [MAIN])
+  const box = win ?? MAIN
+
+  const pMain = useMemo(() => proj(box, W, H), [box, H])
+
+  const svgRef = useRef<SVGSVGElement>(null)
+  const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
+
+  /** Client px → geographic point, through the svg's live on-screen size. */
+  const toGeo = useCallback((clientX: number, clientY: number) => {
+    const r = svgRef.current?.getBoundingClientRect()
+    if (!r) return { lon: (box.lon0 + box.lon1) / 2, lat: (box.lat0 + box.lat1) / 2 }
+    const fx = (clientX - r.left) / r.width
+    const fy = (clientY - r.top) / r.height
+    return { lon: box.lon0 + fx * (box.lon1 - box.lon0), lat: box.lat1 - fy * (box.lat1 - box.lat0) }
+  }, [box])
+
+  // Wheel zoom, native and non-passive: React registers wheel passively, so
+  // a synthetic handler could never preventDefault the page scroll away.
+  // Re-registered per window change — cheaper than it sounds, and it keeps
+  // the handler reading current geometry without render-time ref writes.
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const factor = e.deltaY > 0 ? 1.18 : 1 / 1.18
+      const next = zoomWindow(box, MAIN, factor, toGeo(e.clientX, e.clientY))
+      const atFull = Math.abs(next.lon1 - next.lon0 - (MAIN.lon1 - MAIN.lon0)) < 1e-9
+      setWin(atFull ? null : next)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [box, MAIN, toGeo, setWin])
+
+  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.button !== 0) return
+    dragRef.current = { x: e.clientX, y: e.clientY, moved: false }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const d = dragRef.current
+    if (!d) return
+    const dx = e.clientX - d.x
+    const dy = e.clientY - d.y
+    if (!d.moved && Math.hypot(dx, dy) < 4) return   // a click, until it isn't
+    d.moved = true
+    d.x = e.clientX; d.y = e.clientY
+    const r = svgRef.current?.getBoundingClientRect()
+    if (!r) return
+    // dragging the map right slides the window left — the map follows the hand
+    setWin(panWindow(box, MAIN,
+      (-dx / r.width) * (box.lon1 - box.lon0),
+      (dy / r.height) * (box.lat1 - box.lat0)))
+  }
+  const onPointerUp = () => { /* the click-capture below reads .moved first */ }
+  /** A drag must not fire the click it ends on — selection and clear keep
+   *  their meaning at every zoom level. Capture phase, so children never see it. */
+  const onClickCapture = (e: React.MouseEvent) => {
+    const moved = dragRef.current?.moved
+    dragRef.current = null
+    if (moved) { e.stopPropagation(); e.preventDefault() }
+  }
 
   const places = useMemo(
     () => Object.values(canon.entities).filter(e => e.type === 'place' && e.coordinates),
     [canon],
   )
+
+  // Chart furniture: the graticule and scale bar that make this read as a
+  // chart of somewhere on Earth rather than a diagram (A24-1). Pure math in
+  // map-geometry; this component only draws what it is handed.
+  const grid = useMemo(() => graticule(box, pickGraticuleStep(box)), [box])
+  const bar = useMemo(() => scaleBar(box, W), [box])
+  const deg = (v: number, pos: string, neg: string) =>
+    `${Math.abs(v) % 1 ? Math.abs(v).toFixed(1) : Math.abs(v)}°${v < 0 ? neg : pos}`
+
+  // Which of the story's declared periods the cursor is inside (A24-2). The
+  // face is a CSS class over the chart tokens; the cartouche names the moment.
+  const year = Math.floor(tEnd / 10000)
+  const period = periodFor(view.map?.periods, year)
+  const periodBasemap = period?.basemap ?? view.map?.basemap
 
   // The inset panel: sized to its bbox's aspect (capped so it never dominates
   // the frame), placed in the corner covering the least of what is drawn —
@@ -212,26 +291,111 @@ export function MapView({
               <circle cx={x} cy={y} r={6} fill="none"
                 stroke="var(--c6)" strokeWidth={1.2} strokeDasharray="3 3" opacity={0.9} />
             )}
-            <circle cx={x} cy={y} r={3} fill="var(--muted)" opacity={p.status === 'proposed' ? 0.5 : 1} />
+            <circle cx={x} cy={y} r={4.5} fill="none" stroke="var(--map-label)" strokeWidth={1}
+              opacity={p.status === 'proposed' ? 0.5 : 0.9} />
+            <circle cx={x} cy={y} r={1.8} fill="var(--text-secondary)" opacity={p.status === 'proposed' ? 0.5 : 1} />
             {touching?.get(p.id) && (
               <circle cx={x + 5} cy={y - 5} r={2.5} fill="var(--c1)"
                 stroke="var(--surface-1)" strokeWidth={1}
                 onClick={ev => { ev.stopPropagation(); onOpenRun?.(touching.get(p.id)!) }} />
             )}
-            <text x={opts?.labelBelow ? x : x + 6} y={opts?.labelBelow ? y + 14 : y - 4}
-              fontSize={10} textAnchor={opts?.labelBelow ? 'middle' : 'start'}
-              fontWeight={sel ? 650 : 400}
-              fill={sel ? 'var(--text-primary)' : 'var(--muted)'}>{p.name}</text>
+            <text x={opts?.labelBelow ? x : x + 8} y={opts?.labelBelow ? y + 15 : y - 6}
+              fontSize={9.5} textAnchor={opts?.labelBelow ? 'middle' : 'start'}
+              fontWeight={sel ? 650 : 500}
+              style={{ letterSpacing: '0.09em', textTransform: 'uppercase' }}
+              fill={sel ? 'var(--text-primary)' : 'var(--map-label)'}>{p.name}</text>
           </g>
         )
       })
 
+  useEffect(() => {
+    let live = true
+    loadBasemap(periodBasemap).then(g => { if (live) setGeo(g) })
+    return () => { live = false }
+  }, [periodBasemap])
+
   return (
-    <div ref={wrapRef} style={{ position: 'relative', flex: 1, minHeight: 0, padding: '0 12px 4px' }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '100%', display: 'block' }}
+    <div ref={wrapRef}
+      className={period?.face ? `map-face-${period.face}` : undefined}
+      style={{ position: 'relative', flex: 1, minHeight: 0, padding: '0 12px 4px' }}>
+      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`}
+        style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', userSelect: 'none', cursor: win ? 'grab' : undefined }}
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
+        onClickCapture={onClickCapture}
         onClick={() => onClear?.()}>
-        <rect x={0} y={0} width={W} height={H} fill="var(--water)" rx={8} />
-        {coastPath && <path d={coastPath} fill="var(--land)" stroke="var(--baseline)" strokeWidth={1} />}
+        <defs>
+          {/* Open water darkens away from the story's centre; land lifts off
+              it. Gradients and a shadow, never an image — the chart is drawn
+              from the same geometry as before, just lit. */}
+          <radialGradient id="arcWater" cx="50%" cy="42%" r="78%">
+            <stop offset="0%" stopColor="var(--water)" />
+            <stop offset="100%" stopColor="var(--water-deep)" />
+          </radialGradient>
+          <linearGradient id="arcLand" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--land-high)" />
+            <stop offset="100%" stopColor="var(--land)" />
+          </linearGradient>
+          <filter id="arcLandLift" x="-8%" y="-8%" width="116%" height="116%">
+            <feDropShadow dx="0" dy="1.5" stdDeviation="3" floodColor="#000000" floodOpacity="0.28" />
+          </filter>
+          <clipPath id="arcFrame"><rect x={0} y={0} width={W} height={H} rx={8} /></clipPath>
+        </defs>
+        <rect x={0} y={0} width={W} height={H} fill="url(#arcWater)" rx={8} />
+        <g clipPath="url(#arcFrame)" pointerEvents="none">
+          {/* graticule: where on Earth this is */}
+          {grid.lons.map(lon => {
+            const [gx] = pMain(lon, box.lat0)
+            return (
+              <g key={`lon${lon}`}>
+                <line x1={gx} y1={0} x2={gx} y2={H} stroke="var(--map-grid)" strokeWidth={1} />
+                <text x={gx + 4} y={H - 7} fontSize={9} fill="var(--map-label)">{deg(lon, 'E', 'W')}</text>
+              </g>
+            )
+          })}
+          {grid.lats.map(lat => {
+            const [, gy] = pMain(box.lon0, lat)
+            return (
+              <g key={`lat${lat}`}>
+                <line x1={0} y1={gy} x2={W} y2={gy} stroke="var(--map-grid)" strokeWidth={1} />
+                <text x={7} y={gy - 4} fontSize={9} fill="var(--map-label)">{deg(lat, 'N', 'S')}</text>
+              </g>
+            )
+          })}
+          {/* water-lining: the coast echoed outward, the old charts' glow */}
+          {coastPath && <>
+            <path d={coastPath} fill="none" stroke="var(--coast-glow)" strokeWidth={16} opacity={0.28} />
+            <path d={coastPath} fill="none" stroke="var(--coast-glow)" strokeWidth={8} opacity={0.5} />
+            <path d={coastPath} fill="none" stroke="var(--coast-glow)" strokeWidth={3.5} opacity={0.9} />
+          </>}
+        </g>
+        {coastPath && (
+          <path d={coastPath} fill="url(#arcLand)" stroke="var(--land-edge)" strokeWidth={1.1}
+            filter="url(#arcLandLift)" />
+        )}
+        {period && (
+          <g pointerEvents="none">
+            <text x={18} y={26} fontSize={11} fontWeight={650} fill="var(--map-label)"
+              style={{ letterSpacing: '0.14em' }}>
+              {period.label.toUpperCase()}
+            </text>
+            <text x={18} y={41} fontSize={10} fill="var(--map-label)" opacity={0.85}
+              style={{ letterSpacing: '0.08em', fontVariantNumeric: 'tabular-nums' }}>
+              {year}
+            </text>
+          </g>
+        )}
+        {/* the chart's grammar: a scale you can trust, a north to stand by */}
+        <g transform={`translate(${W - 30}, 32)`} pointerEvents="none" opacity={0.9}>
+          <circle r={12} fill="none" stroke="var(--map-label)" strokeWidth={0.8} opacity={0.55} />
+          <path d="M0,-10 L3,4 L0,1.5 L-3,4 Z" fill="var(--map-label)" />
+          <text y={-16} fontSize={9} textAnchor="middle" fill="var(--map-label)">N</text>
+        </g>
+        <g transform={`translate(${W - 46 - bar.px}, ${H - 30})`} pointerEvents="none">
+          <line x1={0} y1={0} x2={bar.px} y2={0} stroke="var(--map-label)" strokeWidth={1.4} />
+          <line x1={0} y1={-3.5} x2={0} y2={3.5} stroke="var(--map-label)" strokeWidth={1.4} />
+          <line x1={bar.px} y1={-3.5} x2={bar.px} y2={3.5} stroke="var(--map-label)" strokeWidth={1.4} />
+          <text x={bar.px + 8} y={3.5} fontSize={10} fill="var(--map-label)">{bar.km} km</text>
+        </g>
 
         {/* trail of selected character */}
         {trail.length > 1 && (
@@ -244,10 +408,10 @@ export function MapView({
 
         {/* With no inset declared, every place and character draws on the main
             map; with one, its contents are drawn there instead. */}
-        {placeDots(MAIN, pMain, inset ? { kinds: new Set(['city']) } : undefined)}
-        {markers(MAIN, pMain, 1, inset)}
+        {placeDots(box, pMain, !win && inset ? { kinds: new Set(['city']) } : undefined)}
+        {markers(box, pMain, 1, !win && inset ? inset : undefined)}
 
-        {inset && INS && pIns && (() => {
+        {!win && inset && INS && pIns && (() => {
           // the excerpted area, outlined on the main map, linked to the panel
           const { src } = INS
           const scx = (src.x0 + src.x1) / 2
@@ -257,13 +421,21 @@ export function MapView({
           return (
             <g>
               <rect x={src.x0} y={src.y0} width={src.x1 - src.x0} height={src.y1 - src.y0}
-                fill="none" stroke="var(--c1)" strokeWidth={1.2} strokeDasharray="3 3" opacity={0.8} />
+                fill="transparent" stroke="var(--c1)" strokeWidth={1.2} strokeDasharray="3 3" opacity={0.8}
+                style={{ cursor: 'zoom-in' }}
+                onClick={ev => { ev.stopPropagation(); setWin(windowForInset(inset, MAIN)) }} />
               <line x1={scx} y1={scy} x2={lx} y2={ly}
                 stroke="var(--c1)" strokeWidth={1} strokeDasharray="3 3" opacity={0.5} />
+              {/* The panel is a door: click it and its area fills the frame. */}
               <rect x={INS.x} y={INS.y} width={INS.w} height={INS.h} rx={8}
-                fill="var(--land)" stroke="var(--c1)" strokeWidth={1} />
-              <text x={INS.x + 10} y={INS.y + 18} fontSize={11} fontWeight={650} fill="var(--muted)">
-                {inset.label.toUpperCase()} (inset)
+                fill="url(#arcLand)" stroke="var(--c1)" strokeWidth={1}
+                filter="url(#arcLandLift)" style={{ cursor: 'zoom-in' }}
+                onClick={ev => { ev.stopPropagation(); setWin(windowForInset(inset, MAIN)) }}>
+                <title>Open {inset.label} full-frame</title>
+              </rect>
+              <text x={INS.x + 10} y={INS.y + 18} fontSize={10} fontWeight={650}
+                style={{ letterSpacing: '0.09em' }} fill="var(--map-label)">
+                {inset.label.toUpperCase()} (INSET)
               </text>
               {placeDots(inset, pIns, { labelBelow: true })}
               {markers(inset, pIns)}
@@ -272,6 +444,11 @@ export function MapView({
         })()}
       </svg>
       <TipOverlay tip={tip} />
+      {win && (
+        <button className="themeToggle mapBack" onClick={() => setWin(null)}>
+          ⤺ Full map
+        </button>
+      )}
       <Legend items={[
         ...Object.entries(colors).map(([id, color]) => ({ label: nameOf(canon, id), color })),
         { label: 'place', color: 'var(--muted)' },

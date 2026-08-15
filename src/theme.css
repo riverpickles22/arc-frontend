@@ -24,8 +24,19 @@
   --c6: light-dark(#eb6834, #d95926); /* orange */
   --c7: light-dark(#4a3aa7, #9085e9); /* violet */
   --c8: light-dark(#e34948, #e66767); /* red */
-  --land: light-dark(#f0efec, #262624);
-  --water: light-dark(#e4ecf4, #16202a);
+  /* The chart family. The World map is a chart of the story's world, not a
+     diagram — so water has depth, the coast has the glow of old nautical
+     charts' water-lining, and land lifts off the sea. All derived from the
+     two original tones, both themes in one light-dark() pair each. */
+  --land: light-dark(#ece5d3, #322f28);
+  --land-high: light-dark(#f7f2e4, #3d3931);
+  --land-edge: light-dark(#c2b89e, #6e6754);
+  --water: light-dark(#d9e5f0, #1a2836);
+  --water-deep: light-dark(#c2d4e5, #0b131c);
+  --coast-glow: light-dark(rgba(58, 112, 168, 0.35), rgba(140, 190, 235, 0.3));
+  --map-grid: light-dark(rgba(30, 70, 110, 0.12), rgba(160, 195, 225, 0.1));
+  --map-label: light-dark(#63727f, #8ba0ae);
+  --graph-vignette: light-dark(#8a897f, #000000);
 
   /* Two faces, named once. The interface is set in the UI face; the book is
      set in the reading face. They are variables rather than repeated stacks
@@ -80,7 +91,34 @@ body {
 
 .timelinePanel { flex: 0 0 auto; }
 .timeline-svg { display: block; width: 100%; }
-.timeline-slider { width: 100%; margin: 0; accent-color: var(--c1); }
+/* The scrub handle under the timeline's cursor line. Styled by hand so the
+   thumb is exactly SLIDER_THUMB_PX (scale.ts) wide in every browser — the
+   thumb-under-line margin maths needs a width it can trust, and the native
+   control won't promise one. */
+.timeline-slider {
+  appearance: none; -webkit-appearance: none;
+  display: block; height: 18px; margin: 0; background: transparent;
+}
+.timeline-slider::-webkit-slider-runnable-track {
+  height: 3px; border-radius: 2px; background: var(--border);
+}
+.timeline-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; box-sizing: border-box;
+  width: 14px; height: 14px; border-radius: 50%; margin-top: -5.5px;
+  background: var(--c1); border: 2px solid var(--surface-1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); cursor: ew-resize;
+}
+.timeline-slider::-moz-range-track {
+  height: 3px; border-radius: 2px; background: var(--border);
+}
+.timeline-slider::-moz-range-thumb {
+  box-sizing: border-box; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--c1); border: 2px solid var(--surface-1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); cursor: ew-resize;
+}
+.timeline-slider:focus-visible { outline: none; }
+.timeline-slider:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--c1); outline-offset: 2px; }
+.timeline-slider:focus-visible::-moz-range-thumb { outline: 2px solid var(--c1); outline-offset: 2px; }
 .timeline-footer { display: flex; gap: 12px; padding: 4px 12px 10px; align-items: baseline; }
 .timeline-footer .year { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .timeline-footer .eraname { color: var(--text-secondary); }
@@ -106,6 +144,46 @@ svg text { font-family: inherit; }
 }
 .tooltip .t-title { font-weight: 650; margin-bottom: 2px; }
 .tooltip .t-sub { color: var(--text-secondary); }
+
+/* The graph's motion (A25-1): decoration only, and only for those who want
+   motion at all. The ring breathes, perception flows; reduced-motion stills
+   both without losing the marks themselves. */
+.gEdge:hover .gEdgeVis { stroke: var(--text-secondary); stroke-width: 2; }
+@media (prefers-reduced-motion: no-preference) {
+  .gSelRing {
+    transform-box: fill-box; transform-origin: center;
+    animation: gPulse 2.4s ease-in-out infinite;
+  }
+  .gPerception { animation: gFlow 1.6s linear infinite; }
+}
+@keyframes gPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.12); opacity: 0.65; }
+}
+@keyframes gFlow { to { stroke-dashoffset: -16; } }
+
+.mapBack { position: absolute; top: 48px; left: 22px; z-index: 5; box-shadow: 0 2px 8px rgba(0,0,0,0.18); }
+
+/* Period faces (A24-2): the same chart, lit by its era. A face only re-tunes
+   the chart family tokens, so every rule that draws the map serves any era.
+   Stories pick faces by name in view.yaml; arc defines what they look like. */
+.map-face-vivid {
+  --land: light-dark(#f0e7cf, #363127);
+  --land-high: light-dark(#faf4df, #423b2e);
+  --land-edge: light-dark(#c8ba98, #756b52);
+  --water: light-dark(#d2e4ef, #1b2c3d);
+  --water-deep: light-dark(#b7d2e5, #0c1622);
+  --coast-glow: light-dark(rgba(45, 120, 185, 0.4), rgba(150, 200, 245, 0.34));
+}
+.map-face-austere {
+  --land: light-dark(#e4e2da, #2b2b28);
+  --land-high: light-dark(#edebe4, #33332f);
+  --land-edge: light-dark(#b3b0a6, #56554e);
+  --water: light-dark(#dde2e7, #1c2126);
+  --water-deep: light-dark(#c9d1d8, #0e1215);
+  --coast-glow: light-dark(rgba(90, 110, 130, 0.3), rgba(140, 160, 180, 0.22));
+  --map-label: light-dark(#75797d, #7d8489);
+}
 
 .legend { display: flex; gap: 12px; padding: 6px 12px 10px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); }
 .legend .item { display: flex; align-items: center; gap: 5px; }

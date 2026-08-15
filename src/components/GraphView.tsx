@@ -6,6 +6,7 @@ import type { SimulationLinkDatum, SimulationNodeDatum } from 'd3-force'
 import type { Canon } from '../canon'
 import { extantAt, nameOf, stateAt } from '../canon'
 import { FOCUS_MODES, type FocusMode } from '../graph-focus'
+import { degreeRadius, edgeArc } from '../graph-visuals'
 import { TYPE_COLORS } from '../presentation'
 import { Legend, TipOverlay, useTip } from './overlays'
 
@@ -81,26 +82,53 @@ export function GraphView({
 
   const pos = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes])
 
+  // Degree per node — relationships plus place-hierarchy scaffolding — so a
+  // hub reads as a hub. Rendering only: the layout above never sees it.
+  const degree = useMemo(() => {
+    const d = new Map<string, number>()
+    const bump = (id: string) => d.set(id, (d.get(id) ?? 0) + 1)
+    for (const r of canon.relationships) { bump(r.from); bump(r.to) }
+    for (const e of Object.values(canon.entities)) {
+      if (e.part_of && canon.entities[e.part_of]) { bump(e.id); bump(e.part_of) }
+    }
+    return d
+  }, [canon])
+
   return (
     <div ref={wrapRef} style={{ position: 'relative', flex: 1, minHeight: 0, padding: '0 12px 4px' }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '100%', display: 'block' }}
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '100%', display: 'block', userSelect: 'none' }}
         onClick={() => onClear?.()}>
-        {/* structural place-hierarchy edges */}
+        <defs>
+          {/* The canvas gets depth; the nodes get light. Filters and a
+              vignette, never a layout change — positions are untouchable. */}
+          <radialGradient id="graphVignette" cx="50%" cy="46%" r="72%">
+            <stop offset="62%" stopColor="var(--graph-vignette)" stopOpacity="0" />
+            <stop offset="100%" stopColor="var(--graph-vignette)" stopOpacity="0.5" />
+          </radialGradient>
+          <filter id="nodeGlow" x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur stdDeviation="5" />
+          </filter>
+        </defs>
+        <rect x={0} y={0} width={W} height={H} fill="url(#graphVignette)" rx={8} />
+        {/* structural place-hierarchy edges: scaffolding, straight and quiet */}
         {struct.map((l, i) => (
           <line key={i} x1={l.source.x} y1={l.source.y} x2={l.target.x} y2={l.target.y}
             stroke="var(--grid)" strokeWidth={1} />
         ))}
-        {/* objective edges */}
-        {links.map(l => (
-          <g key={l.edge.id} opacity={dimTo && !(dimTo.has(l.edge.from) && dimTo.has(l.edge.to)) ? 0.15 : 1}
-            onMouseMove={ev => showTip(ev, l.edge.kind, l.edge.summary)}
-            onMouseLeave={hideTip}>
-            <line x1={l.source.x} y1={l.source.y} x2={l.target.x} y2={l.target.y}
-              stroke="var(--baseline)" strokeWidth={1.4} />
-            <line x1={l.source.x} y1={l.source.y} x2={l.target.x} y2={l.target.y}
-              stroke="transparent" strokeWidth={10} />
-          </g>
-        ))}
+        {/* objective edges: gentle arcs, thickening under the cursor */}
+        {links.map(l => {
+          const d = edgeArc(l.source.x!, l.source.y!, l.target.x!, l.target.y!)
+          return (
+            <g key={l.edge.id} className="gEdge"
+              opacity={dimTo && !(dimTo.has(l.edge.from) && dimTo.has(l.edge.to)) ? 0.15 : 1}
+              style={{ transition: 'opacity 240ms ease' }}
+              onMouseMove={ev => showTip(ev, l.edge.kind, l.edge.summary)}
+              onMouseLeave={hideTip}>
+              <path className="gEdgeVis" d={d} fill="none" stroke="var(--baseline)" strokeWidth={1.4} />
+              <path d={d} fill="none" stroke="transparent" strokeWidth={11} />
+            </g>
+          )
+        })}
         {/* subjective perception edges at T (dashed, from selected character) */}
         {selected && perception.map(p => {
           const a = pos.get(selected)
@@ -110,9 +138,9 @@ export function GraphView({
             <g key={p.toward}
               onMouseMove={ev => showTip(ev, `${nameOf(canon, selected!)} → ${nameOf(canon, p.toward)}`, p.stance)}
               onMouseLeave={hideTip}>
-              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+              <path className="gPerception" d={edgeArc(a.x!, a.y!, b.x!, b.y!, 0.16)} fill="none"
                 stroke="var(--c1)" strokeWidth={1.6} strokeDasharray="4 4" opacity={0.85} />
-              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="transparent" strokeWidth={10} />
+              <path d={edgeArc(a.x!, a.y!, b.x!, b.y!, 0.16)} fill="none" stroke="transparent" strokeWidth={10} />
             </g>
           )
         })}
@@ -122,7 +150,7 @@ export function GraphView({
           const alive = extantAt(ent, tEnd)
           const sel = selected === n.id
           const dimmed = !!dimTo && !dimTo.has(n.id)
-          const r = n.type === 'character' ? 10 : 7.5
+          const r = degreeRadius(n.type === 'character' ? 10 : 7.5, degree.get(n.id) ?? 0)
           // Proposed, not yet ratified: drawn as pending rather than hidden or
           // drawn as though it had always been true. Decoration only — the
           // layout above never sees status, so nothing moves when a record is
@@ -135,7 +163,14 @@ export function GraphView({
               onMouseMove={ev => showTip(ev, ent.name,
                 pending ? 'proposed — not yet ratified' : alive ? ent.summary.slice(0, 100) + '…' : 'not extant at this time')}
               onMouseLeave={hideTip}>
-              {sel && <circle cx={n.x} cy={n.y} r={r + 5} fill="none" stroke="var(--c1)" strokeWidth={2} />}
+              {/* the body's glow, in its own type colour */}
+              <circle cx={n.x} cy={n.y} r={r + 4} fill={TYPE_COLORS[n.type] ?? 'var(--c7)'}
+                opacity={dimmed ? 0 : alive ? 0.3 : 0.08} filter="url(#nodeGlow)"
+                style={{ transition: 'opacity 240ms ease' }} />
+              {sel && (
+                <circle className="gSelRing" cx={n.x} cy={n.y} r={r + 5} fill="none"
+                  stroke="var(--c1)" strokeWidth={2} />
+              )}
               {pending && (
                 <circle cx={n.x} cy={n.y} r={r + 3} fill="none"
                   stroke="var(--c6)" strokeWidth={1.5} strokeDasharray="3 3"
@@ -144,7 +179,8 @@ export function GraphView({
               <circle cx={n.x} cy={n.y} r={r}
                 fill={TYPE_COLORS[n.type] ?? 'var(--c7)'}
                 opacity={dimmed ? 0.12 : pending ? 0.4 : alive ? 1 : 0.28}
-                stroke="var(--surface-1)" strokeWidth={2} />
+                stroke="var(--surface-1)" strokeWidth={2}
+                style={{ transition: 'opacity 240ms ease' }} />
               {run && (
                 <circle cx={(n.x ?? 0) + r} cy={(n.y ?? 0) - r} r={3.5}
                   fill="var(--c1)" stroke="var(--surface-1)" strokeWidth={1.5}
@@ -155,6 +191,7 @@ export function GraphView({
               )}
               <text x={n.x} y={(n.y ?? 0) + r + 13} fontSize={11} textAnchor="middle"
                 opacity={dimmed ? 0.25 : 1}
+                style={{ transition: 'opacity 240ms ease' }}
                 fill={alive ? 'var(--text-primary)' : 'var(--muted)'} fontWeight={sel ? 650 : 400}>
                 {n.name}
               </text>

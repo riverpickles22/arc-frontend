@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import type { Canon, Chapter, Era } from '../../canon'
 import { dateOf, dk, eraSpanKeys } from '../../canon'
 import { keepLabels } from './labels'
+import { SLIDER_THUMB_PX, sliderMargins } from './scale'
 import { ERA_TINT } from './tints'
 
 /** Era containing a chapter's effective (end) date — for era bands in book time. */
@@ -104,8 +105,11 @@ export function BookBand({ canon, chapters, chapterIx, onChapter, era, selected,
         <line x1={(chapterIx + 1) * cw} x2={(chapterIx + 1) * cw} y1={4} y2={H - 2}
           stroke="var(--c1)" strokeWidth={2.5} />
       </svg>
+      {/* The thumb rides exactly under the svg cursor line — the margins are
+          the aligned-geometry derivation in scale.ts, not a visual nudge. */}
       <input
         className="timeline-slider"
+        style={{ ...sliderMargins('book', n, SLIDER_THUMB_PX) }}
         type="range"
         min={0}
         max={n - 1}
@@ -113,6 +117,7 @@ export function BookBand({ canon, chapters, chapterIx, onChapter, era, selected,
         value={chapterIx}
         onChange={e => onChapter(Number(e.target.value))}
         aria-label="chapter"
+        aria-valuetext={`ch. ${cur.order} — ${cur.title}`}
       />
       <div className="timeline-footer">
         <span className="year">ch. {cur.order}</span>

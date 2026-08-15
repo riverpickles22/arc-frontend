@@ -5,11 +5,31 @@ import type { Canon } from './canon'
 import { dk, dateOf, timeRefKey } from './canon'
 import type { BBox } from './map-geometry'
 
+/** A named face of the map for a stretch of story time (A24-2). Presentation
+ *  only — the story declares its periods in view.yaml; arc knows the faces. */
+export interface MapPeriod {
+  label: string
+  /** One of the faces theme.css defines (map-face-<name>); absent = default. */
+  face?: string
+  /** Last year this period covers. The final period may omit it — open-ended. */
+  until?: number
+  /** Optional era-specific basemap asset — the seam for a scanned period map. */
+  basemap?: string
+}
+
 export interface View {
   map?: {
     basemap?: string
     inset?: BBox & { label: string }
+    periods?: MapPeriod[]
   }
+}
+
+/** The period covering a year: the first whose `until` has not passed, else
+ *  the last (open-ended) one. Null when a story declares no periods. */
+export function periodFor(periods: MapPeriod[] | undefined, year: number): MapPeriod | null {
+  if (!periods?.length) return null
+  return periods.find(p => p.until != null && year <= p.until) ?? periods.at(-1)!
 }
 
 // Character colours are derived per story, so this repo carries no story's

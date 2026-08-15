@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { calendarScale } from './scale'
+import { calendarScale, sliderMargins } from './scale'
 import type { Chapter, Era, EventDoc } from '../../canon'
 
 const era = (id: string, start: string, end: string): Era =>
@@ -60,4 +60,56 @@ test('xd resolves month precision inside the year', () => {
   expect(s.xd('1955-01')).toBeCloseTo(s.x(1955), 6)
   expect(s.xd('1955-12', true)).toBeCloseTo(s.x(1956), 6)
   expect(s.xd('1955')).toBeCloseTo(s.x(1955), 6)
+})
+
+test('invX inverts x within every era, condensed ones included', () => {
+  const chapters = [ch(1, '1950-01', '1950-06'), ch(2, '1951-01', '1951-06'), ch(3, '1952-01', '1952-06')]
+  const s = calendarScale(ERAS, chapters, [], [1950, 1994], W)
+  // era.b is condensed here (30 empty years); the round-trip must hold there
+  // too, or the slider diverges exactly where the axis compresses.
+  // The contract the slider relies on: after rounding (its onChange does),
+  // the round trip returns the year. Era floors sit at yyyy.0101 — the axis's
+  // real start — so the raw inverse can differ by a hundredth of a year.
+  for (const year of [1950, 1955, 1962, 1975, 1988, 1991, 1994]) {
+    expect(Math.round(s.invX(s.x(year)))).toBe(year)
+  }
+})
+
+test('invX clamps at the axis ends', () => {
+  const s = calendarScale(ERAS, [], [], [1950, 1994], W)
+  expect(Math.round(s.invX(-50))).toBe(1950)
+  expect(Math.round(s.invX(0))).toBe(1950)
+  const last = s.segs.at(-1)!
+  expect(s.invX(W + 50)).toBeCloseTo(last.span[1], 6)
+})
+
+test('sliderMargins puts the thumb centre on the cursor line — the algebra, checked', () => {
+  // Simulate the browser: container C px, margins as computed, thumb centre
+  // at value v = M_left + tw/2 + (v/max)·(track − tw). Assert it lands on the
+  // svg line for every value, both bands.
+  const C = 976   // any container width
+  const tw = 14
+  const px = (m: string) => {
+    // resolve calc(a% ± b px) against C; strip spaces so the operator joins
+    // its operand and the sign survives the regex
+    const s2 = m.replace(/\s/g, '')
+    const pct = /(-?[\d.]+)%/.exec(s2)
+    const fixed = /(-?[\d.]+)px/.exec(s2)
+    return (pct ? (Number(pct[1]) / 100) * C : 0) + (fixed ? Number(fixed[1]) : 0)
+  }
+  const n = 14
+  const book = sliderMargins('book', n, tw)
+  const L = px(book.marginLeft), R = px(book.marginRight), T = px(book.width)
+  expect(L + R + T).toBeCloseTo(C, 6)
+  for (let i = 0; i < n; i++) {
+    const thumb = L + tw / 2 + (i / (n - 1)) * (T - tw)
+    const line = ((i + 1) / n) * C
+    expect(thumb).toBeCloseTo(line, 6)
+  }
+  const cal = sliderMargins('calendar', 0, tw)
+  const Lc = px(cal.marginLeft), Tc = px(cal.width)
+  for (const v of [0, 137, 500, 861, 1000]) {
+    const thumb = Lc + tw / 2 + (v / 1000) * (Tc - tw)
+    expect(thumb).toBeCloseTo((v / 1000) * C, 6)
+  }
 })

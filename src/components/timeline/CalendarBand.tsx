@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 import type { Canon, Chapter, Era } from '../../canon'
 import { dateOf, yearOf } from '../../canon'
-import { calendarScale } from './scale'
+import { calendarScale, SLIDER_THUMB_PX, sliderMargins } from './scale'
 import { keepLabels } from './labels'
 import { ERA_TINT } from './tints'
 
@@ -23,10 +23,9 @@ export function CalendarBand({ canon, chapters, year, range, onYear, era, select
   const W = 1000
   const hasChapters = chapters.length > 0
   const H = hasChapters ? 62 : 34
-  const [y0, y1] = range
   const eras = canon.timeline.eras
 
-  const { segs, x, xd, condensed } = useMemo(
+  const { segs, x, xd, invX, condensed } = useMemo(
     () => calendarScale(eras, chapters, Object.values(canon.events), range, W),
     [eras, chapters, canon.events, range],
   )
@@ -119,15 +118,22 @@ export function CalendarBand({ canon, chapters, year, range, onYear, era, select
         })}
         <line x1={x(year)} x2={x(year)} y1={4} y2={H - 2} stroke="var(--c1)" strokeWidth={2.5} />
       </svg>
+      {/* The slider's value is AXIS POSITION, not the year: the cursor line
+          lives on the density-weighted scale, and a year-linear slider under
+          it diverges by whole condensed eras mid-range. Sharing the scale
+          (through its inverse) makes thumb and line one geometry; the year
+          is still what assistive tech hears. */}
       <input
         className="timeline-slider"
+        style={{ ...sliderMargins('calendar', 0, SLIDER_THUMB_PX) }}
         type="range"
-        min={y0}
-        max={y1}
+        min={0}
+        max={W}
         step={1}
-        value={year}
-        onChange={e => onYear(Number(e.target.value))}
+        value={x(year)}
+        onChange={e => onYear(Math.round(invX(Number(e.target.value))))}
         aria-label="story year"
+        aria-valuetext={String(year)}
       />
       <div className="timeline-footer">
         <span className="year">{year}</span>
