@@ -2,13 +2,15 @@
 // slider ticks re-render without recomputing the layout.
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
-import type { Canon, Chapter, Era } from '../../canon'
-import { dateOf, yearOf } from '../../canon'
+import type { Canon, Chapter, Era, TimeRef } from '../../canon'
+import { dateOf, timeRefKey, yearOf } from '../../canon'
+import { TYPE_COLORS } from '../../presentation'
+import type { TimelineOverlay } from '../../selection-walks'
 import { calendarScale, SLIDER_THUMB_PX, sliderMargins } from './scale'
 import { keepLabels } from './labels'
 import { ERA_TINT } from './tints'
 
-export function CalendarBand({ canon, chapters, year, range, onYear, era, selected, onSelect, partTint, toggle }: {
+export function CalendarBand({ canon, chapters, year, range, onYear, era, selected, onSelect, partTint, toggle, overlay }: {
   canon: Canon
   chapters: Chapter[]          // sorted by order
   year: number
@@ -19,6 +21,7 @@ export function CalendarBand({ canon, chapters, year, range, onYear, era, select
   onSelect: (id: string) => void
   partTint: (c: Chapter) => string
   toggle: ReactNode
+  overlay: TimelineOverlay | null
 }) {
   const W = 1000
   const hasChapters = chapters.length > 0
@@ -116,6 +119,98 @@ export function CalendarBand({ canon, chapters, year, range, onYear, era, select
             </g>
           )
         })}
+        {/* Selection overlay (A23-2): same vocabulary as the book band —
+            colour says entity type, solid = canon / dashed = proposed, words
+            not numbers — but positioned on the date axis: events and
+            provenance steps sit at their own moments, not chapter centres. */}
+        {hasChapters && overlay && (() => {
+          const color = TYPE_COLORS[overlay.type] ?? 'var(--c7)'
+          const box = new Map<string, { xs: number; xe: number }>()
+          chapters.forEach((c, i) => { const d = drawn[i]; if (d) box.set(c.id, d) })
+          const atX = (t: TimeRef): number | null => {
+            const k = timeRefKey(t, eras)
+            if (!Number.isFinite(k) || k >= 99999999) return null
+            const yy = Math.floor(k / 10000)
+            const mm = Math.floor((k % 10000) / 100)
+            return x(yy + (mm ? (mm - 1) / 12 : 0))
+          }
+          const evX = (eid: string): number | null => {
+            const ev = canon.events[eid]
+            return ev ? atX(ev.when) : null
+          }
+          const steps = overlay.steps
+            .map(s => ({ s, sx: atX(s.at) }))
+            .filter((p): p is { s: typeof p.s; sx: number } => p.sx != null)
+            .sort((a, b) => a.sx - b.sx)
+          return (
+            <g>
+              {overlay.lifespan && (() => {
+                const sx = overlay.lifespan.start ? xd(overlay.lifespan.start) : 0
+                const ex = overlay.lifespan.end ? xd(overlay.lifespan.end, true) : W
+                return (
+                  <g>
+                    <line x1={sx} x2={ex} y1={60} y2={60} stroke={color} strokeWidth={1.2}
+                      opacity={0.35} strokeDasharray={overlay.proposed ? '3 2' : undefined} />
+                    <title>lifespan</title>
+                  </g>
+                )
+              })()}
+              {overlay.appears.map(id => {
+                const d = box.get(id)
+                if (!d) return null
+                return (
+                  <g key={`ap-${id}`}>
+                    <rect x={d.xs + 1} y={53} width={Math.max(d.xe - d.xs - 2, 3)} height={4} rx={2}
+                      fill={color} fillOpacity={overlay.proposed ? 0.25 : 0.8}
+                      stroke={overlay.proposed ? color : 'none'} strokeWidth={overlay.proposed ? 1 : 0}
+                      strokeDasharray={overlay.proposed ? '3 2' : undefined} />
+                    <title>appears here</title>
+                  </g>
+                )
+              })}
+              {overlay.offPage.map(id => {
+                const d = box.get(id)
+                if (!d) return null
+                return (
+                  <g key={`off-${id}`}>
+                    <line x1={d.xs + 2} x2={d.xe - 2} y1={55} y2={55}
+                      stroke={color} strokeWidth={1.2} strokeDasharray="1.5 4" opacity={0.45} />
+                    <title>off the page here</title>
+                  </g>
+                )
+              })}
+              {steps.length > 1 && (
+                <polyline points={steps.map(p => `${p.sx},55`).join(' ')}
+                  fill="none" stroke={color} strokeWidth={1} opacity={0.5} />
+              )}
+              {steps.map((p, i) => (
+                <g key={`st-${i}`}>
+                  <circle cx={p.sx} cy={55} r={2.8}
+                    fill={overlay.proposed ? 'var(--surface-1)' : color}
+                    stroke={color} strokeWidth={1.2}
+                    strokeDasharray={overlay.proposed ? '2 1.5' : undefined} />
+                  <title>{p.s.label}</title>
+                </g>
+              ))}
+              {/* An object's changes ARE its provenance steps — drawing both
+                  would say the same thing twice, and twice is noise. */}
+              {(overlay.type === 'object' ? [] : overlay.changed).map(m => {
+                const mx = evX(m.event) ?? (m.chapter != null && box.has(m.chapter)
+                  ? (box.get(m.chapter)!.xs + box.get(m.chapter)!.xe) / 2 : null)
+                if (mx == null) return null
+                return (
+                  <g key={`chg-${m.event}`}>
+                    <path d={`M${mx} 51 L${mx + 3.2} 55 L${mx} 59 L${mx - 3.2} 55 Z`}
+                      fill={overlay.proposed ? 'var(--surface-1)' : color}
+                      stroke={overlay.proposed ? color : 'var(--surface-1)'} strokeWidth={1}
+                      strokeDasharray={overlay.proposed ? '2 1.5' : undefined} />
+                    <title>{canon.events[m.event]?.title ?? m.event}</title>
+                  </g>
+                )
+              })}
+            </g>
+          )
+        })()}
         <line x1={x(year)} x2={x(year)} y1={4} y2={H - 2} stroke="var(--c1)" strokeWidth={2.5} />
       </svg>
       {/* The slider's value is AXIS POSITION, not the year: the cursor line

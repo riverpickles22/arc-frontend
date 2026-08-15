@@ -320,8 +320,11 @@ function Shell({ canon, data, dark, onToggleDark }: {
       {page === 'world' && <>
       <section className="panel timelinePanel">
         <h2>Timeline</h2>
+        {/* overlayFor is the author's own selection, never the protagonist
+            fallback — an untouched timeline renders exactly as before. */}
         <Timeline canon={canon} chapters={chapters} range={range} time={time}
-          selected={selected} onSelect={selectAndShow} />
+          selected={selected} onSelect={selectAndShow}
+          overlayFor={selectedState} scenes={data.prose} />
         <EventStrip canon={canon} year={time.year} selected={selected} onSelect={selectAndShow}
           mode={time.timeMode} chapter={time.bookChapter} />
       </section>

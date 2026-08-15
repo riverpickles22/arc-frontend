@@ -3,6 +3,8 @@
 import type { ReactNode } from 'react'
 import type { Canon, Chapter, Era } from '../../canon'
 import { dateOf, dk, eraSpanKeys } from '../../canon'
+import { TYPE_COLORS } from '../../presentation'
+import type { TimelineOverlay } from '../../selection-walks'
 import { keepLabels } from './labels'
 import { SLIDER_THUMB_PX, sliderMargins } from './scale'
 import { ERA_TINT } from './tints'
@@ -24,7 +26,7 @@ const spanText = (c: Chapter) => {
   return s && e ? `${s} → ${e}` : (s ?? e ?? '')
 }
 
-export function BookBand({ canon, chapters, chapterIx, onChapter, era, selected, onSelect, partTint, toggle }: {
+export function BookBand({ canon, chapters, chapterIx, onChapter, era, selected, onSelect, partTint, toggle, overlay }: {
   canon: Canon
   chapters: Chapter[]          // sorted by order
   chapterIx: number
@@ -34,6 +36,7 @@ export function BookBand({ canon, chapters, chapterIx, onChapter, era, selected,
   onSelect: (id: string) => void
   partTint: (c: Chapter) => string
   toggle: ReactNode
+  overlay: TimelineOverlay | null
 }) {
   const W = 1000
   const H = 62
@@ -102,6 +105,81 @@ export function BookBand({ canon, chapters, chapterIx, onChapter, era, selected,
             </g>
           )
         })}
+        {/* Selection overlay (A23-2): the entity's story on a track below the
+            chapter row. Colour says what the selection is (TYPE_COLORS);
+            solid = canon, dashed = proposed — status never takes the colour.
+            Words in the titles, never a number. */}
+        {overlay && (() => {
+          const color = TYPE_COLORS[overlay.type] ?? 'var(--c7)'
+          const ixOf = new Map(chapters.map((c, i) => [c.id, i]))
+          const mid = (id: string) => (ixOf.get(id)! + 0.5) * cw
+          const steps = overlay.steps
+            .filter(s => s.chapter != null && ixOf.has(s.chapter))
+            .sort((a, b) => ixOf.get(a.chapter!)! - ixOf.get(b.chapter!)!)
+          // An object's changes ARE its provenance steps — drawing both would
+          // say the same thing twice, and twice is noise.
+          const changed = overlay.type === 'object' ? []
+            : overlay.changed.filter(m => m.chapter != null && ixOf.has(m.chapter))
+          // several changing events in one chapter fan out around its centre
+          const perChapter = new Map<string, number>()
+          changed.forEach(m => perChapter.set(m.chapter!, (perChapter.get(m.chapter!) ?? 0) + 1))
+          const placedIx = new Map<string, number>()
+          return (
+            <g>
+              {overlay.appears.map(id => {
+                const i = ixOf.get(id)
+                if (i == null) return null
+                return (
+                  <g key={`ap-${id}`}>
+                    <rect x={i * cw + 1} y={53} width={cw - 2} height={4} rx={2}
+                      fill={color} fillOpacity={overlay.proposed ? 0.25 : 0.8}
+                      stroke={overlay.proposed ? color : 'none'} strokeWidth={overlay.proposed ? 1 : 0}
+                      strokeDasharray={overlay.proposed ? '3 2' : undefined} />
+                    <title>appears here</title>
+                  </g>
+                )
+              })}
+              {overlay.offPage.map(id => {
+                const i = ixOf.get(id)
+                if (i == null) return null
+                return (
+                  <g key={`off-${id}`}>
+                    <line x1={i * cw + 3} x2={(i + 1) * cw - 3} y1={55} y2={55}
+                      stroke={color} strokeWidth={1.2} strokeDasharray="1.5 4" opacity={0.45} />
+                    <title>off the page here</title>
+                  </g>
+                )
+              })}
+              {steps.length > 1 && (
+                <polyline points={steps.map(s => `${mid(s.chapter!)},55`).join(' ')}
+                  fill="none" stroke={color} strokeWidth={1} opacity={0.5} />
+              )}
+              {steps.map((s, i) => (
+                <g key={`st-${i}`}>
+                  <circle cx={mid(s.chapter!)} cy={55} r={2.8}
+                    fill={overlay.proposed ? 'var(--surface-1)' : color}
+                    stroke={color} strokeWidth={1.2}
+                    strokeDasharray={overlay.proposed ? '2 1.5' : undefined} />
+                  <title>{s.label}</title>
+                </g>
+              ))}
+              {changed.map(m => {
+                const k = placedIx.get(m.chapter!) ?? 0
+                placedIx.set(m.chapter!, k + 1)
+                const x = mid(m.chapter!) + (k - (perChapter.get(m.chapter!)! - 1) / 2) * 7
+                return (
+                  <g key={`chg-${m.event}`}>
+                    <path d={`M${x} 51 L${x + 3.2} 55 L${x} 59 L${x - 3.2} 55 Z`}
+                      fill={overlay.proposed ? 'var(--surface-1)' : color}
+                      stroke={overlay.proposed ? color : 'var(--surface-1)'} strokeWidth={1}
+                      strokeDasharray={overlay.proposed ? '2 1.5' : undefined} />
+                    <title>{canon.events[m.event]?.title ?? m.event}</title>
+                  </g>
+                )
+              })}
+            </g>
+          )
+        })()}
         <line x1={(chapterIx + 1) * cw} x2={(chapterIx + 1) * cw} y1={4} y2={H - 2}
           stroke="var(--c1)" strokeWidth={2.5} />
       </svg>

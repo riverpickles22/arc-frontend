@@ -1,7 +1,7 @@
 // Graph focus modes: which entities stay lit. Dimming over re-layout — the
 // force simulation never moves; a mode only derives the kept set that
 // GraphView's dimTo prop already understands (the POV toggle's mechanism).
-import type { Canon, Chapter, ProseScene } from './canon'
+import type { Canon, Chapter, EventDoc, ProseScene } from './canon'
 import { stateAt } from './canon'
 
 export type FocusMode = 'all' | 'chapter' | 'selection'
@@ -12,9 +12,20 @@ export const FOCUS_MODES: { mode: FocusMode; label: string; title: string }[] = 
   { mode: 'all', label: 'All', title: 'Everything' },
 ]
 
+/** The entities an event touches — its cast, its witnesses, its stage.
+ *  Shared with the selection walks (selection-walks.ts), so "who was there"
+ *  means the same thing on the graph and on the timeline. */
+export function eventEntities(ev: EventDoc): string[] {
+  return [
+    ...(ev.participants ?? []).map(p => p.entity),
+    ...(ev.witnesses ?? []),
+    ...(ev.where ? [ev.where] : []),
+  ]
+}
+
 /** Does `loc` sit inside `place` — the place itself, or a part_of descent
  *  into it? Bounded walk, so a part_of cycle in bad data cannot hang the UI. */
-function withinPlace(loc: string, place: string, canon: Canon): boolean {
+export function withinPlace(loc: string, place: string, canon: Canon): boolean {
   let cur: string | undefined = loc
   for (let hops = 0; cur && hops < 16; hops++) {
     if (cur === place) return true
@@ -40,9 +51,7 @@ export function focusSet(
     const addEvent = (id: string) => {
       const ev = canon.events[id]
       if (!ev) return
-      for (const p of ev.participants ?? []) keep.add(p.entity)
-      for (const w of ev.witnesses ?? []) keep.add(w)
-      if (ev.where) keep.add(ev.where)
+      for (const e of eventEntities(ev)) keep.add(e)
     }
     if (chapter.pov) keep.add(chapter.pov)
     for (const loc of chapter.locations ?? []) keep.add(loc)
@@ -61,10 +70,7 @@ export function focusSet(
     // entities, so the event answers through the people and place it touched.
     const ev = canon.events[selected]
     if (ev) {
-      const keep = new Set<string>()
-      for (const p of ev.participants ?? []) keep.add(p.entity)
-      for (const w of ev.witnesses ?? []) keep.add(w)
-      if (ev.where) keep.add(ev.where)
+      const keep = new Set(eventEntities(ev))
       return keep.size ? keep : null
     }
     const sel = canon.entities[selected]
