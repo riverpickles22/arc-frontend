@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState, useLayoutEffect } from 'react'
 import type { Canon, DocArticle, ProseScene } from '../canon'
 import { dateOf } from '../canon'
 import { mdToHtml, slugOf } from '../md'
@@ -51,6 +51,18 @@ export function WikiView({ canon, articles, scenes, onOpenWorld, sel, onSel }: {
 
   const [q, setQ] = useState('')
   const bodyRef = useRef<HTMLElement>(null)
+  const asideRef = useRef<HTMLElement>(null)
+
+  // A new page starts at its top. The article element is the scroll
+  // container and React reuses it across selections — only the HTML inside
+  // swaps — so without this the previous page's offset silently carries
+  // into the next. Layout effect, before paint: arriving mid-article and
+  // then snapping up would be the same bug wearing a flash. In-page section
+  // jumps are untouched — they never change `sel`.
+  useLayoutEffect(() => {
+    bodyRef.current?.scrollTo(0, 0)
+    asideRef.current?.scrollTo(0, 0)
+  }, [sel])
 
   const article = sel ? articles.find(a => a.path === sel) : undefined
   const entity = article?.canon ? canon.entities[article.canon] : undefined
@@ -145,7 +157,7 @@ export function WikiView({ canon, articles, scenes, onOpenWorld, sel, onSel }: {
       <article ref={bodyRef} className="mdbody" onClick={onBodyClick}
         dangerouslySetInnerHTML={{ __html: mdToHtml(md) }} />
 
-      <aside className="wiki-aside">
+      <aside ref={asideRef} className="wiki-aside">
         {home && (
           <div className="infobox">
             <div className="ib-head">{canon.story.title}</div>
