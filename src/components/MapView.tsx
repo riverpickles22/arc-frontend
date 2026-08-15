@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Canon, Entity } from '../canon'
 import { extantAt, nameOf, stateAt, timeRefKey } from '../canon'
 import type { BBox, GeoJSON } from '../map-geometry'
-import { bestCorner, detailVisible, fitAspect, fitBBox, geoCoords, graticule, kindOf, panWindow, pickGraticuleStep, resolveCoords, scaleBar, svgPath, windowForInset, zoomWindow } from '../map-geometry'
+import { detailVisible, fitAspect, fitBBox, geoCoords, graticule, kindOf, panWindow, pickGraticuleStep, resolveCoords, scaleBar, svgPath, windowForInset, zoomWindow } from '../map-geometry'
 import { loadBasemap } from '../api'
 import { periodFor } from '../presentation'
 import type { View } from '../presentation'
@@ -77,8 +77,25 @@ export function MapView({
   // mechanism, and everything below re-projects vector-crisp through it.
   // The window remembers which frame it was made for, so a new story,
   // basemap or panel shape derives back to the full view with no effect.
+  // The remembered window, read once at mount (the lazy initializer is the
+  // sanctioned render-time home for it); null = nothing stored, or the
+  // author took over. State rather than a ref, so the pin effect below
+  // re-fires honestly when it clears.
+  const [pinnedWin, setPinnedWin] = useState<BBox | null>(() => {
+    try {
+      const raw = localStorage.getItem('arc.map.window')
+      const b = raw ? JSON.parse(raw) as BBox : null
+      return b && [b.lon0, b.lon1, b.lat0, b.lat1].every(Number.isFinite) && b.lon0 < b.lon1 && b.lat0 < b.lat1
+        ? b : null
+    } catch { return null }
+  })
   const [winState, setWinState] = useState<{ for: BBox; box: BBox } | null>(null)
-  const win = winState && winState.for === FULL ? winState.box : null
+  // Falling back to the pinned box IS the restore: at mount (winState null)
+  // and across every FULL rebuild until the author interacts, the derivation
+  // lands on the remembered window with no effect and no cascade. The first
+  // setWin clears the pin, and the stale-frame fallback returns to null —
+  // the full view — exactly as this derivation always behaved.
+  const win = winState && winState.for === FULL ? winState.box : pinnedWin
 
   /* The window survives leaving (A24-7): where the author stood — a city, or
    * the full chart — restores when they come back, per browser. The wrinkle
@@ -88,22 +105,9 @@ export function MapView({
    * PINNED — re-applied on every FULL change — until the author interacts,
    * at which point the pin releases and live reshaping derives to full
    * exactly as designed. */
-  const storedWinRef = useRef<BBox | null | undefined>(undefined)
-  if (storedWinRef.current === undefined) {
-    try {
-      const raw = localStorage.getItem('arc.map.window')
-      const b = raw ? JSON.parse(raw) as BBox : null
-      storedWinRef.current =
-        b && [b.lon0, b.lon1, b.lat0, b.lat1].every(Number.isFinite) && b.lon0 < b.lon1 && b.lat0 < b.lat1
-          ? b : null
-    } catch { storedWinRef.current = null }
-  }
-  useEffect(() => {
-    if (storedWinRef.current) setWinState({ for: FULL, box: storedWinRef.current })
-  }, [FULL])
 
   const setWin = useCallback((b: BBox | null) => {
-    storedWinRef.current = null            // the author took over — stop pinning
+    setPinnedWin(null)                     // the author took over — stop pinning
     try {
       if (b) localStorage.setItem('arc.map.window', JSON.stringify(b))
       else localStorage.removeItem('arc.map.window')
@@ -201,27 +205,6 @@ export function MapView({
   const period = periodFor(view.map?.periods, year)
   const periodBasemap = period?.basemap ?? view.map?.basemap
 
-  // The inset panel: sized to its bbox's aspect (capped so it never dominates
-  // the frame), placed in the corner covering the least of what is drawn —
-  // coastline and place markers — and never on top of its own source area.
-  const INS = useMemo(() => {
-    if (!inset) return null
-    const cos = Math.cos((((inset.lat0 + inset.lat1) / 2) * Math.PI) / 180) || 1
-    const aspect = (inset.lat1 - inset.lat0) / ((inset.lon1 - inset.lon0) * cos)
-    const w = Math.round(Math.max(160, Math.min(330, 0.38 * W, (0.55 * H) / aspect)))
-    const h = Math.round(w * aspect)
-    const pts: [number, number][] = [
-      ...geoCoords(geo).map(([lon, lat]) => pMain(lon, lat)),
-      ...places.map(p => pMain(p.coordinates!.lon, p.coordinates!.lat)),
-    ]
-    const [sx0, sy0] = pMain(inset.lon0, inset.lat1)
-    const [sx1, sy1] = pMain(inset.lon1, inset.lat0)
-    const src = { x0: sx0, y0: sy0, x1: sx1, y1: sy1 }
-    const { x, y } = bestCorner({ W, H }, { w, h }, pts, { x: (sx0 + sx1) / 2, y: (sy0 + sy1) / 2 })
-    return { x, y, w, h, src }
-  }, [inset, geo, places, pMain, H])
-
-  const pIns = useMemo(() => (inset && INS ? proj(inset, INS.w, INS.h, INS.x, INS.y) : null), [inset, INS])
 
   const coastPath = useMemo(
     () => (geo ? svgPath(geo.features.filter(f => kindOf(f) === 'land'), pMain) : ''),
@@ -320,17 +303,39 @@ export function MapView({
     )
   }
 
-  const placeDots = (box: BBox, project: (lon: number, lat: number) => [number, number], opts?: { kinds?: Set<string>; labelBelow?: boolean }) =>
+  /** The window a city opens to (A24-8): the view's declared window when the
+   *  city sits inside it, else a derived ~20km box — both fitted to the
+   *  frame's aspect the way the old inset door was. */
+  const cityWindow = useCallback((p: Entity): BBox => {
+    const c = p.coordinates!
+    if (inset && c.lon >= inset.lon0 && c.lon <= inset.lon1 && c.lat >= inset.lat0 && c.lat <= inset.lat1)
+      return windowForInset(inset, FULL)
+    const dLat = 0.09
+    const dLon = dLat / (Math.cos((c.lat * Math.PI) / 180) || 1)
+    return windowForInset({ lon0: c.lon - dLon, lon1: c.lon + dLon, lat0: c.lat - dLat, lat1: c.lat + dLat }, FULL)
+  }, [inset, FULL])
+
+  /** At full view a CITY is a door — click it and the chart zooms to it;
+   *  its interior appears once you are inside. Zoomed, every dot selects,
+   *  the city included: the door became a place again. */
+  const insideCityWindow = useCallback((p: Entity): boolean => {
+    const c = p.coordinates!
+    return !!inset && c.lon >= inset.lon0 && c.lon <= inset.lon1 && c.lat >= inset.lat0 && c.lat <= inset.lat1
+  }, [inset])
+
+  const placeDots = (box: BBox, project: (lon: number, lat: number) => [number, number], opts?: { kinds?: Set<string>; labelBelow?: boolean; islandScale?: boolean }) =>
     places
       .filter(p => inBox(box, p.coordinates!.lon, p.coordinates!.lat))
       .filter(p => !opts?.kinds || opts.kinds.has(p.kind ?? ''))
+      .filter(p => !opts?.islandScale || p.kind === 'city' || !insideCityWindow(p))
       .map(p => {
         const [x, y] = project(p.coordinates!.lon, p.coordinates!.lat)
         const sel = selected === p.id
+        const isDoor = !win && p.kind === 'city'
         return (
-          <g key={p.id + box.lon0} style={{ cursor: 'pointer' }}
-            onClick={ev => { ev.stopPropagation(); onSelect(p.id) }}
-            onMouseMove={ev => showTip(ev, p.name, p.summary.slice(0, 90) + '…')}
+          <g key={p.id + box.lon0} style={{ cursor: isDoor ? 'zoom-in' : 'pointer' }}
+            onClick={ev => { ev.stopPropagation(); if (isDoor) setWin(cityWindow(p)); else onSelect(p.id) }}
+            onMouseMove={ev => showTip(ev, p.name, isDoor ? 'click to open the city' : p.summary.slice(0, 90) + '…')}
             onMouseLeave={hideTip}>
             {/* A selected place answers on the map the way a selected
                 character does — the same ring the graph draws. */}
@@ -494,56 +499,15 @@ export function MapView({
 
         {/* With no inset declared, every place and character draws on the main
             map; with one, its contents are drawn there instead. */}
-        {placeDots(box, pMain, !win && inset ? { kinds: new Set(['city']) } : undefined)}
-        {markers(box, pMain, 1, !win && inset ? inset : undefined)}
+        {/* Full view: the island's own scale — cities (the doors), and any
+            place that lives outside a city's window. A city's interior is
+            what entering it reveals; drawing it from the island view stacked
+            a neighbourhood onto one pixel. */}
+        {placeDots(box, pMain, !win ? { islandScale: true } : undefined)}
+        {markers(box, pMain, 1)}
 
-        {!win && inset && INS && pIns && (() => {
-          // the excerpted area, outlined on the main map, linked to the panel
-          const { src } = INS
-          const scx = (src.x0 + src.x1) / 2
-          const scy = (src.y0 + src.y1) / 2
-          const lx = Math.max(INS.x, Math.min(scx, INS.x + INS.w))
-          const ly = Math.max(INS.y, Math.min(scy, INS.y + INS.h))
-          return (
-            <g>
-              <rect x={src.x0} y={src.y0} width={src.x1 - src.x0} height={src.y1 - src.y0}
-                fill="transparent" stroke="var(--c1)" strokeWidth={1.2} strokeDasharray="3 3" opacity={0.8}
-                style={{ cursor: 'zoom-in' }}
-                onClick={ev => { ev.stopPropagation(); setWin(windowForInset(inset, FULL)) }} />
-              <line x1={scx} y1={scy} x2={lx} y2={ly}
-                stroke="var(--c1)" strokeWidth={1} strokeDasharray="3 3" opacity={0.5} />
-              {/* The panel is a door: click it and its area fills the frame. */}
-              <rect x={INS.x} y={INS.y} width={INS.w} height={INS.h} rx={8}
-                fill="url(#arcLand)" stroke="var(--c1)" strokeWidth={1}
-                filter="url(#arcLandLift)" style={{ cursor: 'zoom-in' }}
-                onClick={ev => { ev.stopPropagation(); setWin(windowForInset(inset, FULL)) }}>
-                <title>Open {inset.label} full-frame</title>
-              </rect>
-              <text x={INS.x + 10} y={INS.y + 18} fontSize={10} fontWeight={650}
-                style={{ letterSpacing: '0.09em', pointerEvents: 'none' }} fill="var(--map-label)">
-                {inset.label.toUpperCase()} (INSET)
-              </text>
-              {/* The door existed and the author could not find it (A24-7):
-                  a door should say it opens. */}
-              <text x={INS.x + 10} y={INS.y + 29} fontSize={7.5} fontWeight={500} opacity={0.75}
-                style={{ letterSpacing: '0.08em', pointerEvents: 'none' }} fill="var(--map-label)">
-                CLICK TO OPEN
-              </text>
-              {placeDots(inset, pIns, { labelBelow: true })}
-              {markers(inset, pIns)}
-              {/* The whole panel is the door. A cover on top, not handlers on
-                  the contents: the panel is dense with dots, and a click that
-                  meant "take me there" kept landing on one and selecting it
-                  instead. The mini map is a navigation control — selection
-                  happens in the full frame it opens. */}
-              <rect x={INS.x} y={INS.y} width={INS.w} height={INS.h} rx={8}
-                fill="transparent" style={{ cursor: 'zoom-in' }}
-                onClick={ev => { ev.stopPropagation(); setWin(windowForInset(inset, FULL)) }}>
-                <title>Open {inset.label} — fills the map</title>
-              </rect>
-            </g>
-          )
-        })()}
+        {/* The inset panel retired (A24-8): the city dot on the chart is
+            the door now, and entering it reveals the interior. */}
         </g>
       </svg>
       <TipOverlay tip={tip} />

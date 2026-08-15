@@ -1108,7 +1108,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     const ro = new ResizeObserver(measure)
     ro.observe(box)
     return () => ro.disconnect()
-  }, [openNotes, sel, view, diffs, mode])
+  }, [openNotes, sel, view, diffs, mode, lineAt])
 
   // Escape steps back out of whatever holds attention, without discarding a
   // half-written note unless the composer is what is focused.
