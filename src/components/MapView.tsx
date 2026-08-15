@@ -182,13 +182,6 @@ export function MapView({
       (dy / r.height) * (box.lat1 - box.lat0)))
   }
   const onPointerUp = () => { /* the click-capture below reads .moved first */ }
-  /** A drag must not fire the click it ends on — selection and clear keep
-   *  their meaning at every zoom level. Capture phase, so children never see it. */
-  const onClickCapture = (e: React.MouseEvent) => {
-    const moved = dragRef.current?.moved
-    dragRef.current = null
-    if (moved) { e.stopPropagation(); e.preventDefault() }
-  }
 
   const places = useMemo(
     () => Object.values(canon.entities).filter(e => e.type === 'place' && e.coordinates),
@@ -318,6 +311,38 @@ export function MapView({
     const dLon = dLat / (Math.cos((c.lat * Math.PI) / 180) || 1)
     return windowForInset({ lon0: c.lon - dLon, lon1: c.lon + dLon, lat0: c.lat - dLat, lat1: c.lat + dLat }, FULL)
   }, [inset, FULL])
+
+  /** A drag must not fire the click it ends on — selection and clear keep
+   *  their meaning at every zoom level. Capture phase, so children never see it. */
+  const onClickCapture = (e: React.MouseEvent) => {
+    const moved = dragRef.current?.moved
+    dragRef.current = null
+    if (moved) { e.stopPropagation(); e.preventDefault(); return }
+    // The city door, decided by GEOMETRY at the root — not by which pixel the
+    // DOM says was hit (A24-8, third round). The author clicks "the city":
+    // to an eye that is the dot, its label, and the urban footprint around
+    // it; to hit-testing it was a 13px circle that any path or marker could
+    // sit on top of. Capture phase sees every un-dragged click first, so an
+    // island-view click lands in the city if it lands anywhere NEAR it.
+    if (!win) {
+      const r = svgRef.current?.getBoundingClientRect()
+      if (!r) return
+      for (const p of places) {
+        if (p.kind !== 'city' || !inBox(box, p.coordinates!.lon, p.coordinates!.lat)) continue
+        const [sx, sy] = pMain(p.coordinates!.lon, p.coordinates!.lat)
+        const dx = ((e.clientX - r.left) / r.width) * W - sx
+        const dy = ((e.clientY - r.top) / r.height) * H - sy
+        // viewBox units → screen px: uniform scale, since H tracks the
+        // panel's own measured aspect. 30px of reach covers the dot, the
+        // label beside it, and the footprint around it.
+        if (Math.hypot(dx, dy) * (r.width / W) < 30) {
+          e.stopPropagation(); e.preventDefault()
+          setWin(cityWindow(p))
+          return
+        }
+      }
+    }
+  }
 
   /** At full view a CITY is a door — click it and the chart zooms to it;
    *  its interior appears once you are inside. Zoomed, every dot selects,
