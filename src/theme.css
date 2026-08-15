@@ -17,7 +17,7 @@
   --panel: light-dark(rgba(11, 11, 11, 0.05), rgba(255, 255, 255, 0.06));
   /* categorical slots, fixed order */
   --c1: light-dark(#2a78d6, #3987e5); /* blue */
-  --c2: #008300; /* green */
+  --c2: light-dark(#008300, #3cb84c); /* green */
   --c3: light-dark(#e87ba4, #d55181); /* magenta */
   --c4: light-dark(#eda100, #c98500); /* yellow */
   --c5: light-dark(#1baf7a, #199e70); /* aqua */
@@ -515,8 +515,10 @@ svg text { font-family: inherit; }
 .stpill.added { color: var(--c2); border-color: var(--c2); }
 .stpill.modified { color: var(--c4); border-color: var(--c4); }
 .stpill.deleted { color: var(--c8); border-color: var(--c8); }
-.mdbody.prose ins { background: color-mix(in srgb, var(--c2) 20%, transparent); text-decoration: none; border-radius: 2px; }
-.mdbody.prose del { background: color-mix(in srgb, var(--c8) 15%, transparent); border-radius: 2px; }
+/* The washes are tuned per ground: a tint that reads on paper sinks into the
+   dark page, so dark mode mixes the same hues much stronger. */
+.mdbody.prose ins { background: light-dark(color-mix(in srgb, var(--c2) 20%, transparent), color-mix(in srgb, var(--c2) 45%, transparent)); text-decoration: none; border-radius: 2px; }
+.mdbody.prose del { background: light-dark(color-mix(in srgb, var(--c8) 15%, transparent), color-mix(in srgb, var(--c8) 38%, transparent)); border-radius: 2px; }
 
 /* selection clarity: an inspected event outside the world's moment says so */
 .profile .notyet { color: var(--c4); font-style: italic; }
@@ -812,6 +814,13 @@ p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
   font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 3px;
 }
 .prop-rule { font-size: 13.5px; line-height: 1.55; color: var(--text-primary); margin: 0 0 8px; }
+/* Argued purely from the author's own rewrites — quiet, informational, and
+   deliberately not an alert colour: nothing is wrong, something is theirs. */
+.prop-origin {
+  display: inline-block; font-size: 10.5px; letter-spacing: .04em; color: var(--c1);
+  border: 1px solid color-mix(in oklab, var(--c1) 40%, transparent); border-radius: 20px;
+  padding: 1px 8px; margin-bottom: 5px;
+}
 .prop-evidence {
   border-left: 2px solid color-mix(in oklab, var(--c1) 35%, transparent);
   padding-left: 9px; margin-bottom: 8px;

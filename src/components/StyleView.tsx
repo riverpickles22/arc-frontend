@@ -151,16 +151,27 @@ function ProposalCard({ rule, layer, onDone }: {
     }
   }
 
+  // A revision-sourced rule was argued from the author's own rewrites — their
+  // preference showing directly, with no arc draft in the argument. The badge
+  // says so, so the author knowingly files it under their voice (the author
+  // tab) rather than this book's contract. The layer stays the open tab —
+  // no new control, per the ratify design.
+  const fromRevision = rule.source === 'revision'
   return (
     <div className="proposal">
       {rule.section && <div className="prop-section">{rule.section}</div>}
+      {fromRevision && (
+        <div className="prop-origin" title="Argued only from your own hand revisions — no arc draft involved. Likely your voice, not just this book's.">
+          from your own revisions
+        </div>
+      )}
       <p className="prop-rule">{rule.rule}</p>
 
       {rule.evidence.map((e, i) => (
         <div className="prop-evidence" key={i}>
           <div className="prop-scene">{e.scene}</div>
-          <div className="prop-wrote"><span>arc wrote</span>{e.wrote}</div>
-          <div className="prop-kept"><span>you kept</span>{e.kept || <em>you cut it</em>}</div>
+          <div className="prop-wrote"><span>{fromRevision ? 'you had' : 'arc wrote'}</span>{e.wrote}</div>
+          <div className="prop-kept"><span>{fromRevision ? 'you revised to' : 'you kept'}</span>{e.kept || <em>you cut it</em>}</div>
         </div>
       ))}
 
