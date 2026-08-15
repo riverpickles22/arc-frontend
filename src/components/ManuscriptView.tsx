@@ -395,7 +395,11 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  question — keep this, or keep what I had — and answering it means being
    *  able to see both sides, not just the new prose with its markup toggled.
    *  'before' is the accepted book, 'proposed' the draft as it would read. */
-  const [view, setView] = useState<'before' | 'changes' | 'proposed'>('changes')
+  // The initial view derives from the saved mode: Edit renders editors only
+  // over 'proposed' (switchMode forces this on entry), and a refresh must
+  // arrive in the same coherent stance it left — not the Edit tab lit over
+  // rendered prose because `view` booted to its reading default.
+  const [view, setView] = useState<'before' | 'changes' | 'proposed'>(() => readMode() === 'edit' ? 'proposed' : 'changes')
   const showChanges = view === 'changes'
   const [drawer, setDrawer] = useState(false)
   const [msg, setMsg] = useState('')
