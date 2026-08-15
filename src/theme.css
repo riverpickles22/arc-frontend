@@ -816,6 +816,39 @@ p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
 .prop-rule { font-size: 13.5px; line-height: 1.55; color: var(--text-primary); margin: 0 0 8px; }
 /* Argued purely from the author's own rewrites — quiet, informational, and
    deliberately not an alert colour: nothing is wrong, something is theirs. */
+/* The margin timeline (A30): one thin line, dots where something is
+   load-bearing. The hit target is three times the dot; the statement pops
+   on hover or keyboard focus. Shares the margin with the lock glyph — the
+   rail sits a few px further out, so the two read as gutter neighbours. */
+.kp-rail { position: absolute; top: 0; bottom: 0; width: 0; z-index: 2; }
+.kp-line {
+  position: absolute; top: 8px; bottom: 8px; left: 0; width: 1px;
+  background: color-mix(in oklab, var(--text-secondary) 22%, transparent);
+}
+.kp-dot {
+  position: absolute; left: -10px; width: 21px; height: 21px;
+  background: none; border: 0; padding: 0; cursor: context-menu;
+}
+.kp-dot::before {
+  content: ''; position: absolute; left: 7px; top: 7px; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--c1);
+  outline: 2px solid color-mix(in oklab, var(--c1) 25%, transparent);
+}
+.kp-dot:hover::before, .kp-dot:focus-visible::before { outline-width: 4px; }
+.kp-pop {
+  display: none; position: absolute; left: 26px; top: -4px; z-index: 5;
+  min-width: 180px; max-width: 300px; padding: 7px 10px; text-align: left;
+  font-size: 12.5px; line-height: 1.5; color: var(--text-primary);
+  background: var(--bg-elevated, var(--bg, #fff)); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.18);
+}
+.kp-dot:hover .kp-pop, .kp-dot:focus-visible .kp-pop { display: block; }
+.kp-by { color: var(--muted); font-style: italic; }
+.kp-draft input {
+  width: 260px; font-size: 13px; padding: 6px 8px; border: 0; outline: none;
+  background: transparent; color: var(--text-primary);
+}
+
 /* Locked prose (A29): settled, marked without shouting — a thin rule and a
    small padlock in the margin, in the palette's neutral, never an alert. */
 p.para-locked {

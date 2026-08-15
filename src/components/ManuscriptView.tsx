@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ReactNode } from 'react'
 import type { AnalyzeResponse, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
 import { dateOf } from '../canon'
-import { acceptDraft, acceptParagraph, analyzeDraft, createLock as apiCreateLock, createNote, deleteLock as apiDeleteLock, discardDraft, draftScene, loadLocks, suggestText, updateNote, writeScene } from '../api'
+import { dotsFor } from '../keypoints'
+import { acceptDraft, acceptParagraph, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadLocks, suggestText, updateNote, writeScene } from '../api'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
@@ -379,7 +380,7 @@ function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, top
  *  the working tree. Changed scenes render with word-level highlights, the
  *  drawer carries the running change summary, and Accept ratifies the draft
  *  into main — the proposed → canon gate applied to prose, commit = ratify. */
-export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenWorld, draft, notes, onRefresh, onRefreshNotes, onCanonChanged }: {
+export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenWorld, draft, notes: anns, onRefresh, onRefreshNotes, onCanonChanged }: {
   scenes: ProseScene[]
   chapters: Chapter[]          // sorted by order
   chapterIx: number
@@ -395,6 +396,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  question — keep this, or keep what I had — and answering it means being
    *  able to see both sides, not just the new prose with its markup toggled.
    *  'before' is the accepted book, 'proposed' the draft as it would read. */
+  // One prop, two kinds (A30): notes keep every surface they had, keypoints
+  // exist only for the margin rail. The split happens once, at the door, so
+  // no note surface below can accidentally treat a structural marker as a
+  // thought — or count it, cluster it, or offer to resolve it.
+  const notes = useMemo(() => anns.filter(a => (a.kind ?? 'note') === 'note'), [anns])
+  const keypoints = useMemo(() => anns.filter(a => a.kind === 'keypoint'), [anns])
+
   // The initial view derives from the saved mode: Edit renders editors only
   // over 'proposed' (switchMode forces this on entry), and a refresh must
   // arrive in the same coherent stance it left — not the Edit tab lit over
@@ -757,6 +765,35 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     }
   }, [lockMenu])
 
+  /** Dot right-click (A30): the one verb a dot has. */
+  const [kpMenu, setKpMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  /** The statement being written for a new key point, at the click point. */
+  const [kpDraft, setKpDraft] = useState<{ scene: string; paragraph: number; quote: string; x: number; y: number; text: string } | null>(null)
+  const mintKeypoint = useCallback(async () => {
+    if (!kpDraft || !kpDraft.text.trim()) return
+    try {
+      await createNote({ scene: kpDraft.scene, paragraph: kpDraft.paragraph, quote: kpDraft.quote,
+        body: kpDraft.text.trim(), kind: 'keypoint', by: 'author' })
+      setKpDraft(null); onRefreshNotes()
+    } catch (e) { console.error('key point refused:', e) }
+  }, [kpDraft, onRefreshNotes])
+  const removeKeypoint = useCallback(async (id: string) => {
+    try { await deleteAnnotation(id) } catch (e) { console.error('remove refused:', e) }
+    setKpMenu(null); onRefreshNotes()
+  }, [onRefreshNotes])
+  useEffect(() => {
+    if (!kpMenu && !kpDraft) return
+    const down = (ev: MouseEvent) => {
+      const t = ev.target as HTMLElement
+      if (t.closest('.sel-menu') || t.closest('.kp-draft')) return
+      setKpMenu(null); setKpDraft(null)
+    }
+    const key = (ev: KeyboardEvent) => { if (ev.key === 'Escape') { setKpMenu(null); setKpDraft(null) } }
+    window.addEventListener('mousedown', down)
+    window.addEventListener('keydown', key)
+    return () => { window.removeEventListener('mousedown', down); window.removeEventListener('keydown', key) }
+  }, [kpMenu, kpDraft])
+
   /** The suggestion popover (A17-7): what was asked, and what came back.
    *  Suggestions are argued — listed, never applied without a click. */
   const [suggest, setSuggest] = useState<{
@@ -988,6 +1025,54 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     setRegister(r => { const next = nextRegister(r); writeRegister(next); return next })
   }, [])
 
+  /** Where `scene:paragraph` sits inside the cols box — the element when the
+   *  paragraph is rendered, a measured copy when it lives in a textarea
+   *  (A28-4's rule, shared by note cards and the margin rail's dots). Null
+   *  when the key measures against nothing. */
+  const lineAt = useCallback((box: HTMLElement, base: number, key: string): number | null => {
+    const el = box.querySelector<HTMLElement>(`[data-para="${key}"]`)
+    if (el) return el.getBoundingClientRect().top - base
+    const scene = key.slice(0, key.lastIndexOf(':'))
+    const pi = Number(key.slice(scene.length + 1)) || 0
+    const ta = box.querySelector<HTMLTextAreaElement>(`[data-scene="${scene}"] textarea`)
+    if (!ta) return null
+    const paraTops = paragraphTopsIn(ta)
+    if (!paraTops.length) return textTopOf(ta) - base
+    return textTopOf(ta) - base + paraTops[Math.min(pi, paraTops.length - 1)]
+  }, [])
+
+  /* ---- the margin timeline (A30): dots measured, rail placed ----
+   *  dotsFor() decides WHAT dots exist (pure, tested); this effect only
+   *  answers where they sit, with the same measuring the note cards use. */
+  const [rail, setRail] = useState<{ x: number; dots: { id: string; top: number; body: string; by: 'author' | 'agent' }[] } | null>(null)
+  useLayoutEffect(() => {
+    if (mode === 'read') { setRail(null); return }   // Read leaves no furniture standing
+    const box = colsRef.current
+    if (!box) return
+    const sceneSet = new Set(curScenes.map(sc => sc.scene))
+    const wanted = dotsFor(keypoints, sceneSet)
+    const measure = () => {
+      const rect = box.getBoundingClientRect()
+      const first = box.querySelector<HTMLElement>('[data-para], [data-scene] textarea')
+      if (!first) { setRail(null); return }
+      const x = Math.max(6, first.getBoundingClientRect().left - rect.left - 26)
+      const dots = wanted
+        .map(d => ({ ...d, top: lineAt(box, rect.top, d.key) }))
+        .filter((d): d is typeof d & { top: number } => d.top !== null)
+        .map(d => ({ id: d.id, top: d.top + 4, body: d.body, by: d.by }))
+      setRail(prev => {
+        const next = { x, dots }
+        if (prev && prev.x === next.x && prev.dots.length === next.dots.length &&
+            prev.dots.every((v, i) => v.id === next.dots[i].id && Math.abs(v.top - next.dots[i].top) < 1 && v.body === next.dots[i].body)) return prev
+        return next
+      })
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(box)
+    return () => ro.disconnect()
+  }, [keypoints, curScenes, mode, view, diffs, lineAt])
+
   // The rail renders open notes only; the measurement pass must walk the same
   // list or the tops slide off their paragraphs the moment one is closed.
   const openNotes = useMemo(
@@ -1003,21 +1088,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     if (!box) return
     const measure = () => {
       const base = box.getBoundingClientRect().top
-      const lineOf = (key: string | null) => {
-        if (key === null) return 0
-        const el = box.querySelector<HTMLElement>(`[data-para="${key}"]`)
-        if (el) return el.getBoundingClientRect().top - base
-        // Edit mode: the paragraph lives inside a textarea, which has no
-        // [data-para] lines — measure a copy, the way the anchor machinery
-        // does, so a note sits beside its paragraph in every stance.
-        const scene = key.slice(0, key.lastIndexOf(':'))
-        const pi = Number(key.slice(scene.length + 1)) || 0
-        const ta = box.querySelector<HTMLTextAreaElement>(`[data-scene="${scene}"] textarea`)
-        if (!ta) return 0
-        const paraTops = paragraphTopsIn(ta)
-        if (!paraTops.length) return textTopOf(ta) - base
-        return textTopOf(ta) - base + paraTops[Math.min(pi, paraTops.length - 1)]
-      }
+      const lineOf = (key: string | null) => (key === null ? 0 : lineAt(box, base, key) ?? 0)
       // Exactly the cards the rail renders, in render order: the composer
       // first when open, then the notes it shows.
       const keys = [
@@ -1260,6 +1331,20 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           if (editing) return   // a half-written revision is not clutter to clear
           clearAttention()
         }}>
+        {/* The margin timeline (A30): a line that is always there, dots only
+            where something is load-bearing. Sparse is a statement. */}
+        {rail && mode !== 'read' && (
+          <div className="kp-rail" style={{ left: rail.x }} aria-label="Margin timeline">
+            <div className="kp-line" />
+            {rail.dots.map(d => (
+              <button key={d.id} className="kp-dot" style={{ top: d.top }}
+                aria-label={`Key point: ${d.body}`}
+                onContextMenu={ev => { ev.preventDefault(); ev.stopPropagation(); setKpMenu({ id: d.id, x: ev.clientX, y: ev.clientY }) }}>
+                <span className="kp-pop">{d.body}{d.by === 'agent' && <em className="kp-by"> — minted by an agent</em>}</span>
+              </button>
+            ))}
+          </div>
+        )}
       <article className="ms-main">
         {draft.git && mode !== 'read' && (
           <div className={n ? 'draftbar' : 'draftbar clean'}>
@@ -1622,12 +1707,22 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
             const pi = paragraphAtOffset(selMenu.body, selMenu.start)
             const lk = lockedAt.get(`${selMenu.scene}:${pi}`)
             const para = paragraphsOf(selMenu.body)[pi] ?? ''
-            return lk
-              ? <button onClick={() => void unlockHere(lk.id)}>Unlock paragraph</button>
-              : <button title="Settled prose: nothing may rewrite this paragraph — not an edit, not a revision pass — until you unlock it"
-                  onClick={() => { void flushFile(selMenu.file).then(() => lockHere(selMenu.scene, pi, para)) }}>
-                  Lock paragraph
-                </button>
+            return <>
+              <button title="A structural marker on the margin timeline: what this passage must get across"
+                onClick={() => {
+                  void flushFile(selMenu.file).then(() =>
+                    setKpDraft({ scene: selMenu.scene, paragraph: pi, quote: para, x: selMenu.x, y: selMenu.y, text: '' }))
+                  setSelMenu(null)
+                }}>
+                Mark key point
+              </button>
+              {lk
+                ? <button onClick={() => void unlockHere(lk.id)}>Unlock paragraph</button>
+                : <button title="Settled prose: nothing may rewrite this paragraph — not an edit, not a revision pass — until you unlock it"
+                    onClick={() => { void flushFile(selMenu.file).then(() => lockHere(selMenu.scene, pi, para)) }}>
+                    Lock paragraph
+                  </button>}
+            </>
           })()}
           <button onClick={() => void askSuggest('rephrase')}>Rephrase…</button>
           {/* Synonyms answers with drop-in replacements — same part of speech,
@@ -1656,12 +1751,36 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           paragraph, and the durable anchor is the paragraph's own text. */}
       {lockMenu && (
         <div className="sel-menu" style={{ left: lockMenu.x, top: lockMenu.y }}>
+          <button title="A structural marker on the margin timeline: what this passage must get across"
+            onClick={() => {
+              setKpDraft({ scene: lockMenu.scene, paragraph: lockMenu.paragraph, quote: lockMenu.para,
+                x: lockMenu.x, y: lockMenu.y, text: '' })
+              setLockMenu(null)
+            }}>
+            Mark key point
+          </button>
           {lockMenu.lockId
             ? <button onClick={() => void unlockHere(lockMenu.lockId!)}>Unlock paragraph</button>
             : <button title="Settled prose: nothing may rewrite this paragraph — not an edit, not a revision pass — until you unlock it"
                 onClick={() => void lockHere(lockMenu.scene, lockMenu.paragraph, lockMenu.para)}>
                 Lock paragraph
               </button>}
+        </div>
+      )}
+
+      {/* The statement a new key point will carry — written at the click
+          point, landed with Enter, abandoned with Escape or a click away. */}
+      {kpDraft && (
+        <div className="sel-menu kp-draft" style={{ left: kpDraft.x, top: kpDraft.y }}>
+          <input autoFocus value={kpDraft.text} placeholder="What must this passage get across?"
+            onChange={ev => setKpDraft({ ...kpDraft, text: ev.target.value })}
+            onKeyDown={ev => { if (ev.key === 'Enter') void mintKeypoint() }} />
+        </div>
+      )}
+
+      {kpMenu && (
+        <div className="sel-menu" style={{ left: kpMenu.x, top: kpMenu.y }}>
+          <button onClick={() => void removeKeypoint(kpMenu.id)}>Remove key point</button>
         </div>
       )}
 

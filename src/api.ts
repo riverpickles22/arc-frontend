@@ -60,8 +60,12 @@ export const loadMaterial = (signal?: AbortSignal): Promise<MaterialItem[]> =>
 export const loadAnnotations = (signal?: AbortSignal): Promise<ResolvedAnnotation[]> =>
   getJson<AnnotationsResponse>('/api/annotations', { signal }).then(r => r.annotations)
 
-export const createNote = (n: { scene: string; paragraph: number; quote: string; body: string }): Promise<ResolvedAnnotation> =>
+export const createNote = (n: { scene: string; paragraph: number; quote: string; body: string; kind?: 'note' | 'keypoint'; by?: 'author' | 'agent' }): Promise<ResolvedAnnotation> =>
   post('/api/annotations', n)
+
+/** Keypoints only — the server refuses to delete a note. */
+export const deleteAnnotation = (id: string): Promise<{ ok: true }> =>
+  post('/api/annotations/delete', { id })
 
 /** Locks (A29): settled prose. The write path enforces them; these calls
  *  only report and edit the records. */
