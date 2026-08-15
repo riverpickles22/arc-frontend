@@ -25,7 +25,7 @@ const heightFor = (b: BBox) => {
 }
 
 export function MapView({
-  canon, view, colors, tEnd, selected, onSelect, touching, onOpenRun,
+  canon, view, colors, tEnd, selected, onSelect, onClear, touching, onOpenRun,
 }: {
   canon: Canon
   view: View
@@ -33,6 +33,8 @@ export function MapView({
   tEnd: number
   selected: string | null
   onSelect: (id: string) => void
+  /** Empty-canvas click: the selection clears everywhere, not just here. */
+  onClear?: () => void
   /** id → the run holding write or propose over it. Same register as the
    *  graph: a place a run merely read is never marked. */
   touching?: Map<string, string>
@@ -157,7 +159,7 @@ export function MapView({
           <g
             key={c.e.id + box.lon0}
             style={{ cursor: 'pointer' }}
-            onClick={() => onSelect(c.e.id)}
+            onClick={ev => { ev.stopPropagation(); onSelect(c.e.id) }}
             onMouseMove={ev => showTip(ev, c.e.name, c.cond)}
             onMouseLeave={hideTip}
           >
@@ -194,10 +196,15 @@ export function MapView({
       .filter(p => !opts?.kinds || opts.kinds.has(p.kind ?? ''))
       .map(p => {
         const [x, y] = project(p.coordinates!.lon, p.coordinates!.lat)
+        const sel = selected === p.id
         return (
-          <g key={p.id + box.lon0} style={{ cursor: 'pointer' }} onClick={() => onSelect(p.id)}
+          <g key={p.id + box.lon0} style={{ cursor: 'pointer' }}
+            onClick={ev => { ev.stopPropagation(); onSelect(p.id) }}
             onMouseMove={ev => showTip(ev, p.name, p.summary.slice(0, 90) + '…')}
             onMouseLeave={hideTip}>
+            {/* A selected place answers on the map the way a selected
+                character does — the same ring the graph draws. */}
+            {sel && <circle cx={x} cy={y} r={8} fill="none" stroke="var(--c1)" strokeWidth={2} />}
             {/* Proposed places read as pending in the same register the graph
                 uses — dashed, and lighter. Decoration over a marker the
                 projection already placed, so nothing moves when it ratifies. */}
@@ -213,14 +220,16 @@ export function MapView({
             )}
             <text x={opts?.labelBelow ? x : x + 6} y={opts?.labelBelow ? y + 14 : y - 4}
               fontSize={10} textAnchor={opts?.labelBelow ? 'middle' : 'start'}
-              fill="var(--muted)">{p.name}</text>
+              fontWeight={sel ? 650 : 400}
+              fill={sel ? 'var(--text-primary)' : 'var(--muted)'}>{p.name}</text>
           </g>
         )
       })
 
   return (
     <div ref={wrapRef} style={{ position: 'relative', flex: 1, minHeight: 0, padding: '0 12px 4px' }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '100%', display: 'block' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '100%', display: 'block' }}
+        onClick={() => onClear?.()}>
         <rect x={0} y={0} width={W} height={H} fill="var(--water)" rx={8} />
         {coastPath && <path d={coastPath} fill="var(--land)" stroke="var(--baseline)" strokeWidth={1} />}
 

@@ -3,7 +3,7 @@ import { loadGraph } from 'arc-canon-graph'
 import { yearRange } from './canon'
 import type { Canon } from './canon'
 import { charColors } from './presentation'
-import { focusSet, type FocusMode } from './graph-focus'
+import { focusOnClear, focusOnMode, focusOnSelect, focusSet, initialFocus, type FocusState } from './graph-focus'
 import { useServerData } from './hooks/useServerData'
 import type { ServerData } from './hooks/useServerData'
 import { useTimeCursor } from './hooks/useTimeCursor'
@@ -130,7 +130,11 @@ function Shell({ canon, data, dark, onToggleDark }: {
   const [wikiPath, setWikiPath] = useState<string | null>(route.wikiPath ?? null)
   const [styleTab, setStyleTab] = useState<StyleTab>(route.styleTab ?? 'book')
   const [povMode, setPovMode] = useState(false)   // "through their eyes" on the selected character
-  const [focusMode, setFocusMode] = useState<FocusMode>('all')   // graph focus: chapter / selection / all
+  // Graph focus: chapter / selection / all. Selection-driven — a click puts
+  // the graph in Selection focus unless the author pinned a mode; a URL that
+  // arrives carrying a selection opens already focused on it.
+  const [focusState, setFocusState] = useState<FocusState>(() =>
+    initialFocus(!!route.id && (route.id in canon.entities || route.id in canon.events)))
 
   const range = useMemo(() => yearRange(canon.timeline.eras), [canon])
   const colors = useMemo(() => charColors(canon), [canon])
@@ -155,17 +159,33 @@ function Shell({ canon, data, dark, onToggleDark }: {
   // the world's moment say so in the profile instead.
   const isChapter = useCallback((id: string) => (canon.chapters ?? []).some(c => c.id === id), [canon])
 
+  // Selecting an entity or event also pulls the graph into Selection focus —
+  // the click is a question put to the whole instrument, not to one panel.
+  // Chapters move time instead; they are a place to stand, not a node to dim to.
+  const focusFor = useCallback((id: string) => {
+    if (id in canon.entities || id in canon.events) setFocusState(focusOnSelect)
+  }, [canon])
+
   const selectAndShow = useCallback((id: string) => {
     setSelected(id)
     if (isChapter(id)) time.goToChapter(id)
-  }, [isChapter, time])
+    else focusFor(id)
+  }, [isChapter, time, focusFor])
 
   // From the manuscript or wiki: show this id in the world view.
   const openWorld = useCallback((id: string) => {
     setSelected(id)
     setPage('world')
     if (isChapter(id)) time.goToChapter(id)
-  }, [isChapter, time])
+    else focusFor(id)
+  }, [isChapter, time, focusFor])
+
+  // Empty-canvas click on the graph or map: back to the story's own terms —
+  // the fallback protagonist in the profile, no dim, no id in the URL.
+  const clearSelect = useCallback(() => {
+    setSelected(null)
+    setFocusState(focusOnClear)
+  }, [])
 
   // Page switch. Leaving the manuscript for the world view snaps time to
   // book mode at the manuscript's chapter — the two pages describe the same
@@ -183,7 +203,9 @@ function Shell({ canon, data, dark, onToggleDark }: {
     let h = '#/' + page
     if (page === 'world') {
       const anchor = time.timeMode === 'book' ? bookChapterId : String(time.year)
-      if (selected) h += '/' + selected + (anchor ? '@' + anchor : '')
+      // The URL carries the author's selection, never the fallback — a copied
+      // link should say what was chosen, not what the app opened on.
+      if (selectedState) h += '/' + selectedState + (anchor ? '@' + anchor : '')
       else if (anchor) h += '/@' + anchor
     } else if (page === 'manuscript' && curChapterId) {
       h += '/' + curChapterId
@@ -193,7 +215,7 @@ function Shell({ canon, data, dark, onToggleDark }: {
       h += '/' + styleTab
     }
     history.replaceState(null, '', h)
-  }, [page, selected, time.timeMode, time.year, bookChapterId, curChapterId, wikiPath, styleTab])
+  }, [page, selectedState, time.timeMode, time.year, bookChapterId, curChapterId, wikiPath, styleTab])
 
   // The selected character's world as of T (event-level POV; conventions'
   // dramatic-irony view). Only computed while the toggle is on.
@@ -211,8 +233,8 @@ function Shell({ canon, data, dark, onToggleDark }: {
   // the stronger, deliberately-toggled statement about what to show.
   const curChapter = chapters[Math.min(time.chapterIx, chapters.length - 1)]
   const focusDim = useMemo(
-    () => focusSet(focusMode, canon, curChapter, data.prose, selected),
-    [focusMode, canon, curChapter, data.prose, selected],
+    () => focusSet(focusState.mode, canon, curChapter, data.prose, selected, time.tEnd),
+    [focusState.mode, canon, curChapter, data.prose, selected, time.tEnd],
   )
   const graphDim = povDim ?? focusDim
 
@@ -308,12 +330,12 @@ function Shell({ canon, data, dark, onToggleDark }: {
         <section className="panel col-map">
           <h2>Map — where everyone is {time.bookChapter ? `at the end of ch. ${time.bookChapter.order} (${time.displayYear})` : `in ${time.year}`}</h2>
           <MapView touching={touching} onOpenRun={setOpenRun} canon={canon} view={data.view} colors={colors} tEnd={time.tEnd}
-            selected={selected} onSelect={selectAndShow} />
+            selected={selected} onSelect={selectAndShow} onClear={clearSelect} />
         </section>
         <section className="panel col-graph">
           <h2>Graph — entities &amp; relationships</h2>
-          <GraphView touching={touching} onOpenRun={setOpenRun} canon={canon} tEnd={time.tEnd} selected={selected} onSelect={selectAndShow} dimTo={graphDim}
-            focus={{ mode: focusMode, onMode: setFocusMode }} />
+          <GraphView touching={touching} onOpenRun={setOpenRun} canon={canon} tEnd={time.tEnd} selected={selected} onSelect={selectAndShow} onClear={clearSelect} dimTo={graphDim}
+            focus={{ mode: focusState.mode, onMode: m => setFocusState(s => focusOnMode(s, m)) }} />
         </section>
         <section className="panel col-profile">
           <h2>Profile</h2>

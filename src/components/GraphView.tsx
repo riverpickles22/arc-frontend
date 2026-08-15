@@ -19,12 +19,14 @@ interface Node extends SimulationNodeDatum {
 }
 
 export function GraphView({
-  canon, tEnd, selected, onSelect, dimTo, focus, touching, onOpenRun,
+  canon, tEnd, selected, onSelect, onClear, dimTo, focus, touching, onOpenRun,
 }: {
   canon: Canon
   tEnd: number
   selected: string | null
   onSelect: (id: string) => void
+  /** Empty-canvas click: the selection clears everywhere, not just here. */
+  onClear?: () => void
   /** Dim everything outside this set (POV mode or a focus mode). */
   dimTo?: Set<string> | null
   /** The focus-mode control (Chapter / Selection / All). */
@@ -81,7 +83,8 @@ export function GraphView({
 
   return (
     <div ref={wrapRef} style={{ position: 'relative', flex: 1, minHeight: 0, padding: '0 12px 4px' }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '100%', display: 'block' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '100%', display: 'block' }}
+        onClick={() => onClear?.()}>
         {/* structural place-hierarchy edges */}
         {struct.map((l, i) => (
           <line key={i} x1={l.source.x} y1={l.source.y} x2={l.target.x} y2={l.target.y}
@@ -128,7 +131,7 @@ export function GraphView({
           const run = touching?.get(n.id)
           return (
             <g key={n.id} style={{ cursor: 'pointer' }}
-              onClick={() => onSelect(n.id)}
+              onClick={ev => { ev.stopPropagation(); onSelect(n.id) }}
               onMouseMove={ev => showTip(ev, ent.name,
                 pending ? 'proposed — not yet ratified' : alive ? ent.summary.slice(0, 100) + '…' : 'not extant at this time')}
               onMouseLeave={hideTip}>
