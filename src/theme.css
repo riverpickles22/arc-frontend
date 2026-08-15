@@ -823,7 +823,9 @@ p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
 .kp-rail { position: absolute; top: 0; bottom: 0; width: 0; z-index: 2; }
 .kp-line {
   position: absolute; top: 8px; bottom: 8px; left: 0; width: 1px;
-  background: color-mix(in oklab, var(--text-secondary) 22%, transparent);
+  /* 22% read as invisible against the editor panel's own edge — the author
+     looked for the rail and could not find it. Quiet, but present. */
+  background: color-mix(in oklab, var(--text-secondary) 38%, transparent);
 }
 .kp-dot {
   position: absolute; left: -10px; width: 21px; height: 21px;
