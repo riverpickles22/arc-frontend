@@ -715,24 +715,32 @@ p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
    from the DOM, not merely hidden — centered at a book measure, chrome
    absent, and the standing note-marks receded to marginal facts. */
 .ms-cols.reading { grid-template-columns: 1fr; }
-/* The measure is 68 characters OF THE BOOK. `ch` is measured against the
-   element's own font, and this element's font is the UI sans — so a column
-   asking for 68ch was getting 68 characters of the interface, which came out
-   as 53 characters of Georgia. Setting the reading face here is what makes
-   the number in this rule the number on the page; the prose keeps its own
-   type from .mdbody.prose either way. Change 68 to change the measure. */
+/* ONE measure for every stance (A33). The measure is 68 characters OF THE
+   BOOK — but `ch` resolves against the element's own font, and outside Read
+   the prose column's font is the UI sans (its chrome — draft bar, scene
+   heads — must stay in the interface face). So the measure lives here as
+   the *measured* pixel width of 68 Georgia characters at --reading-size:
+   change the face or size and re-measure ('0'.repeat(68) in a probe span).
+   One knob, every stance. */
+:root { --ms-measure: 688.66px; /* = 68ch Georgia @ 16.5px */ }
+/* Below the cap, every stance gives the prose the same fraction of the
+   window, so the three widths stay EQUAL while they shrink together:
+   Notes/Edit live in the grid's 60fr column (width: auto = that column
+   minus padding); Read has the whole row, so it takes the same 60% minus
+   the same padding explicitly. One formula, two spellings. content-box
+   against the app's global border-box, because the measure is the width of
+   the LINE, not of the box the line sits in — under border-box the 32px
+   side padding would cost the reader six characters. Scoped to
+   .ms-cols > .ms-main: the wiki borrows .ms-main and is untouched. */
+.ms-cols > .ms-main {
+  box-sizing: content-box;
+  max-width: var(--ms-measure); margin: 0 auto;
+}
+.ms-cols.reading > .ms-main { width: calc(60% - 64px); }
+/* Read keeps its face: the whole column is book there, chrome excepted. */
 .ms-cols.reading .ms-main {
   font-family: var(--reading-face); font-size: var(--reading-size);
-  /* content-box against the app's global border-box: the measure is the
-     width of the LINE, not of the box the line sits in. Under border-box the
-     column's 32px of side padding comes out of the 68, costing the reader
-     another six characters. */
-  box-sizing: content-box;
-  max-width: 68ch; margin: 0 auto;
 }
-/* Everything in that column that is chrome rather than book stays in the
-   interface face — the header and its controls, the outline of a chapter
-   with nothing drafted, and the progress footer. */
 .ms-cols.reading .ms-head,
 .ms-cols.reading .ms-outline,
 .ms-cols.reading .ms-empty,

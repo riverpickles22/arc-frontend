@@ -554,13 +554,14 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
   /** The last place we put the reader, and the scroll offset it produced.
    *
-   *  This exists because the two layouts are not the same height: Read sets
-   *  the prose in a 68-character column and runs nearly twice as long as
-   *  Notes. A paragraph near the end of the reading layout can sit inside the
-   *  last screenful of the working layout, where no amount of scrolling will
-   *  bring it to the top — the browser clamps, and re-reading the position
-   *  from that clamped view would quietly move the reader backwards and then
-   *  remember the wrong place.
+   *  This exists because the stances are not the same height: the prose
+   *  measure is shared now (A33), but each stance carries different
+   *  furniture — draft bar, note cards, per-mode headers — so the same
+   *  paragraph still sits at different offsets. A paragraph near the end of
+   *  one layout can sit inside the last screenful of another, where no
+   *  amount of scrolling will bring it to the top — the browser clamps, and
+   *  re-reading the position from that clamped view would quietly move the
+   *  reader backwards and then remember the wrong place.
    *
    *  So the place only changes when the reader actually moves. If the scroll
    *  offset is still exactly where we left it, we keep the anchor we put
