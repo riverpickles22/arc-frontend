@@ -437,6 +437,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  on screen — so `switchMode` below has to be able to reach it. */
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  /** The reader is at the very top of the chapter — head and furniture in
+   *  view, nothing scrolled past. No colon, so it can never collide with a
+   *  real `scene:index` paragraph key, and it round-trips through the
+   *  positions file like any other anchor. */
+  const TOP_KEY = '@top'
+
   /** Which paragraph the top of the page is cutting through, if any. Null
    *  means "do not overwrite what we remembered" — never "the reader is at
    *  the top". */
@@ -448,6 +454,11 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     // layout was tall enough to show.
     const put = restoredRef.current
     if (put && Math.abs(box.scrollTop - put.scrollTop) < 1) return put.anchor
+    // The very top is a place of its own, not "paragraph one at the reading
+    // line". Answering with the first paragraph here made every stance switch
+    // from the top restore that paragraph to the reading line — scrolling the
+    // chapter head (and everything above the first note) out of view.
+    if (box.scrollTop <= 1) return { key: TOP_KEY, frac: 0 }
     const top = visibleTopOf(box)
 
     // Reading or annotating: the paragraphs are elements, so ask them.
@@ -485,6 +496,11 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const restoreAnchor = useCallback((a: Anchor): void => {
     const box = scrollRef.current
     if (!box) return
+    if (a.key === TOP_KEY) {
+      box.scrollTop = 0
+      restoredRef.current = { anchor: a, scrollTop: 0 }
+      return
+    }
     const scene = a.key.slice(0, a.key.lastIndexOf(':'))
     const boxTop = visibleTopOf(box)
 
@@ -1191,7 +1207,16 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 <div className="db-views" role="group" aria-label="Which version to read">
                   {([['before', 'Before'], ['changes', 'Changes'], ['proposed', 'Proposed']] as const).map(([k, label]) => (
                     <button key={k} className={view === k ? 'on' : ''}
-                      aria-pressed={view === k} onClick={() => setView(k)}>{label}</button>
+                      aria-pressed={view === k} onClick={() => {
+                        setView(k)
+                        // The switchMode inverse. Edit means edit the PROPOSED
+                        // text, and Before/Changes are exactly the two views
+                        // the prose is not editable in — so choosing one while
+                        // editing is a request to READ the diff, and the page
+                        // follows into Notes honestly rather than leaving the
+                        // Edit tab lit over prose that stopped being editable.
+                        if (mode === 'edit' && k !== 'proposed') switchMode('notes')
+                      }}>{label}</button>
                   ))}
                 </div>
               </>
