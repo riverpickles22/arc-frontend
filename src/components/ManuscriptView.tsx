@@ -1004,8 +1004,19 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     const measure = () => {
       const base = box.getBoundingClientRect().top
       const lineOf = (key: string | null) => {
-        const el = key === null ? null : box.querySelector<HTMLElement>(`[data-para="${key}"]`)
-        return el ? el.getBoundingClientRect().top - base : 0
+        if (key === null) return 0
+        const el = box.querySelector<HTMLElement>(`[data-para="${key}"]`)
+        if (el) return el.getBoundingClientRect().top - base
+        // Edit mode: the paragraph lives inside a textarea, which has no
+        // [data-para] lines — measure a copy, the way the anchor machinery
+        // does, so a note sits beside its paragraph in every stance.
+        const scene = key.slice(0, key.lastIndexOf(':'))
+        const pi = Number(key.slice(scene.length + 1)) || 0
+        const ta = box.querySelector<HTMLTextAreaElement>(`[data-scene="${scene}"] textarea`)
+        if (!ta) return 0
+        const paraTops = paragraphTopsIn(ta)
+        if (!paraTops.length) return textTopOf(ta) - base
+        return textTopOf(ta) - base + paraTops[Math.min(pi, paraTops.length - 1)]
       }
       // Exactly the cards the rail renders, in render order: the composer
       // first when open, then the notes it shows.
@@ -1025,7 +1036,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     const ro = new ResizeObserver(measure)
     ro.observe(box)
     return () => ro.disconnect()
-  }, [openNotes, sel, view, diffs])
+  }, [openNotes, sel, view, diffs, mode])
 
   // Escape steps back out of whatever holds attention, without discarding a
   // half-written note unless the composer is what is focused.
