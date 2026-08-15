@@ -6,14 +6,14 @@
 // banner) belongs to the caller — useServerData — not here, so a down
 // backend can no longer masquerade as an empty story.
 import type {
-  AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, MaterialResponse,
+  AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, LocksResponse, MaterialResponse,
   AddNoteRequest, AgentsResponse, DeleteNoteRequest, HealthResponse, NoteResponse, NotesResponse, OkResponse,
   RunsResponse, RunDetailResponse,
   UpdateMaterialRequest, UpdateMaterialResponse, UpdateNoteRequest,
   WorkDecisionRequest, WorkDecisionResponse, WorkNoteRequest, WorkResponse,
   ProseAcceptResponse, ProseResponse, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
 } from 'arc-canon-graph'
-import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, SuggestRequest, SuggestResponse } from './canon'
+import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SuggestRequest, SuggestResponse } from './canon'
 import type { View } from './presentation'
 import type { GeoJSON } from './map-geometry'
 
@@ -62,6 +62,17 @@ export const loadAnnotations = (signal?: AbortSignal): Promise<ResolvedAnnotatio
 
 export const createNote = (n: { scene: string; paragraph: number; quote: string; body: string }): Promise<ResolvedAnnotation> =>
   post('/api/annotations', n)
+
+/** Locks (A29): settled prose. The write path enforces them; these calls
+ *  only report and edit the records. */
+export const loadLocks = (signal?: AbortSignal): Promise<ResolvedLock[]> =>
+  getJson<LocksResponse>('/api/locks', { signal }).then(r => r.locks)
+
+export const createLock = (l: { scene: string; paragraph: number; quote: string }): Promise<{ lock: ResolvedLock }> =>
+  post('/api/locks', l)
+
+export const deleteLock = (id: string): Promise<{ ok: true }> =>
+  post('/api/locks/delete', { id })
 
 /** Change a note's status, its body, or both. The anchor is never sent —
  *  revising a thought is not re-anchoring it. */

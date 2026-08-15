@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { AnalyzeResponse, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, SceneContract } from '../canon'
+import type { AnalyzeResponse, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
 import { dateOf } from '../canon'
-import { acceptDraft, acceptParagraph, analyzeDraft, createNote, discardDraft, draftScene, suggestText, updateNote, writeScene } from '../api'
+import { acceptDraft, acceptParagraph, analyzeDraft, createLock as apiCreateLock, createNote, deleteLock as apiDeleteLock, discardDraft, draftScene, loadLocks, suggestText, updateNote, writeScene } from '../api'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
@@ -705,6 +705,54 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     x: number; y: number
   } | null>(null)
 
+  /* ---- locks (A29): settled prose, shown and edited here ----
+   *  The truth lives in the backend's write path; this state only paints it
+   *  and offers the two verbs. Re-fetched whenever the prose changes, so a
+   *  lock that drifted or orphaned shows where it actually is now. */
+  const [locksList, setLocksList] = useState<ResolvedLock[]>([])
+  const reloadLocks = useCallback(() => {
+    loadLocks().then(setLocksList).catch(() => setLocksList([]))
+  }, [])
+  useEffect(() => { reloadLocks() }, [reloadLocks, scenes])
+  /** `scene:paragraph` → lock, at the paragraph each lock RESOLVES to now. */
+  const lockedAt = useMemo(() => {
+    const m = new Map<string, ResolvedLock>()
+    for (const l of locksList) {
+      if ((l.resolution.state === 'resolved' || l.resolution.state === 'drifted') && l.resolution.paragraph !== null)
+        m.set(`${l.anchor.scene}:${l.resolution.paragraph}`, l)
+    }
+    return m
+  }, [locksList])
+  /** The lock/unlock menu: right-click on prose. One paragraph at a time —
+   *  a lock is a decision about a passage, not a drag-selection. */
+  const [lockMenu, setLockMenu] = useState<{
+    scene: string; paragraph: number; para: string
+    lockId: string | null; x: number; y: number
+  } | null>(null)
+  const lockHere = useCallback(async (scene: string, paragraph: number, para: string) => {
+    try { await apiCreateLock({ scene, paragraph, quote: para }) } catch (e) { console.error('lock refused:', e) }
+    setLockMenu(null); setSelMenu(null); reloadLocks()
+  }, [reloadLocks])
+  const unlockHere = useCallback(async (id: string) => {
+    try { await apiDeleteLock(id) } catch (e) { console.error('unlock refused:', e) }
+    setLockMenu(null); setSelMenu(null); reloadLocks()
+  }, [reloadLocks])
+  // The lock menu leaves the way every menu here leaves.
+  useEffect(() => {
+    if (!lockMenu) return
+    const down = (ev: MouseEvent) => { if (!(ev.target as HTMLElement).closest('.sel-menu')) setLockMenu(null) }
+    const key = (ev: KeyboardEvent) => { if (ev.key === 'Escape') setLockMenu(null) }
+    const scroll = () => setLockMenu(null)
+    window.addEventListener('mousedown', down)
+    window.addEventListener('keydown', key)
+    window.addEventListener('scroll', scroll, true)
+    return () => {
+      window.removeEventListener('mousedown', down)
+      window.removeEventListener('keydown', key)
+      window.removeEventListener('scroll', scroll, true)
+    }
+  }, [lockMenu])
+
   /** The suggestion popover (A17-7): what was asked, and what came back.
    *  Suggestions are argued — listed, never applied without a click. */
   const [suggest, setSuggest] = useState<{
@@ -1401,8 +1449,15 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                       const anchored = notes.some(nn =>
                         nn.anchor.scene === s.scene && nn.resolution.paragraph === pi &&
                         nn.status !== 'resolved' && nn.status !== 'dropped')
+                      const lk = lockedAt.get(`${s.scene}:${pi}`)
                       return (
-                        <p key={pi} data-para={`${s.scene}:${pi}`} className={anchored ? 'has-note' : ''}
+                        <p key={pi} data-para={`${s.scene}:${pi}`}
+                          className={`${anchored ? 'has-note' : ''}${lk ? ' para-locked' : ''}`}
+                          title={lk ? `settled — locked (${lk.id}); right-click to unlock` : undefined}
+                          onContextMenu={ev => {
+                            ev.preventDefault()
+                            setLockMenu({ scene: s.scene, paragraph: pi, para: p, lockId: lk?.id ?? null, x: ev.clientX, y: ev.clientY })
+                          }}
                           dangerouslySetInnerHTML={{ __html: mdToHtml(p).replace(/^<p>|<\/p>$/g, '') }} />
                       )
                     })}
@@ -1447,10 +1502,16 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                     const noteHere = notes.find(n =>
                       n.anchor.scene === s.scene && n.resolution.paragraph === pi &&
                       n.status !== 'resolved' && n.status !== 'dropped')
+                    const lk = lockedAt.get(`${s.scene}:${pi}`)
                     return (
                       <p key={pi} data-para={`${s.scene}:${pi}`}
                         onClick={noteHere ? () => { setActive(noteHere.id); setFocused(`${s.scene}:${pi}`) } : undefined}
-                        className={`${anchored ? 'has-note' : ''}${isFocus ? ' note-focus' : ''}`}
+                        className={`${anchored ? 'has-note' : ''}${isFocus ? ' note-focus' : ''}${lk ? ' para-locked' : ''}`}
+                        title={lk ? `settled — locked (${lk.id}); right-click to unlock` : undefined}
+                        onContextMenu={ev => {
+                          ev.preventDefault()
+                          setLockMenu({ scene: s.scene, paragraph: pi, para: p, lockId: lk?.id ?? null, x: ev.clientX, y: ev.clientY })
+                        }}
                         dangerouslySetInnerHTML={{ __html: mdToHtml(p).replace(/^<p>|<\/p>$/g, '') }} />
                     )
                   })}
@@ -1538,6 +1599,21 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       {selMenu && (
         <div className="sel-menu" style={{ left: selMenu.x, top: selMenu.y }}>
           <button onClick={noteFromMenu}>Add note</button>
+          {(() => {
+            /* Lock/Unlock from the editor's own menu (A29): the paragraph
+               under the selection. Editor text may be ahead of disk, so the
+               pending edit is flushed before the lock lands — a lock made on
+               unsaved prose would anchor to a body the backend cannot see. */
+            const pi = paragraphAtOffset(selMenu.body, selMenu.start)
+            const lk = lockedAt.get(`${selMenu.scene}:${pi}`)
+            const para = paragraphsOf(selMenu.body)[pi] ?? ''
+            return lk
+              ? <button onClick={() => void unlockHere(lk.id)}>Unlock paragraph</button>
+              : <button title="Settled prose: nothing may rewrite this paragraph — not an edit, not a revision pass — until you unlock it"
+                  onClick={() => { void flushFile(selMenu.file).then(() => lockHere(selMenu.scene, pi, para)) }}>
+                  Lock paragraph
+                </button>
+          })()}
           <button onClick={() => void askSuggest('rephrase')}>Rephrase…</button>
           {/* Synonyms answers with drop-in replacements — same part of speech,
               same case — which only means anything for one word. Unavailable
@@ -1561,6 +1637,19 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           )}
         </div>
       )}
+      {/* The lock menu (A29): right-click on rendered prose. Two verbs, one
+          paragraph, and the durable anchor is the paragraph's own text. */}
+      {lockMenu && (
+        <div className="sel-menu" style={{ left: lockMenu.x, top: lockMenu.y }}>
+          {lockMenu.lockId
+            ? <button onClick={() => void unlockHere(lockMenu.lockId!)}>Unlock paragraph</button>
+            : <button title="Settled prose: nothing may rewrite this paragraph — not an edit, not a revision pass — until you unlock it"
+                onClick={() => void lockHere(lockMenu.scene, lockMenu.paragraph, lockMenu.para)}>
+                Lock paragraph
+              </button>}
+        </div>
+      )}
+
       {suggest && (
         <div className="suggest-pop" style={{ left: suggest.menu.x, top: suggest.menu.y }}>
           <div className="sp-head">

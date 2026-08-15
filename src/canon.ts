@@ -8,7 +8,7 @@
 import type { TimeRef, DateLike } from 'arc-canon-graph'
 export type {
   TimeRef, DateLike, DocArticle, SceneContract, ProseScene, ProseChange, ProseDraft,
-  ChatMessage, ChatAction, ChatResponse, DraftSceneResponse, AnalyzeResponse, StyleResponse, ResolvedAnnotation, AnnotationLike, AnchorResolution, ApiErrorResponse, AttentionResponse, MaterialItem, SuggestRequest, SuggestResponse, ProposedRule, RuleEvidence, RatifyRuleRequest, RatifyRuleResponse, FiledItem, HealthResponse, Note, Agent, AgentsResponse, RunSummary, RunsResponse, RunDetailResponse, StreamMessage, NotesResponse, AddNoteRequest, UpdateNoteRequest, NoteResponse, DeleteNoteRequest, WorkNoteRequest, WorkResponse, WorkDecisionRequest, WorkDecisionResponse, UpdateMaterialRequest, UpdateMaterialResponse,
+  ChatMessage, ChatAction, ChatResponse, DraftSceneResponse, AnalyzeResponse, StyleResponse, ResolvedAnnotation, AnnotationLike, AnchorResolution, ResolvedLock, LockLike, LocksResponse, CreateLockRequest, DeleteLockRequest, ApiErrorResponse, AttentionResponse, MaterialItem, SuggestRequest, SuggestResponse, ProposedRule, RuleEvidence, RatifyRuleRequest, RatifyRuleResponse, FiledItem, HealthResponse, Note, Agent, AgentsResponse, RunSummary, RunsResponse, RunDetailResponse, StreamMessage, NotesResponse, AddNoteRequest, UpdateNoteRequest, NoteResponse, DeleteNoteRequest, WorkNoteRequest, WorkResponse, WorkDecisionRequest, WorkDecisionResponse, UpdateMaterialRequest, UpdateMaterialResponse,
 } from 'arc-canon-graph'
 
 export interface SubjRel { toward: string; stance: string }

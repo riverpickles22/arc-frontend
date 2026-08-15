@@ -816,6 +816,15 @@ p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
 .prop-rule { font-size: 13.5px; line-height: 1.55; color: var(--text-primary); margin: 0 0 8px; }
 /* Argued purely from the author's own rewrites — quiet, informational, and
    deliberately not an alert colour: nothing is wrong, something is theirs. */
+/* Locked prose (A29): settled, marked without shouting — a thin rule and a
+   small padlock in the margin, in the palette's neutral, never an alert. */
+p.para-locked {
+  border-left: 2px solid color-mix(in oklab, var(--text-secondary) 45%, transparent);
+  padding-left: 10px; position: relative;
+}
+p.para-locked::before {
+  content: '🔒'; position: absolute; left: -20px; top: 2px; font-size: 9px; opacity: .55;
+}
 .prop-origin {
   display: inline-block; font-size: 10.5px; letter-spacing: .04em; color: var(--c1);
   border: 1px solid color-mix(in oklab, var(--c1) 40%, transparent); border-radius: 20px;
