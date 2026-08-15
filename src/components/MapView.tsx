@@ -79,7 +79,37 @@ export function MapView({
   // basemap or panel shape derives back to the full view with no effect.
   const [winState, setWinState] = useState<{ for: BBox; box: BBox } | null>(null)
   const win = winState && winState.for === FULL ? winState.box : null
-  const setWin = useCallback((b: BBox | null) => setWinState(b ? { for: FULL, box: b } : null), [FULL])
+
+  /* The window survives leaving (A24-7): where the author stood — a city, or
+   * the full chart — restores when they come back, per browser. The wrinkle
+   * is the derivation above: `for` is compared by REFERENCE, and FULL is
+   * rebuilt on every mount and every panel reshape, so a naively-restored
+   * window dies the moment the aspect settles. The stored box is therefore
+   * PINNED — re-applied on every FULL change — until the author interacts,
+   * at which point the pin releases and live reshaping derives to full
+   * exactly as designed. */
+  const storedWinRef = useRef<BBox | null | undefined>(undefined)
+  if (storedWinRef.current === undefined) {
+    try {
+      const raw = localStorage.getItem('arc.map.window')
+      const b = raw ? JSON.parse(raw) as BBox : null
+      storedWinRef.current =
+        b && [b.lon0, b.lon1, b.lat0, b.lat1].every(Number.isFinite) && b.lon0 < b.lon1 && b.lat0 < b.lat1
+          ? b : null
+    } catch { storedWinRef.current = null }
+  }
+  useEffect(() => {
+    if (storedWinRef.current) setWinState({ for: FULL, box: storedWinRef.current })
+  }, [FULL])
+
+  const setWin = useCallback((b: BBox | null) => {
+    storedWinRef.current = null            // the author took over — stop pinning
+    try {
+      if (b) localStorage.setItem('arc.map.window', JSON.stringify(b))
+      else localStorage.removeItem('arc.map.window')
+    } catch { /* remembering is a nicety, never a failure */ }
+    setWinState(b ? { for: FULL, box: b } : null)
+  }, [FULL])
   const box = win ?? FULL
 
   const pMain = useMemo(() => proj(box, W, H), [box, H])
@@ -490,8 +520,14 @@ export function MapView({
                 <title>Open {inset.label} full-frame</title>
               </rect>
               <text x={INS.x + 10} y={INS.y + 18} fontSize={10} fontWeight={650}
-                style={{ letterSpacing: '0.09em' }} fill="var(--map-label)">
+                style={{ letterSpacing: '0.09em', pointerEvents: 'none' }} fill="var(--map-label)">
                 {inset.label.toUpperCase()} (INSET)
+              </text>
+              {/* The door existed and the author could not find it (A24-7):
+                  a door should say it opens. */}
+              <text x={INS.x + 10} y={INS.y + 29} fontSize={7.5} fontWeight={500} opacity={0.75}
+                style={{ letterSpacing: '0.08em', pointerEvents: 'none' }} fill="var(--map-label)">
+                CLICK TO OPEN
               </text>
               {placeDots(inset, pIns, { labelBelow: true })}
               {markers(inset, pIns)}
