@@ -167,7 +167,11 @@ export function MapView({
     if (!d) return
     const dx = e.clientX - d.x
     const dy = e.clientY - d.y
-    if (!d.moved && Math.hypot(dx, dy) < 4) return   // a click, until it isn't
+    // A click, until it isn't. 4px treated every trackpad press — which
+    // physically drifts a few pixels — as a micro-pan, and the capture
+    // below then swallowed the click: "I clicked the city and nothing
+    // happened." 9px is still far below an intentional drag.
+    if (!d.moved && Math.hypot(dx, dy) < 9) return
     d.moved = true
     d.x = e.clientX; d.y = e.clientY
     const r = svgRef.current?.getBoundingClientRect()
@@ -333,7 +337,7 @@ export function MapView({
         const sel = selected === p.id
         const isDoor = !win && p.kind === 'city'
         return (
-          <g key={p.id + box.lon0} style={{ cursor: isDoor ? 'zoom-in' : 'pointer' }}
+          <g key={p.id + box.lon0} style={{ cursor: 'pointer' }}
             onClick={ev => { ev.stopPropagation(); if (isDoor) setWin(cityWindow(p)); else onSelect(p.id) }}
             onMouseMove={ev => showTip(ev, p.name, isDoor ? 'click to open the city' : p.summary.slice(0, 90) + '…')}
             onMouseLeave={hideTip}>
@@ -504,7 +508,7 @@ export function MapView({
             what entering it reveals; drawing it from the island view stacked
             a neighbourhood onto one pixel. */}
         {placeDots(box, pMain, !win ? { islandScale: true } : undefined)}
-        {markers(box, pMain, 1)}
+        {markers(box, pMain, 1, !win ? inset : undefined)}
 
         {/* The inset panel retired (A24-8): the city dot on the chart is
             the door now, and entering it reveals the interior. */}
