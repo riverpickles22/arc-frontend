@@ -66,3 +66,9 @@ This repo contains no story. Everything specific to one comes from canon or from
 | Map inset | the story's `view.yaml` |
 
 The last two are optional: with no basemap the markers draw without a coastline, and with no inset everything renders on the main map. Colours are positional against the `--c1`…`--c8` palette in `theme.css`, so they're stable across reloads without being pinned to any particular cast.
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE), covering this repository's
+code. It holds no story: a story's canon and prose stay under whatever terms
+its author sets.
