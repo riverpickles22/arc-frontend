@@ -58,6 +58,35 @@ export function chapterText(scenes: ProseLike[]): string {
  *  An offset inside the whitespace BETWEEN paragraphs anchors to the
  *  following paragraph — a selection can only start there by starting at
  *  the head of what follows. Past the end clamps to the last paragraph. */
+/** Every paragraph a selection covers, not merely the one it starts in.
+ *  Locking is the caller that needs this: settling a run of prose is one
+ *  decision, and asking for it three times because the menu only ever saw
+ *  the first paragraph is the same decision typed three times. */
+export function paragraphRange(body: string, start: number, end: number): number[] {
+  const lo = Math.min(start, end)
+  const hi = Math.max(start, end)
+  const out: number[] = []
+  // Overlap against each paragraph's real span, rather than resolving the two
+  // ends with paragraphAtOffset: that deliberately pushes an offset sitting in
+  // the gap BETWEEN paragraphs onto the following one, which is right for a
+  // caret and wrong for a selection's end — dragging to the top of the next
+  // paragraph is how you finish selecting the previous one, and must not
+  // select what you stopped at.
+  let searchFrom = 0
+  let index = -1
+  for (const para of body.split(/\n{2,}/)) {
+    const trimmed = para.trim()
+    if (!trimmed) { searchFrom += para.length; continue }
+    index += 1
+    const s = body.indexOf(trimmed, searchFrom)
+    const e = s + trimmed.length
+    // A real selection overlaps; a caret (lo === hi) merely has to sit inside.
+    if (lo === hi ? lo >= s && lo <= e : s < hi && e > lo) out.push(index)
+    searchFrom = e
+  }
+  return out.length ? out : [paragraphAtOffset(body, lo)]
+}
+
 export function paragraphAtOffset(body: string, offset: number): number {
   let searchFrom = 0
   let index = -1

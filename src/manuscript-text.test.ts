@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import {
-  chapterText, copyableScenes, isSingleWord, offsetOfParagraph, paragraphAtOffset, sceneText,
+  chapterText, copyableScenes, isSingleWord, offsetOfParagraph, paragraphAtOffset, paragraphRange, sceneText,
 } from './manuscript-text'
 
 test('a scene copies as its prose, trimmed', () => {
@@ -136,4 +136,40 @@ test('an index past the end lands on the last paragraph, never back at zero', ()
 test('an empty body has nowhere to be but the start', () => {
   expect(offsetOfParagraph('', 0)).toBe(0)
   expect(offsetOfParagraph('   \n\n  ', 2)).toBe(0)
+})
+
+// Locking a run of prose is one decision. The menu used to see only the
+// paragraph the selection STARTED in, so selecting three and locking locked
+// one — and the author had to make the same decision twice more.
+test('a selection spanning paragraphs covers every one it touches', () => {
+  const body = 'First paragraph.\n\nSecond paragraph.\n\nThird paragraph.'
+  expect(paragraphRange(body, body.indexOf('First'), body.indexOf('Third') + 5)).toEqual([0, 1, 2])
+  expect(paragraphRange(body, body.indexOf('First'), body.indexOf('Second') + 6)).toEqual([0, 1])
+})
+
+test('a selection inside one paragraph covers only that paragraph', () => {
+  const body = 'First paragraph.\n\nSecond paragraph.\n\nThird paragraph.'
+  expect(paragraphRange(body, body.indexOf('Second'), body.indexOf('Second') + 6)).toEqual([1])
+  const caret = body.indexOf('Third') + 2
+  expect(paragraphRange(body, caret, caret)).toEqual([2])
+})
+
+test('stopping at the head of the next paragraph does not select it', () => {
+  const body = 'First paragraph.\n\nSecond paragraph.'
+  // Dragging to the top of paragraph 2 is how you finish selecting 1.
+  expect(paragraphRange(body, 0, body.indexOf('Second'))).toEqual([0])
+  // One character in, and you have genuinely marked it.
+  expect(paragraphRange(body, 0, body.indexOf('Second') + 1)).toEqual([0, 1])
+})
+
+test('a backwards selection covers the same paragraphs as a forwards one', () => {
+  const body = 'First paragraph.\n\nSecond paragraph.\n\nThird paragraph.'
+  const a = body.indexOf('First')
+  const b = body.indexOf('Third') + 5
+  expect(paragraphRange(body, b, a)).toEqual(paragraphRange(body, a, b))
+})
+
+test('blank-line runs do not put phantom paragraphs in the range', () => {
+  const body = 'First.\n\n\n\nSecond.\n\nThird.'
+  expect(paragraphRange(body, 0, body.length)).toEqual([0, 1, 2])
 })

@@ -13,7 +13,7 @@ import {
 } from '../wordcount'
 import { CopyProse, CopyRef } from './CopyRef'
 import {
-  chapterText, copyableScenes, isSingleWord, offsetOfParagraph, paragraphAtOffset, sceneText,
+  chapterText, copyableScenes, isSingleWord, offsetOfParagraph, paragraphAtOffset, paragraphRange, sceneText,
 } from '../manuscript-text'
 import { stack } from '../note-stack'
 import { Working } from './Working'
@@ -742,18 +742,63 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     }
     return m
   }, [locksList])
-  /** The lock/unlock menu: right-click on prose. One paragraph at a time —
-   *  a lock is a decision about a passage, not a drag-selection. */
+  /** The lock/unlock menu: right-click on prose. A lock is a decision about a
+   *  passage — and when the author has marked several paragraphs, the
+   *  decision is about all of them. The right-clicked paragraph is the target
+   *  on its own; a selection covering more makes the whole run the target,
+   *  because settling three paragraphs one context menu at a time is the same
+   *  decision typed three times. */
   const [lockMenu, setLockMenu] = useState<{
-    scene: string; paragraph: number; para: string
-    lockId: string | null; x: number; y: number
+    scene: string; x: number; y: number
+    targets: { paragraph: number; para: string; lockId: string | null }[]
   } | null>(null)
-  const lockHere = useCallback(async (scene: string, paragraph: number, para: string) => {
-    try { await apiCreateLock({ scene, paragraph, quote: para }) } catch (e) { console.error('lock refused:', e) }
+
+  /** Which paragraphs of this scene the document selection actually covers.
+   *  The DOM says WHICH (a rendered paragraph carries its index); the scene
+   *  source says WHAT, because a lock's quote is matched against the source
+   *  and the rendered text has already lost its markup. */
+  const selectedParagraphs = useCallback((scene: string, body: string): number[] => {
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return []
+    const out: number[] = []
+    for (const el of document.querySelectorAll<HTMLElement>('[data-para]')) {
+      const key = el.getAttribute('data-para') ?? ''
+      if (!key.startsWith(`${scene}:`)) continue
+      // Partial containment counts: a selection that clips the end of one
+      // paragraph and the start of the next has marked both.
+      if (!sel.containsNode(el, true)) continue
+      const ix = Number(key.slice(scene.length + 1))
+      if (Number.isInteger(ix) && ix < paragraphsOf(body).length) out.push(ix)
+    }
+    return out.sort((a, b) => a - b)
+  }, [])
+
+  /** Open the menu for the clicked paragraph, or for the whole selected run
+   *  when the click lands inside one. */
+  const openLockMenu = useCallback((scene: string, body: string, clicked: number, ev: { clientX: number; clientY: number }) => {
+    const paras = paragraphsOf(body)
+    const covered = selectedParagraphs(scene, body)
+    const idxs = covered.length > 1 && covered.includes(clicked) ? covered : [clicked]
+    setLockMenu({
+      scene, x: ev.clientX, y: ev.clientY,
+      targets: idxs.map(i => ({ paragraph: i, para: paras[i] ?? '', lockId: lockedAt.get(`${scene}:${i}`)?.id ?? null })),
+    })
+  }, [selectedParagraphs, lockedAt])
+
+  // Sequentially, never in parallel: the server names each lock by reading the
+  // highest number already on disk, so two writes in flight at once would both
+  // claim the same id and one would land on top of the other.
+  const lockHere = useCallback(async (scene: string, targets: { paragraph: number; para: string }[]) => {
+    for (const t of targets) {
+      try { await apiCreateLock({ scene, paragraph: t.paragraph, quote: t.para }) }
+      catch (e) { console.error(`lock refused (paragraph ${t.paragraph + 1}):`, e) }
+    }
     setLockMenu(null); setSelMenu(null); reloadLocks()
   }, [reloadLocks])
-  const unlockHere = useCallback(async (id: string) => {
-    try { await apiDeleteLock(id) } catch (e) { console.error('unlock refused:', e) }
+  const unlockHere = useCallback(async (ids: string[]) => {
+    for (const id of ids) {
+      try { await apiDeleteLock(id) } catch (e) { console.error('unlock refused:', e) }
+    }
     setLockMenu(null); setSelMenu(null); reloadLocks()
   }, [reloadLocks])
   // The lock menu leaves the way every menu here leaves.
@@ -1596,7 +1641,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                           title={lk ? `settled — locked (${lk.id}); right-click to unlock` : undefined}
                           onContextMenu={ev => {
                             ev.preventDefault()
-                            setLockMenu({ scene: s.scene, paragraph: pi, para: p, lockId: lk?.id ?? null, x: ev.clientX, y: ev.clientY })
+                            openLockMenu(s.scene, s.body, pi, ev)
                           }}
                           dangerouslySetInnerHTML={{ __html: mdToHtml(p).replace(/^<p>|<\/p>$/g, '') }} />
                       )
@@ -1650,7 +1695,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                         title={lk ? `settled — locked (${lk.id}); right-click to unlock` : undefined}
                         onContextMenu={ev => {
                           ev.preventDefault()
-                          setLockMenu({ scene: s.scene, paragraph: pi, para: p, lockId: lk?.id ?? null, x: ev.clientX, y: ev.clientY })
+                          openLockMenu(s.scene, s.body, pi, ev)
                         }}
                         dangerouslySetInnerHTML={{ __html: mdToHtml(p).replace(/^<p>|<\/p>$/g, '') }} />
                     )
@@ -1744,28 +1789,39 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         <div className="sel-menu" style={{ left: selMenu.x, top: selMenu.y }}>
           <button onClick={noteFromMenu}>Add note</button>
           {(() => {
-            /* Lock/Unlock from the editor's own menu (A29): the paragraph
-               under the selection. Editor text may be ahead of disk, so the
-               pending edit is flushed before the lock lands — a lock made on
-               unsaved prose would anchor to a body the backend cannot see. */
-            const pi = paragraphAtOffset(selMenu.body, selMenu.start)
-            const lk = lockedAt.get(`${selMenu.scene}:${pi}`)
-            const para = paragraphsOf(selMenu.body)[pi] ?? ''
+            /* Lock/Unlock from the editor's own menu (A29): every paragraph
+               the selection covers, not only the one it starts in. Editor
+               text may be ahead of disk, so the pending edit is flushed
+               before the lock lands — a lock made on unsaved prose would
+               anchor to a body the backend cannot see. */
+            const paras = paragraphsOf(selMenu.body)
+            const targets = paragraphRange(selMenu.body, selMenu.start, selMenu.end).map(i => ({
+              paragraph: i, para: paras[i] ?? '', lockId: lockedAt.get(`${selMenu.scene}:${i}`)?.id ?? null,
+            }))
+            const unlocked = targets.filter(t => !t.lockId)
+            const locked = targets.filter(t => t.lockId)
+            const many = targets.length > 1 ? ` ${targets.length} paragraphs` : ' paragraph'
+            const first = targets[0]
             return <>
               <button title="A structural marker on the margin timeline: what this passage must get across"
                 onClick={() => {
                   void flushFile(selMenu.file).then(() =>
-                    setKpDraft({ scene: selMenu.scene, paragraph: pi, quote: para, x: selMenu.x, y: selMenu.y, text: '' }))
+                    setKpDraft({ scene: selMenu.scene, paragraph: first.paragraph, quote: first.para, x: selMenu.x, y: selMenu.y, text: '' }))
                   setSelMenu(null)
                 }}>
                 Mark key point
               </button>
-              {lk
-                ? <button onClick={() => void unlockHere(lk.id)}>Unlock paragraph</button>
-                : <button title="Settled prose: nothing may rewrite this paragraph — not an edit, not a revision pass — until you unlock it"
-                    onClick={() => { void flushFile(selMenu.file).then(() => lockHere(selMenu.scene, pi, para)) }}>
-                    Lock paragraph
-                  </button>}
+              {unlocked.length > 0 && (
+                <button title="Settled prose: nothing may rewrite this — not an edit, not a revision pass — until you unlock it"
+                  onClick={() => { void flushFile(selMenu.file).then(() => lockHere(selMenu.scene, unlocked)) }}>
+                  Lock{locked.length ? ` the other ${unlocked.length}` : many}
+                </button>
+              )}
+              {locked.length > 0 && (
+                <button onClick={() => void unlockHere(locked.map(t => t.lockId!))}>
+                  Unlock{unlocked.length ? ` the ${locked.length} locked` : many}
+                </button>
+              )}
             </>
           })()}
           <button onClick={() => void askSuggest('rephrase')}>Rephrase…</button>
@@ -1793,24 +1849,41 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       )}
       {/* The lock menu (A29): right-click on rendered prose. Two verbs, one
           paragraph, and the durable anchor is the paragraph's own text. */}
-      {lockMenu && (
+      {lockMenu && (() => {
+        // The menu names what it is about to do to how many, because a
+        // selection is easy to misjudge and a lock is a refusal the author
+        // will meet later as a 423.
+        const unlocked = lockMenu.targets.filter(t => !t.lockId)
+        const locked = lockMenu.targets.filter(t => t.lockId)
+        const n = lockMenu.targets.length
+        const many = n > 1 ? ` ${n} paragraphs` : ' paragraph'
+        // A key point marks one passage; with a run selected, the first is
+        // the one the statement is about.
+        const first = lockMenu.targets[0]
+        return (
         <div className="sel-menu" style={{ left: lockMenu.x, top: lockMenu.y }}>
           <button title="A structural marker on the margin timeline: what this passage must get across"
             onClick={() => {
-              setKpDraft({ scene: lockMenu.scene, paragraph: lockMenu.paragraph, quote: lockMenu.para,
+              setKpDraft({ scene: lockMenu.scene, paragraph: first.paragraph, quote: first.para,
                 x: lockMenu.x, y: lockMenu.y, text: '' })
               setLockMenu(null)
             }}>
             Mark key point
           </button>
-          {lockMenu.lockId
-            ? <button onClick={() => void unlockHere(lockMenu.lockId!)}>Unlock paragraph</button>
-            : <button title="Settled prose: nothing may rewrite this paragraph — not an edit, not a revision pass — until you unlock it"
-                onClick={() => void lockHere(lockMenu.scene, lockMenu.paragraph, lockMenu.para)}>
-                Lock paragraph
-              </button>}
+          {unlocked.length > 0 && (
+            <button title="Settled prose: nothing may rewrite this — not an edit, not a revision pass — until you unlock it"
+              onClick={() => void lockHere(lockMenu.scene, unlocked)}>
+              Lock{locked.length ? ` the other ${unlocked.length}` : many}
+            </button>
+          )}
+          {locked.length > 0 && (
+            <button onClick={() => void unlockHere(locked.map(t => t.lockId!))}>
+              Unlock{unlocked.length ? ` the ${locked.length} locked` : many}
+            </button>
+          )}
         </div>
-      )}
+        )
+      })()}
 
       {/* The statement a new key point will carry — written at the click
           point, landed with Enter, abandoned with Escape or a click away. */}
