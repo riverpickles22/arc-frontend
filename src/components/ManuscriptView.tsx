@@ -1537,16 +1537,24 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   <span className="db-err">not saved — {editStatus[s.file]?.message}</span>
                 )}
                 {s.pov && <a className="linklike" onClick={() => onOpenWorld(s.pov!)}>POV {s.pov}</a>}
+                {/* Separators are written here rather than drawn in CSS so
+                    they sit BETWEEN the controls instead of inside one: a
+                    rule painted on a button's edge grows that button's click
+                    target into the gap beside it. aria-hidden because a
+                    screen reader should hear four actions, not three pipes. */}
                 <span className="scene-acts">
                   <CopyRef text={s.scene} />
+                  <span className="sep" aria-hidden="true">|</span>
                   <CopyProse get={() => sceneText(s)} label="copy text"
                     title="Copy this scene's prose" disabled={!s.body.trim()} />
-                  {s.body.trim() && (
+                  {s.body.trim() && (<>
+                    <span className="sep" aria-hidden="true">|</span>
                     <a className="linklike" onClick={() => readFrom(s.scene)}
                       title="Read the book from this scene — no notes, no chrome, nothing to click">
                       read from here
                     </a>
-                  )}
+                  </>)}
+                  <span className="sep" aria-hidden="true">|</span>
                   {/* A note about the section rather than a sentence in it —
                       the shape needed when what you noticed is something the
                       scene does NOT say, which has no passage to select. */}

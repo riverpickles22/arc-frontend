@@ -408,25 +408,22 @@ svg text { font-family: inherit; }
 .scene-head .rests { color: var(--muted); flex-basis: 100%; }
 .scene-head .rests .wikilink { color: var(--c1); cursor: pointer; margin-left: 6px; }
 
-/* The actions: one weight, one colour, pushed to the end of the first line.
-   Hidden by opacity rather than display, so the row never reflows as the
-   pointer crosses it — a header that jumps is worse than a busy one. */
+/* The actions: always present, pushed to the end of the first line, and set
+   in one muted weight so they sit behind the id and the prose in the reading
+   order of the eye. Quiet is what stops them competing — not hiding them,
+   which only moves the cost to the moment you need one. */
 .scene-acts {
-  display: inline-flex; align-items: baseline; gap: 10px; margin-left: auto;
-  opacity: 0; transition: opacity .12s ease;
+  display: inline-flex; align-items: baseline; gap: 8px; margin-left: auto;
 }
-.scene:hover .scene-acts,
-.scene-acts:focus-within { opacity: 1; }
-/* Touch and reduced-motion users get them permanently: there is no hover to
-   wait for, and a control that never appears is a control that is gone. */
-@media (hover: none) { .scene-acts { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .scene-acts { transition: none; } }
 .scene-acts .linklike, .scene-acts .copyref { color: var(--muted); }
 .scene-acts .linklike:hover, .scene-acts .copyref:hover { color: var(--text-primary); }
-/* No outline on these: inside a group that is itself revealed, a border per
-   control reads as four boxes rather than four choices. */
+/* No outline per control: four bordered boxes in a row read as four objects,
+   where the separators already say these are four choices in one group. */
 .scene-acts .copyref { border-color: transparent; }
 .scene-acts .copyref:hover { border-color: var(--border); }
+/* The separator is a mark, not a control: dimmer than the actions it divides,
+   and never a click target. */
+.scene-acts .sep { color: var(--border); user-select: none; pointer-events: none; }
 
 /* State reads as a word, not a badge. The outline was doing the work of
    separating it from actions that are no longer beside it. Doubled selector
