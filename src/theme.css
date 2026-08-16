@@ -397,11 +397,46 @@ svg text { font-family: inherit; }
   background: var(--panel); border-radius: 0 8px 8px 0; color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
 .ms-outline .olabel { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 4px; }
 .scene { margin-bottom: 30px; }
+/* What the scene IS, at rest; what you can do to it, on approach. The row
+   carried four kinds of thing at one weight — identity, state, actions,
+   bindings — in four colours, so nothing led and all of it competed with the
+   prose two lines below. Now the id carries the only accent, state is quiet
+   text, and the actions are not drawn until wanted. */
 .scene-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 12.5px;
   color: var(--text-secondary); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 12px; }
 .scene-head code { font-size: 12px; color: var(--c1); }
-.scene-head .rests { color: var(--muted); }
+.scene-head .rests { color: var(--muted); flex-basis: 100%; }
 .scene-head .rests .wikilink { color: var(--c1); cursor: pointer; margin-left: 6px; }
+
+/* The actions: one weight, one colour, pushed to the end of the first line.
+   Hidden by opacity rather than display, so the row never reflows as the
+   pointer crosses it — a header that jumps is worse than a busy one. */
+.scene-acts {
+  display: inline-flex; align-items: baseline; gap: 10px; margin-left: auto;
+  opacity: 0; transition: opacity .12s ease;
+}
+.scene:hover .scene-acts,
+.scene-acts:focus-within { opacity: 1; }
+/* Touch and reduced-motion users get them permanently: there is no hover to
+   wait for, and a control that never appears is a control that is gone. */
+@media (hover: none) { .scene-acts { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .scene-acts { transition: none; } }
+.scene-acts .linklike, .scene-acts .copyref { color: var(--muted); }
+.scene-acts .linklike:hover, .scene-acts .copyref:hover { color: var(--text-primary); }
+/* No outline on these: inside a group that is itself revealed, a border per
+   control reads as four boxes rather than four choices. */
+.scene-acts .copyref { border-color: transparent; }
+.scene-acts .copyref:hover { border-color: var(--border); }
+
+/* State reads as a word, not a badge. The outline was doing the work of
+   separating it from actions that are no longer beside it. Doubled selector
+   to outrank `.stpill.proposed` and friends, which set their own border and
+   are declared later — this is a deliberate override of the shared pill, not
+   a new pill, so it must win without editing what other surfaces rely on. */
+.scene-head .stpill.stpill {
+  border: 0; padding: 0; font-weight: 500;
+  font-size: 11px; text-transform: lowercase; letter-spacing: .02em;
+}
 .stpill { font-size: 10.5px; font-weight: 600; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border); }
 .stpill.proposed { color: var(--c4); border-color: var(--c4); }
 .stpill.canon { color: var(--c8); border-color: var(--c8); }

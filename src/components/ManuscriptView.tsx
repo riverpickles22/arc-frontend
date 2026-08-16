@@ -1521,25 +1521,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           const notYetInBook = view === 'before' && change?.status === 'added'
           return (
             <section key={s.scene} className="scene" data-scene={s.scene}>
+              {/* The header states what the scene IS — its id, its state, what
+                  it rests on. What you can DO to it arrives on hover, because
+                  four actions at the same weight as the facts made a row that
+                  competed with the prose underneath it. Focus reveals them
+                  too, so the keyboard never loses what the pointer gains. */}
               {mode !== 'read' && <div className="scene-head">
                 <code>{s.scene}</code>
-                <CopyRef text={s.scene} />
-                <CopyProse get={() => sceneText(s)} label="copy text"
-                  title="Copy this scene's prose" disabled={!s.body.trim()} />
-                {s.body.trim() && (
-                  <a className="linklike" onClick={() => readFrom(s.scene)}
-                    title="Read the book from this scene — no notes, no chrome, nothing to click">
-                    read from here
-                  </a>
-                )}
-                {/* A note about the section rather than a sentence in it. It
-                    lives up here because it is a statement about the scene,
-                    and because the thing it is most often for — something the
-                    scene does NOT say — has no passage to select. */}
-                <a className="linklike" onClick={() => noteOnScene(s.scene)}
-                  title="Leave a note about this whole scene — including what it does not say yet">
-                  note on this scene
-                </a>
                 <span className={`stpill ${s.status}`}>{s.status}</span>
                 {change && <span className={`stpill ${change.status}`}>draft · {change.status}</span>}
                 {mode === 'edit' && view === 'proposed' && editStatus[s.file]?.state === 'saving' && (
@@ -1549,6 +1537,24 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   <span className="db-err">not saved — {editStatus[s.file]?.message}</span>
                 )}
                 {s.pov && <a className="linklike" onClick={() => onOpenWorld(s.pov!)}>POV {s.pov}</a>}
+                <span className="scene-acts">
+                  <CopyRef text={s.scene} />
+                  <CopyProse get={() => sceneText(s)} label="copy text"
+                    title="Copy this scene's prose" disabled={!s.body.trim()} />
+                  {s.body.trim() && (
+                    <a className="linklike" onClick={() => readFrom(s.scene)}
+                      title="Read the book from this scene — no notes, no chrome, nothing to click">
+                      read from here
+                    </a>
+                  )}
+                  {/* A note about the section rather than a sentence in it —
+                      the shape needed when what you noticed is something the
+                      scene does NOT say, which has no passage to select. */}
+                  <a className="linklike" onClick={() => noteOnScene(s.scene)}
+                    title="Leave a note about this whole scene — including what it does not say yet">
+                    note on this scene
+                  </a>
+                </span>
                 <span className="rests">rests on{' '}
                   {[...s.facts, ...s.events].map(id => (
                     <a key={id} className="wikilink" onClick={() => onOpenWorld(id)}>{id}</a>
