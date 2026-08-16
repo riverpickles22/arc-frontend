@@ -40,6 +40,11 @@
   --map-urban: light-dark(rgba(140, 105, 65, 0.16), rgba(210, 180, 130, 0.09));
   --map-road: light-dark(#ab9d84, #6e6555);
 
+  /* The padlock that marks settled prose, drawn once here as a mask so it
+     takes whichever ink the paragraph rule points at. Closed shackle, solid
+     body: legible at 10px, which is the only size it is ever used at. */
+  --lock-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 14'%3E%3Cpath d='M3.4 6.2V4.3a2.6 2.6 0 0 1 5.2 0v1.9' fill='none' stroke='black' stroke-width='1.4'/%3E%3Crect x='1.1' y='6.2' width='9.8' height='7' rx='1.5' fill='black'/%3E%3C/svg%3E");
+
   /* Two faces, named once. The interface is set in the UI face; the book is
      set in the reading face. They are variables rather than repeated stacks
      because a measure given in `ch` is only meaningful against the exact face
@@ -623,6 +628,14 @@ svg text { font-family: inherit; }
 .note-orphaned .note-state, .note-no-scene .note-state { color: var(--c8); }
 .note-quote { margin: 6px 0; padding-left: 9px; border-left: 2px solid var(--baseline); color: var(--text-secondary); font-size: 12.5px; font-style: italic; }
 
+/* A note about the whole scene stands where a quote would, and must not read
+   as quoted prose: upright rather than italic, and no left rule, because
+   there is no passage to rule off. */
+.note-scope {
+  margin: 6px 0; color: var(--muted);
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+}
+
 /* One note at a time. The active card comes forward; the rest recede but stay
    readable — a dimmed note the author cannot scan is a note they have lost,
    so this is opacity and contrast, never display:none. */
@@ -859,15 +872,26 @@ p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
   background: transparent; color: var(--text-primary);
 }
 
-/* Locked prose (A29): settled, marked without shouting — a thin rule and a
-   small padlock in the margin, in the palette's neutral, never an alert. */
-p.para-locked {
-  border-left: 2px solid color-mix(in oklab, var(--text-secondary) 45%, transparent);
-  padding-left: 10px; position: relative;
-}
+/* Locked prose (A29): settled, marked without shouting. The whole statement
+   sits out in the gutter — a small drawn padlock, the palette's neutral, no
+   rule and no indent, so the text column reads identically whether or not a
+   paragraph is locked. Drawn as a mask rather than the emoji so it takes the
+   theme's ink and stays one weight across platforms. Quiet at rest; it comes
+   up to full strength when the pointer is on the paragraph, which is the
+   moment the author wants the state confirmed. */
+p.para-locked { position: relative; }
 p.para-locked::before {
-  content: '🔒'; position: absolute; left: -20px; top: 2px; font-size: 9px; opacity: .55;
+  content: ''; position: absolute; left: -22px; top: .5em;
+  width: 10px; height: 12px; opacity: .4;
+  background: var(--text-secondary);
+  -webkit-mask: var(--lock-glyph) center / contain no-repeat;
+  mask: var(--lock-glyph) center / contain no-repeat;
+  transition: opacity .12s ease;
 }
+p.para-locked:hover::before { opacity: .85; }
+/* A note pulls its paragraph 12px left for its own accent rule; give that
+   back here so the padlock keeps one column down the whole gutter. */
+.mdbody.prose p.has-note.para-locked::before { left: -12px; }
 .prop-origin {
   display: inline-block; font-size: 10.5px; letter-spacing: .04em; color: var(--c1);
   border: 1px solid color-mix(in oklab, var(--c1) 40%, transparent); border-radius: 20px;

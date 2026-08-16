@@ -332,11 +332,14 @@ function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, top
             <code>{n.id.replace('note.', '#')}</code>
             {STATE_LABEL[n.resolution.state] && <span className="note-state">{STATE_LABEL[n.resolution.state]}</span>}
           </div>
-          {n.anchor.quote && (
-            <blockquote className="note-quote">
-              {n.anchor.quote}
-            </blockquote>
-          )}
+          {n.anchor.quote
+            ? <blockquote className="note-quote">{n.anchor.quote}</blockquote>
+            /* No quote and no paragraph: the note is about the section, and
+               says so instead of showing an empty rule where a passage
+               would be. */
+            : n.anchor.paragraph == null
+              ? <div className="note-scope">about all of {n.anchor.scene}</div>
+              : null}
           {n.resolution.note && <div className="note-why">{n.resolution.note}</div>}
           {editing?.id === n.id ? (
             <>
@@ -429,7 +432,10 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // `yHint`: where the composer should sit when there is no [data-para]
   // element to measure against — Edit mode renders a textarea, not
   // paragraphs, so a note born there brings its own y (the click point).
-  const [sel, setSel] = useState<{ scene: string; paragraph: number; quote: string; yHint?: number } | null>(null)
+  // No paragraph means the composer is writing about the whole scene (§14) —
+  // the shape a note about something ABSENT has to take, since an absence
+  // cannot be selected.
+  const [sel, setSel] = useState<{ scene: string; paragraph?: number; quote?: string; yHint?: number } | null>(null)
   const [noteText, setNoteText] = useState('')
   const [noteBusy, setNoteBusy] = useState(false)
   const [focused, setFocused] = useState<string | null>(null)
@@ -1093,7 +1099,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       // Exactly the cards the rail renders, in render order: the composer
       // first when open, then the notes it shows.
       const keys = [
-        ...(sel ? [`${sel.scene}:${sel.paragraph}`] : []),
+        // A scene composer measures against no paragraph, so it takes the top
+        // of the column — where the note it is about to make will also sit.
+        ...(sel ? [sel.paragraph == null ? null : `${sel.scene}:${sel.paragraph}`] : []),
         ...openNotes.map(x => (x.resolution.paragraph === null ? null : `${x.anchor.scene}:${x.resolution.paragraph}`)),
       ]
       const desired = keys.map(lineOf)
@@ -1230,6 +1238,15 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     setNoteText('')
     setActive('composer')
   }
+  /** A note about the whole scene: no selection, so no paragraph and no
+   *  quote. The gesture carries the scope — the author is never asked to
+   *  choose one. */
+  const noteOnScene = (scene: string) => {
+    setSel({ scene })
+    setNoteText('')
+    setActive('composer')
+  }
+
   const saveNote = async () => {
     if (!sel || !noteText.trim()) return
     setNoteBusy(true)
@@ -1515,6 +1532,14 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                     read from here
                   </a>
                 )}
+                {/* A note about the section rather than a sentence in it. It
+                    lives up here because it is a statement about the scene,
+                    and because the thing it is most often for — something the
+                    scene does NOT say — has no passage to select. */}
+                <a className="linklike" onClick={() => noteOnScene(s.scene)}
+                  title="Leave a note about this whole scene — including what it does not say yet">
+                  note on this scene
+                </a>
                 <span className={`stpill ${s.status}`}>{s.status}</span>
                 {change && <span className={`stpill ${change.status}`}>draft · {change.status}</span>}
                 {mode === 'edit' && view === 'proposed' && editStatus[s.file]?.state === 'saving' && (
@@ -1678,9 +1703,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         }}
         composer={sel && (
           <div className="note-composer">
-            <blockquote className="note-quote">{sel.quote}</blockquote>
+            {sel.quote
+              ? <blockquote className="note-quote">{sel.quote}</blockquote>
+              : <div className="note-scope">about all of {sel.scene}</div>}
             <textarea ref={composerRef} value={noteText} rows={4}
-              placeholder="What did you notice? Write it as you would say it — arc works out the scope."
+              placeholder={sel.quote
+                ? 'What did you notice? Write it as you would say it — arc works out the scope.'
+                : 'What about this scene? Including what it does not say yet.'}
               onChange={ev => setNoteText(ev.target.value)}
               onKeyDown={ev => {
                 if (ev.key === 'Escape') { setSel(null); setActive(null) }

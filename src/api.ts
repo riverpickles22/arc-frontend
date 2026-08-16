@@ -60,7 +60,8 @@ export const loadMaterial = (signal?: AbortSignal): Promise<MaterialItem[]> =>
 export const loadAnnotations = (signal?: AbortSignal): Promise<ResolvedAnnotation[]> =>
   getJson<AnnotationsResponse>('/api/annotations', { signal }).then(r => r.annotations)
 
-export const createNote = (n: { scene: string; paragraph: number; quote: string; body: string; kind?: 'note' | 'keypoint'; by?: 'author' | 'agent' }): Promise<ResolvedAnnotation> =>
+/** Omit paragraph and quote for a note about the whole scene (§14). */
+export const createNote = (n: { scene: string; paragraph?: number; quote?: string; body: string; kind?: 'note' | 'keypoint'; by?: 'author' | 'agent' }): Promise<ResolvedAnnotation> =>
   post('/api/annotations', n)
 
 /** Keypoints only — the server refuses to delete a note. */
