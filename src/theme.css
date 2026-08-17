@@ -682,6 +682,31 @@ svg text { font-family: inherit; }
 .note-body { font-size: 13.5px; line-height: 1.5; }
 /* Revising in place: the card becomes the editor, at the size the composer
    uses, so the thought is edited where it lives rather than in a dialog. */
+/* Settled prose, in the editor. The textarea has no regions to mark, so the
+   padlocks live in a gutter measured alongside it — same glyph and same
+   neutral as the reading view, so a lock looks like a lock wherever you meet
+   it. Inert: the mark reports, the right-click that changes a lock is on the
+   prose itself. */
+.scene-edit { position: relative; }
+.lock-gutter { position: absolute; inset: 0 auto 0 -22px; width: 22px; pointer-events: none; }
+.lock-mark {
+  position: absolute; left: 0; width: 10px; height: 12px; opacity: .45;
+  background: var(--text-secondary);
+  -webkit-mask: var(--lock-glyph) center / contain no-repeat;
+  mask: var(--lock-glyph) center / contain no-repeat;
+  pointer-events: auto;
+}
+
+/* Why a keystroke did not happen. It sits with the editor rather than in a
+   corner, and leaves on its own — a refusal the author caused by typing into
+   prose they settled is a reminder, not an error to dismiss. */
+.locked-note {
+  position: sticky; bottom: 8px; z-index: 3; align-self: flex-start;
+  margin: 6px 0 0; padding: 4px 10px; border-radius: 6px;
+  font-size: 12px; color: var(--text-primary);
+  background: var(--surface-1); border: 1px solid color-mix(in oklab, var(--c4) 45%, var(--border));
+}
+
 /* Judge one change where you see it. Held quiet until the paragraph is
    hovered — a column of buttons down the page would read as chrome, and the
    author is here to read the prose, not the affordances.

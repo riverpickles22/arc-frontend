@@ -142,6 +142,68 @@ function DiffBody({ d, paraKey, onAccept, onReject, busy }: {
 const paragraphsOf = (body: string): string[] =>
   body.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
 
+/** Locks, in the editor: what is settled, and the refusal to unsettle it.
+ *
+ *  Both halves live here because both need the same two facts — which
+ *  paragraphs are locked, and where they are in a box that has no DOM inside
+ *  it. The padlocks are measured with the mirror that lands note cards on
+ *  their editor lines, re-measured whenever the text changes because every
+ *  paragraph below an edit moves.
+ *
+ *  The refusal is a NATIVE beforeinput listener rather than React's
+ *  onBeforeInput: React synthesises that one, and it does not fire for the
+ *  deletes and pastes that matter most here. The native event is cancelable
+ *  and fires for every way text can enter a field.
+ *
+ *  This is the editor agreeing with the server in advance. The lock is still
+ *  the write path's 423 (A29-2); nothing here is the enforcement. */
+function EditorLocks({ scene, body, lockedAt, onRefused }: {
+  scene: string
+  body: string
+  lockedAt: Map<string, ResolvedLock>
+  onRefused: (message: string) => void
+}) {
+  const [tops, setTops] = useState<number[]>([])
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const ta = ref.current?.parentElement?.querySelector('textarea')
+    if (!ta) return
+    const measure = () => setTops(paragraphTopsIn(ta))
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(ta)
+
+    const guard = (ev: InputEvent) => {
+      const type = ev.inputType ?? ''
+      let from = ta.selectionStart ?? 0
+      let to = ta.selectionEnd ?? from
+      // The deletes that never put the caret in the locked paragraph at all:
+      // backspace at its head and forward-delete at the tail of the paragraph
+      // above both remove the blank line between them and merge settled prose
+      // into unsettled. Reach one character in the direction of travel.
+      if (from === to) {
+        if (type.startsWith('deleteContentBackward') || type.startsWith('deleteWordBackward')) from = Math.max(0, from - 1)
+        if (type.startsWith('deleteContentForward') || type.startsWith('deleteWordForward')) to = Math.min(ta.value.length, to + 1)
+      }
+      const hit = paragraphRange(ta.value, from, to).find(i => lockedAt.has(`${scene}:${i}`))
+      if (hit === undefined) return
+      ev.preventDefault()
+      onRefused(`Paragraph ${hit + 1} is locked — unlock it in Notes to edit, or work around it.`)
+    }
+    ta.addEventListener('beforeinput', guard)
+    return () => { ro.disconnect(); ta.removeEventListener('beforeinput', guard) }
+  }, [body, scene, lockedAt, onRefused])
+
+  return (
+    <div className="lock-gutter" ref={ref} aria-hidden>
+      {tops.map((top, i) => (lockedAt.has(`${scene}:${i}`)
+        ? <span key={i} className="lock-mark" style={{ top }}
+            title={`Settled — paragraph ${i + 1} is locked. Right-click it in Notes to unlock.`} />
+        : null))}
+    </div>
+  )
+}
+
 /** Where every paragraph sits, vertically, inside an editor.
  *
  *  A textarea has no DOM inside it — you cannot ask it where its fourth
@@ -830,6 +892,15 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       window.removeEventListener('scroll', scroll, true)
     }
   }, [lockMenu])
+
+  /** Why the last keystroke did not happen. Cleared on the next successful
+   *  one — a refusal explains itself in passing, it does not accumulate. */
+  const [lockedNote, setLockedNote] = useState<string | null>(null)
+  useEffect(() => {
+    if (!lockedNote) return
+    const t = setTimeout(() => setLockedNote(null), 2600)
+    return () => clearTimeout(t)
+  }, [lockedNote])
 
   /** Dot right-click (A30): the one verb a dot has. */
   const [kpMenu, setKpMenu] = useState<{ id: string; x: number; y: number } | null>(null)
@@ -1675,6 +1746,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                     <textarea value={overrides[s.file] ?? s.body} spellCheck ref={autosize}
                       onChange={ev => onEditChange(s.file, ev.target.value, s.body, ev.target)}
                       onContextMenu={ev => onEditorContextMenu(ev, s)} />
+                    {/* What is settled, shown where it sits. A textarea has no
+                        regions to mark, so the padlocks are measured onto the
+                        gutter beside it — the same measurement that puts note
+                        cards level with their editor lines. */}
+                    <EditorLocks scene={s.scene} body={overrides[s.file] ?? s.body}
+                      lockedAt={lockedAt} onRefused={setLockedNote} />
+                    {lockedNote && <p className="locked-note">{lockedNote}</p>}
                   </div>
                 )
                 : notYetInBook
