@@ -88,6 +88,12 @@ export const updateNote = (id: string, patch: { status?: string; body?: string }
 export const acceptParagraph = (file: string, paragraph: number): Promise<{ hash: string; file: string }> =>
   post('/api/prose/accept-paragraph', { file, paragraph })
 
+/** Refuse one paragraph: main's words go back into the working tree and
+ *  every other pending change stays pending. Commits nothing — a refused
+ *  change is one the draft simply stops carrying. */
+export const rejectParagraph = (file: string, paragraph: number): Promise<{ file: string }> =>
+  post('/api/prose/reject-paragraph', { file, paragraph })
+
 /** Write a scene's body into the working tree — the draft layer. `baseline`
  *  is the body the edit started from; the server refuses if the file moved
  *  underneath, which is how a clobber is told apart from an edit. */

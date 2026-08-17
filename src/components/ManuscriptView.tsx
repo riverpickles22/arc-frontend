@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import type { AnalyzeResponse, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
 import { dateOf } from '../canon'
 import { dotsFor } from '../keypoints'
-import { acceptDraft, acceptParagraph, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadLocks, suggestText, updateNote, writeScene } from '../api'
+import { acceptDraft, acceptParagraph, rejectParagraph, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadLocks, suggestText, updateNote, writeScene } from '../api'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
@@ -60,12 +60,15 @@ function ContractPanel({ c, onOpenWorld }: { c: SceneContract; onOpenWorld: (id:
  *  its line whether or not the author is looking at changes. Indices come
  *  from the scene's own paragraphs, matched by text, because a diff's
  *  sequence includes deletions the body no longer has. */
-function DiffBody({ d, paraKey, onAccept, busy }: {
+function DiffBody({ d, paraKey, onAccept, onReject, busy }: {
   d: ParaDiff[]
   paraKey?: (text: string) => string | undefined
   /** Accept just this paragraph. The whole-draft button at the top takes
    *  every change as one judgment; a chapter with four edits is four. */
   onAccept?: (paragraphIndex: number) => void
+  /** And refuse just this one. The same size of decision as accepting it —
+   *  the alternative was Discard, which throws away the whole scene. */
+  onReject?: (paragraphIndex: number) => void
   busy?: boolean
 }) {
   const keyOf = (p: ParaDiff): string | undefined => {
@@ -92,12 +95,23 @@ function DiffBody({ d, paraKey, onAccept, busy }: {
   return (
     <div className="mdbody prose" onCopy={onCopy}>
       {d.map((p, i) => {
+        // Both verbs or neither: an author offered only "accept" reads the
+        // absence as "the other option is Discard the lot".
         const takeIt = (kp?: string) => {
           const ix = kp ? Number(kp.slice(kp.lastIndexOf(':') + 1)) : NaN
-          return onAccept && Number.isInteger(ix)
-            ? <button className="para-accept" disabled={busy} title="Accept this change into the book"
-                onClick={() => onAccept(ix)}>accept</button>
-            : null
+          if (!Number.isInteger(ix)) return null
+          return (
+            <span className="para-verdict">
+              {onAccept && (
+                <button className="para-accept" disabled={busy} title="Accept this change into the book"
+                  onClick={() => onAccept(ix)}>accept</button>
+              )}
+              {onReject && (
+                <button className="para-reject" disabled={busy} title="Put the earlier words back, leaving every other pending change alone"
+                  onClick={() => onReject(ix)}>reject</button>
+              )}
+            </span>
+          )
         }
         if (p.kind === 'changed') {
           const kp = keyOf(p)
@@ -1677,7 +1691,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 )
                 : diffed
                 ? <DiffBody d={diffed} paraKey={paraKeyFor(s)} busy={busy}
-                    onAccept={ix => run(() => acceptParagraph(s.file, ix))} />
+                    onAccept={ix => run(() => acceptParagraph(s.file, ix))}
+                    onReject={ix => run(() => rejectParagraph(s.file, ix))} />
                 : <div className="mdbody prose" onClick={bodyClick} onMouseUp={() => captureSelection(s)}>
                   {paragraphsOf(s.body).map((p, pi) => {
                     const anchored = notes.some(n =>

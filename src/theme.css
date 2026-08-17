@@ -682,19 +682,27 @@ svg text { font-family: inherit; }
 .note-body { font-size: 13.5px; line-height: 1.5; }
 /* Revising in place: the card becomes the editor, at the size the composer
    uses, so the thought is edited where it lives rather than in a dialog. */
-/* Accept one change where you see it. Held quiet until the paragraph is
+/* Judge one change where you see it. Held quiet until the paragraph is
    hovered — a column of buttons down the page would read as chrome, and the
-   author is here to read the prose, not the affordances. */
+   author is here to read the prose, not the affordances.
+
+   Accept and reject are deliberately the same object in two colours: they are
+   the same size of decision, and both are reversible (an accept is a commit
+   git still holds; a reject puts back words main still has). Styling refusal
+   as a danger would say otherwise. */
 .mdbody.prose p.para-changed { position: relative; }
-.para-accept {
+.para-verdict { display: inline-flex; gap: 4px; margin-left: 8px; vertical-align: middle; }
+.para-accept, .para-reject {
   font: inherit; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
   color: var(--text-secondary); background: var(--surface-1);
   border: 1px solid var(--border); border-radius: 5px; padding: 1px 7px;
-  margin-left: 8px; cursor: pointer; vertical-align: middle;
+  cursor: pointer;
   opacity: 0; transition: opacity .12s ease;
 }
-p.para-changed:hover .para-accept, .para-accept:focus-visible { opacity: 1; }
+p.para-changed:hover .para-accept, .para-accept:focus-visible,
+p.para-changed:hover .para-reject, .para-reject:focus-visible { opacity: 1; }
 .para-accept:hover { color: var(--text-primary); border-color: color-mix(in oklab, var(--c1) 50%, var(--border)); }
+.para-reject:hover { color: var(--text-primary); border-color: color-mix(in oklab, var(--c6) 50%, var(--border)); }
 
 /* Writing in the manuscript. A textarea over the raw markdown, set in the
    reading face at the reading measure, so the page does not lurch when the
