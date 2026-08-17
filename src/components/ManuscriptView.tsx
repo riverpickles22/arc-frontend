@@ -1019,9 +1019,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   /** Right-click on selected editor text: our menu. With nothing selected the
    *  browser's own menu stands — spell-check and paste live there, and a
    *  custom menu that eats them makes the editor worse at being an editor. */
+  /** The editor's own menu. It opens with nothing selected too: most of what
+   *  it offers is about the paragraph the caret is in — a note, a key point, a
+   *  lock — and none of that needs a selection. The items that DO need one say
+   *  so rather than vanishing, so the menu keeps its shape between clicks. */
   const onEditorContextMenu = (ev: React.MouseEvent<HTMLTextAreaElement>, s: ProseScene) => {
     const el = ev.currentTarget
-    if (el.selectionStart === el.selectionEnd) return   // native menu
     ev.preventDefault()
     const body = overrides[s.file] ?? s.body
     setSuggest(null)
@@ -1927,6 +1930,20 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
       {selMenu && (
         <div className="sel-menu" style={{ left: selMenu.x, top: selMenu.y }}>
+          {/* Copy is the one verb that is only ever about the selection, so it
+              is the one item that is absent rather than unavailable without
+              one — an empty clipboard is not a thing to offer. The raw slice,
+              not the trimmed quote: copy gives back exactly what was
+              highlighted. */}
+          {selMenu.end > selMenu.start && (
+            <button title="Copy the selected text"
+              onClick={() => {
+                void navigator.clipboard.writeText(selMenu.body.slice(selMenu.start, selMenu.end))
+                setSelMenu(null)
+              }}>
+              Copy
+            </button>
+          )}
           <button onClick={noteFromMenu}>Add note</button>
           {(() => {
             /* Lock/Unlock from the editor's own menu (A29): every paragraph
@@ -1964,16 +1981,25 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               )}
             </>
           })()}
-          <button onClick={() => void askSuggest('rephrase')}>Rephrase…</button>
-          {/* Synonyms answers with drop-in replacements — same part of speech,
-              same case — which only means anything for one word. Unavailable
-              rather than hidden, so a menu that changes shape between
-              selections still accounts for itself.
+          {/* Rephrase and Synonyms both rewrite a passage the author pointed
+              at, so with nothing selected there is nothing to rewrite. They
+              stay in place and say why rather than disappearing: a menu whose
+              items come and go teaches the author to hunt for them.
 
               aria-disabled, NOT disabled: a disabled button takes no pointer
               events at all in Chrome, so its title never fires — the reason
               would be written down somewhere the mouse can never reach it.
               Hence the reason inline, where it needs no hover to be read. */}
+          {selMenu.quote ? (
+            <button onClick={() => void askSuggest('rephrase')}>Rephrase…</button>
+          ) : (
+            <button className="off" aria-disabled="true" onClick={ev => ev.preventDefault()}>
+              Rephrase…
+              <span className="mi-why">select the passage you want rewritten</span>
+            </button>
+          )}
+          {/* Synonyms answers with drop-in replacements — same part of speech,
+              same case — which only means anything for one word. */}
           {isSingleWord(selMenu.quote) ? (
             <button onClick={() => void askSuggest('synonyms')}
               title="Alternatives for this word, with a note on what each one carries">
@@ -1982,7 +2008,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           ) : (
             <button className="off" aria-disabled="true" onClick={ev => ev.preventDefault()}>
               Synonyms…
-              <span className="mi-why">one word at a time — use Rephrase for a passage</span>
+              <span className="mi-why">
+                {selMenu.quote ? 'one word at a time — use Rephrase for a passage' : 'select a word'}
+              </span>
             </button>
           )}
         </div>
