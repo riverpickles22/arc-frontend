@@ -195,34 +195,43 @@ function EditorLocks({ scene, body, lockedAt, onRefused }: {
     const guard = (ev: InputEvent) => {
       const type = ev.inputType ?? ''
       const value = ta.value
-      let from = ta.selectionStart ?? 0
-      let to = ta.selectionEnd ?? from
+      const from = ta.selectionStart ?? 0
+      const to = ta.selectionEnd ?? from
 
+      // What is settled is the TEXT of a locked paragraph, and its standing as
+      // a paragraph of its own. Everything else around it — the blank lines
+      // after it, how many there are — is not settled and the author may tidy
+      // it. So the question is never "does this edit come near a lock" but
+      // "would this edit change what a lock protects".
+      const locked = paragraphsOf(value).filter((_, i) => lockedAt.has(`${scene}:${i}`))
+      if (!locked.length) return
+
+      // A delete is fully predictable, so ask the real question: apply it and
+      // see whether every locked paragraph is still there, intact and still
+      // standing alone. Trimming a spare blank line survives that test;
+      // merging the next paragraph up into settled prose does not, because the
+      // locked text stops existing as a paragraph.
       if (type.startsWith('delete')) {
-        // A collapsed caret deletes the character beside it, so the span the
-        // author is about to remove is one wider than the selection.
-        if (from === to) {
-          if (type.includes('Backward')) from = Math.max(0, from - 1)
-          else if (type.includes('Forward')) to = Math.min(value.length, to + 1)
+        let dFrom = from
+        let dTo = to
+        if (dFrom === dTo) {
+          if (type.includes('Backward')) dFrom = Math.max(0, dFrom - 1)
+          else if (type.includes('Forward')) dTo = Math.min(value.length, dTo + 1)
+          else return   // a delete with no direction and nothing selected removes nothing
         }
-        // And a delete that eats the blank line between two paragraphs MERGES
-        // them, which rewrites both — even though the caret sat in only one,
-        // and even when the locked paragraph is the one being merged INTO.
-        // Backspacing from the head of an unlocked paragraph up into a locked
-        // one is the case that matters: nothing about the caret's own
-        // paragraph says the settled text is about to grow. So swallow the
-        // whitespace the delete would cross and take the character on each
-        // side of it, which names both paragraphs.
-        let lo = from
-        let hi = to
-        while (lo > 0 && /\s/.test(value[lo - 1])) lo--
-        while (hi < value.length && /\s/.test(value[hi])) hi++
-        if (lo !== from || hi !== to) {
-          from = Math.max(0, lo - 1)
-          to = Math.min(value.length, hi + 1)
-        }
+        const after = paragraphsOf(value.slice(0, dFrom) + value.slice(dTo))
+        const survives = (text: string) =>
+          after.filter(p => p === text).length >= locked.filter(p => p === text).length
+        const lost = locked.find(text => !survives(text))
+        if (lost === undefined) return
+        ev.preventDefault()
+        onRefused(`That would change locked prose — unlock it in Notes first, or leave the blank line between them.`)
+        return
       }
 
+      // Insertions only matter where they land INSIDE settled text. Typing at
+      // the head of the paragraph below a lock is not the lock's business, and
+      // refusing it would be the opposite mistake.
       const hit = paragraphRange(value, from, to).find(i => lockedAt.has(`${scene}:${i}`))
       if (hit === undefined) return
       ev.preventDefault()
