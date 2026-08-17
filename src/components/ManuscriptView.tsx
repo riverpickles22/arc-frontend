@@ -142,6 +142,10 @@ function DiffBody({ d, paraKey, onAccept, onReject, busy }: {
 const paragraphsOf = (body: string): string[] =>
   body.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
 
+/** The padlock's drawn height (theme.css .lock-mark), so the measurement that
+ *  centres it on a line and the CSS that sizes it cannot drift apart. */
+const LOCK_MARK_PX = 12
+
 /** Locks, in the editor: what is settled, and the refusal to unsettle it.
  *
  *  Both halves live here because both need the same two facts — which
@@ -168,24 +172,58 @@ function EditorLocks({ scene, body, lockedAt, onRefused }: {
   useLayoutEffect(() => {
     const ta = ref.current?.parentElement?.querySelector('textarea')
     if (!ta) return
-    const measure = () => setTops(paragraphTopsIn(ta))
+    // paragraphTopsIn measures from where the TEXT begins; the gutter is
+    // positioned against the editor's box. The difference is the textarea's
+    // own border and padding, and leaving it out floats every padlock above
+    // the paragraph it names. Then sit the mark on the first line rather than
+    // on the line's top edge — the reading view's padlock is offset half a
+    // line for the same reason, and being level with its text is the entire
+    // point of drawing it out here.
+    const measure = () => {
+      const cs = getComputedStyle(ta)
+      const inset = ta.offsetTop
+        + parseFloat(cs.borderTopWidth || '0')
+        + parseFloat(cs.paddingTop || '0')
+      const line = parseFloat(cs.lineHeight || '0') || 0
+      const nudge = line > LOCK_MARK_PX ? (line - LOCK_MARK_PX) / 2 : 0
+      setTops(paragraphTopsIn(ta).map(t => t + inset + nudge))
+    }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(ta)
 
     const guard = (ev: InputEvent) => {
       const type = ev.inputType ?? ''
+      const value = ta.value
       let from = ta.selectionStart ?? 0
       let to = ta.selectionEnd ?? from
-      // The deletes that never put the caret in the locked paragraph at all:
-      // backspace at its head and forward-delete at the tail of the paragraph
-      // above both remove the blank line between them and merge settled prose
-      // into unsettled. Reach one character in the direction of travel.
-      if (from === to) {
-        if (type.startsWith('deleteContentBackward') || type.startsWith('deleteWordBackward')) from = Math.max(0, from - 1)
-        if (type.startsWith('deleteContentForward') || type.startsWith('deleteWordForward')) to = Math.min(ta.value.length, to + 1)
+
+      if (type.startsWith('delete')) {
+        // A collapsed caret deletes the character beside it, so the span the
+        // author is about to remove is one wider than the selection.
+        if (from === to) {
+          if (type.includes('Backward')) from = Math.max(0, from - 1)
+          else if (type.includes('Forward')) to = Math.min(value.length, to + 1)
+        }
+        // And a delete that eats the blank line between two paragraphs MERGES
+        // them, which rewrites both — even though the caret sat in only one,
+        // and even when the locked paragraph is the one being merged INTO.
+        // Backspacing from the head of an unlocked paragraph up into a locked
+        // one is the case that matters: nothing about the caret's own
+        // paragraph says the settled text is about to grow. So swallow the
+        // whitespace the delete would cross and take the character on each
+        // side of it, which names both paragraphs.
+        let lo = from
+        let hi = to
+        while (lo > 0 && /\s/.test(value[lo - 1])) lo--
+        while (hi < value.length && /\s/.test(value[hi])) hi++
+        if (lo !== from || hi !== to) {
+          from = Math.max(0, lo - 1)
+          to = Math.min(value.length, hi + 1)
+        }
       }
-      const hit = paragraphRange(ta.value, from, to).find(i => lockedAt.has(`${scene}:${i}`))
+
+      const hit = paragraphRange(value, from, to).find(i => lockedAt.has(`${scene}:${i}`))
       if (hit === undefined) return
       ev.preventDefault()
       onRefused(`Paragraph ${hit + 1} is locked — unlock it in Notes to edit, or work around it.`)
