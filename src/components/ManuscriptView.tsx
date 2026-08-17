@@ -60,9 +60,11 @@ function ContractPanel({ c, onOpenWorld }: { c: SceneContract; onOpenWorld: (id:
  *  its line whether or not the author is looking at changes. Indices come
  *  from the scene's own paragraphs, matched by text, because a diff's
  *  sequence includes deletions the body no longer has. */
-function DiffBody({ d, paraKey, onAccept, onReject, busy }: {
+function DiffBody({ d, paraKey, onAccept, onReject, busy, flash }: {
   d: ParaDiff[]
   paraKey?: (text: string) => string | undefined
+  /** Why judging one paragraph failed, shown at that paragraph. */
+  flash?: { paragraph: number; text: string } | null
   /** Accept just this paragraph. The whole-draft button at the top takes
    *  every change as one judgment; a chapter with four edits is four. */
   onAccept?: (paragraphIndex: number) => void
@@ -110,6 +112,7 @@ function DiffBody({ d, paraKey, onAccept, onReject, busy }: {
                 <button className="para-reject" disabled={busy} title="Put the earlier words back, leaving every other pending change alone"
                   onClick={() => onReject(ix)}>reject</button>
               )}
+              {flash?.paragraph === ix && <span className="para-why">{flash.text}</span>}
             </span>
           )
         }
@@ -539,6 +542,15 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  /** Why judging ONE paragraph failed, and which one. The draft banner's own
+   *  error line sits at the top of the page, which for a control a thousand
+   *  pixels down reads as nothing happening at all. */
+  const [flash, setFlash] = useState<{ paragraph: number; text: string } | null>(null)
+  useEffect(() => {
+    if (!flash) return
+    const timer = setTimeout(() => setFlash(null), 5000)
+    return () => clearTimeout(timer)
+  }, [flash])
   const [armed, setArmed] = useState<string | null>(null)   // discard needs a second click
   const [capture, setCapture] = useState<ChatResponse | null>(null)   // the capture pass's briefing, post-accept
 
@@ -1365,8 +1377,26 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
   const run = async (op: () => Promise<unknown>) => {
     setBusy(true); setErr(null)
-    try { await op(); onRefresh() } catch (e) { setErr((e as Error).message ?? String(e)) } finally { setBusy(false) }
+    try {
+      await op()
+    } catch (e) {
+      setErr((e as Error).message ?? String(e))
+      throw e
+    } finally {
+      // Refresh on failure too. A refused action usually means the browser's
+      // picture of the draft is out of date — the commonest way to meet this
+      // is a change that has already been ratified elsewhere, leaving a diff
+      // on screen whose buttons can only ever fail. Re-reading is what makes
+      // the page honest again.
+      onRefresh()
+      setBusy(false)
+    }
   }
+  const judge = (paragraph: number, op: () => Promise<unknown>) => {
+    setFlash(null)
+    void run(op).catch((e: Error) => setFlash({ paragraph, text: e.message ?? String(e) }))
+  }
+
   const accept = () => run(async () => {
     const res = await acceptDraft(msg || undefined)
     setMsg('')
@@ -1818,9 +1848,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   </div>
                 )
                 : diffed
-                ? <DiffBody d={diffed} paraKey={paraKeyFor(s)} busy={busy}
-                    onAccept={ix => run(() => acceptParagraph(s.file, ix))}
-                    onReject={ix => run(() => rejectParagraph(s.file, ix))} />
+                ? <DiffBody d={diffed} paraKey={paraKeyFor(s)} busy={busy} flash={flash}
+                    onAccept={ix => judge(ix, () => acceptParagraph(s.file, ix))}
+                    onReject={ix => judge(ix, () => rejectParagraph(s.file, ix))} />
                 : <div className="mdbody prose" onClick={bodyClick} onMouseUp={() => captureSelection(s)}>
                   {paragraphsOf(s.body).map((p, pi) => {
                     const anchored = notes.some(n =>

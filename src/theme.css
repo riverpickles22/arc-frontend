@@ -716,7 +716,14 @@ svg text { font-family: inherit; }
    git still holds; a reject puts back words main still has). Styling refusal
    as a danger would say otherwise. */
 .mdbody.prose p.para-changed { position: relative; }
-.para-verdict { display: inline-flex; gap: 4px; margin-left: 8px; vertical-align: middle; }
+.para-verdict { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; vertical-align: middle; }
+/* Why a verdict did not land, beside the button that did not work. It stays
+   put rather than fading with its neighbours, because a message that appears
+   only while hovering is one the author will never finish reading. */
+.para-verdict .para-why {
+  font-size: 11px; color: var(--c8); opacity: 1;
+  border-left: 2px solid color-mix(in oklab, var(--c8) 50%, transparent); padding-left: 6px;
+}
 .para-accept, .para-reject {
   font: inherit; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
   color: var(--text-secondary); background: var(--surface-1);
