@@ -7,11 +7,11 @@
 
 import type { TimeRef, DateLike } from 'arc-canon-graph'
 export type {
-  TimeRef, DateLike, DocArticle, SceneContract, ProseScene, ProseChange, ProseDraft,
-  ChatMessage, ChatAction, ChatResponse, DraftSceneResponse, AnalyzeResponse, StyleResponse, ResolvedAnnotation, AnnotationLike, AnchorResolution, ResolvedLock, LockLike, LocksResponse, CreateLockRequest, DeleteLockRequest, ApiErrorResponse, AttentionResponse, MaterialItem, SuggestRequest, SuggestResponse, ProposedRule, RuleEvidence, RatifyRuleRequest, RatifyRuleResponse, FiledItem, HealthResponse, Note, Agent, AgentsResponse, RunSummary, RunsResponse, RunDetailResponse, StreamMessage, NotesResponse, AddNoteRequest, UpdateNoteRequest, NoteResponse, DeleteNoteRequest, WorkNoteRequest, WorkResponse, WorkDecisionRequest, WorkDecisionResponse, UpdateMaterialRequest, UpdateMaterialResponse,
+  TimeRef, DocArticle, SceneContract, ProseScene, ProseDraft,
+  ChatResponse, DraftSceneResponse, AnalyzeResponse, StyleResponse, ResolvedAnnotation, AnnotationStatus, ResolvedLock, LocksResponse, ApiErrorResponse, AttentionResponse, MaterialItem, SuggestRequest, SuggestResponse, ProposedRule, RatifyRuleRequest, RatifyRuleResponse, HealthResponse, Note, Agent, AgentsResponse, RunSummary, RunsResponse, RunDetailResponse, StreamMessage, NotesResponse, AddNoteRequest, UpdateNoteRequest, NoteResponse, DeleteNoteRequest, WorkNoteRequest, WorkResponse, WorkDecisionRequest, WorkDecisionResponse, UpdateMaterialRequest, UpdateMaterialResponse,
 } from 'arc-canon-graph'
 
-export interface SubjRel { toward: string; stance: string }
+interface SubjRel { toward: string; stance: string }
 
 export interface State {
   at: TimeRef
@@ -84,7 +84,7 @@ export interface EventDoc {
   provenance?: Provenance
 }
 
-export interface Edge {
+interface Edge {
   id: string
   kind: string
   status: string
@@ -156,18 +156,8 @@ import { dk, dateOf, diffCharacter, eraSpanKeys, timeRefKey, stateAt, extantAt }
 export { dk, dateOf, diffCharacter, eraSpanKeys, timeRefKey, stateAt, extantAt }
 export type { CharacterDiff } from 'arc-canon-graph'
 
-/** Resolve a place id to coordinates, walking part_of up the hierarchy. */
-export function resolveCoords(
-  placeId: string | undefined,
-  entities: Record<string, Entity>,
-): { lat: number; lon: number } | undefined {
-  let cur = placeId ? entities[placeId] : undefined
-  while (cur) {
-    if (cur.coordinates) return cur.coordinates
-    cur = cur.part_of ? entities[cur.part_of] : undefined
-  }
-  return undefined
-}
+// resolveCoords lives in map-geometry.ts, which is where every caller imports
+// it from. It was duplicated here; do not reimplement it.
 
 export function eraAt(tEnd: number, eras: Era[]): Era | undefined {
   return eras.find(e => {

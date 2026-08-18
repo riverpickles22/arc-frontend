@@ -17,13 +17,13 @@
 // cannot express is a scene the draft DELETES — it is gone from disk but
 // still rendered from `main`, so it is excluded explicitly below.
 
-export interface ProseLike {
+interface ProseLike {
   body: string
 }
 
 /** A pending change to a prose file (the ProseChange shape, narrowed to what
  *  copying needs). `main` is deliberately absent — copy never reads it. */
-export interface ChangeLike {
+interface ChangeLike {
   file: string
   status: 'added' | 'modified' | 'deleted'
 }

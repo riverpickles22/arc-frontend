@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { bestCorner, detailVisible, fitAspect, fitBBox, geoCoords, graticule, panWindow, pickGraticuleStep, resolveCoords, scaleBar, svgPath, windowForInset, zoomWindow } from './map-geometry'
+import { detailVisible, fitAspect, fitBBox, geoCoords, graticule, panWindow, pickGraticuleStep, resolveCoords, scaleBar, svgPath, windowForInset, zoomWindow } from './map-geometry'
 import type { Entity } from './canon'
 
 const ent = (id: string, extra: Partial<Entity>): Entity =>
@@ -48,25 +48,6 @@ test('geoCoords flattens polygons and multipolygons', () => {
   }
   expect(geoCoords(geo as never)).toEqual([[1, 2], [3, 4], [5, 6]])
   expect(geoCoords(null)).toEqual([])
-})
-
-test('bestCorner picks the corner covering the fewest points', () => {
-  // land fills the top half of the frame — both bottom corners are empty sea
-  const land: [number, number][] = []
-  for (let x = 0; x < 1000; x += 20) for (let y = 0; y < 180; y += 20) land.push([x, y])
-  const c = bestCorner({ W: 1000, H: 400 }, { w: 300, h: 200 }, land)
-  expect(c.y).toBeGreaterThan(100)
-})
-
-test('bestCorner ties break toward the corner farthest from the source area', () => {
-  const c = bestCorner({ W: 1000, H: 400 }, { w: 300, h: 200 }, [], { x: 0, y: 0 })
-  expect(c).toEqual({ x: 1000 - 300 - 14, y: 400 - 200 - 14 })
-})
-
-test('bestCorner is deterministic for identical inputs', () => {
-  const pts: [number, number][] = [[10, 10], [990, 390]]
-  expect(bestCorner({ W: 1000, H: 400 }, { w: 300, h: 200 }, pts))
-    .toEqual(bestCorner({ W: 1000, H: 400 }, { w: 300, h: 200 }, pts))
 })
 
 test('graticule: lines at clean multiples inside the box, never on its edges', () => {

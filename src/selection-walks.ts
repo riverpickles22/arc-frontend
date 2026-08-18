@@ -43,7 +43,7 @@ export function chapterOf(canon: Canon, eventId: string, scenes: ProseScene[] = 
   return null
 }
 
-export interface ChangeMark {
+interface ChangeMark {
   event: string
   chapter: string | null
 }
@@ -66,7 +66,7 @@ export function changedBy(canon: Canon, id: string, scenes: ProseScene[] = []): 
   return out
 }
 
-export interface ProvenanceStep {
+interface ProvenanceStep {
   at: TimeRef
   /** Words from the state — condition, note, or holder/place — never a number. */
   label: string

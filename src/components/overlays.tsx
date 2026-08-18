@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 
-export interface Tip { x: number; y: number; title: string; sub?: string }
+interface Tip { x: number; y: number; title: string; sub?: string }
 
 /** Tooltip state plus the mouse wiring, positioned inside the wrapper. */
 export function useTip(wrapRef: RefObject<HTMLDivElement | null>) {

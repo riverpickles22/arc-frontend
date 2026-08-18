@@ -19,7 +19,7 @@ export function firstParagraph(body: string): string | undefined {
  *  it, and — when scene bindings are to hand — where it appears on the page.
  *  Supersedes the vision.md scrape below, which stays as the fallback for a
  *  story that has not given its themes identity yet. */
-export function themesFromCanon(
+function themesFromCanon(
   canon: Canon,
   scenes: { scene: string; motifs?: string[] }[] = [],
 ): { theme: string; carriers: string; scenes: string[]; uncarried: boolean }[] {

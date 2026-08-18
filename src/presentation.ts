@@ -7,7 +7,7 @@ import type { BBox } from './map-geometry'
 
 /** A named face of the map for a stretch of story time (A24-2). Presentation
  *  only — the story declares its periods in view.yaml; arc knows the faces. */
-export interface MapPeriod {
+interface MapPeriod {
   label: string
   /** One of the faces theme.css defines (map-face-<name>); absent = default. */
   face?: string

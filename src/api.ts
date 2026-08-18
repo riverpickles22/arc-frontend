@@ -6,12 +6,13 @@
 // banner) belongs to the caller — useServerData — not here, so a down
 // backend can no longer masquerade as an empty story.
 import type {
-  AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneResponse, LocksResponse, MaterialResponse,
+  AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneRequest, DraftSceneResponse, LocksResponse, MaterialResponse,
   AddNoteRequest, AgentsResponse, DeleteNoteRequest, HealthResponse, NoteResponse, NotesResponse, OkResponse,
+  CreateAnnotationRequest, DeleteAnnotationRequest, UpdateAnnotationRequest, CreateLockRequest, DeleteLockRequest,
   RunsResponse, RunDetailResponse,
   UpdateMaterialRequest, UpdateMaterialResponse, UpdateNoteRequest,
   WorkDecisionRequest, WorkDecisionResponse, WorkNoteRequest, WorkResponse,
-  ProseAcceptResponse, ProseResponse, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
+  ProseAcceptRequest, ProseAcceptResponse, ProseDiscardRequest, ProseResponse, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
 } from 'arc-canon-graph'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SuggestRequest, SuggestResponse } from './canon'
 import type { View } from './presentation'
@@ -61,28 +62,28 @@ export const loadAnnotations = (signal?: AbortSignal): Promise<ResolvedAnnotatio
   getJson<AnnotationsResponse>('/api/annotations', { signal }).then(r => r.annotations)
 
 /** Omit paragraph and quote for a note about the whole scene (§14). */
-export const createNote = (n: { scene: string; paragraph?: number; quote?: string; body: string; kind?: 'note' | 'keypoint'; by?: 'author' | 'agent' }): Promise<ResolvedAnnotation> =>
+export const createNote = (n: CreateAnnotationRequest): Promise<ResolvedAnnotation> =>
   post('/api/annotations', n)
 
 /** Keypoints only — the server refuses to delete a note. */
-export const deleteAnnotation = (id: string): Promise<{ ok: true }> =>
-  post('/api/annotations/delete', { id })
+export const deleteAnnotation = (id: string): Promise<OkResponse> =>
+  post('/api/annotations/delete', { id } satisfies DeleteAnnotationRequest)
 
 /** Locks (A29): settled prose. The write path enforces them; these calls
  *  only report and edit the records. */
 export const loadLocks = (signal?: AbortSignal): Promise<ResolvedLock[]> =>
   getJson<LocksResponse>('/api/locks', { signal }).then(r => r.locks)
 
-export const createLock = (l: { scene: string; paragraph: number; quote: string }): Promise<{ lock: ResolvedLock }> =>
+export const createLock = (l: CreateLockRequest): Promise<{ lock: ResolvedLock }> =>
   post('/api/locks', l)
 
-export const deleteLock = (id: string): Promise<{ ok: true }> =>
-  post('/api/locks/delete', { id })
+export const deleteLock = (id: string): Promise<OkResponse> =>
+  post('/api/locks/delete', { id } satisfies DeleteLockRequest)
 
 /** Change a note's status, its body, or both. The anchor is never sent —
  *  revising a thought is not re-anchoring it. */
-export const updateNote = (id: string, patch: { status?: string; body?: string }): Promise<ResolvedAnnotation> =>
-  post('/api/annotations/update', { id, ...patch })
+export const updateNote = (id: string, patch: Omit<UpdateAnnotationRequest, 'id'>): Promise<ResolvedAnnotation> =>
+  post('/api/annotations/update', { id, ...patch } satisfies UpdateAnnotationRequest)
 
 /** Accept one paragraph, leaving every other pending change alone. */
 export const acceptParagraph = (file: string, paragraph: number): Promise<{ hash: string; file: string }> =>
@@ -181,10 +182,11 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const acceptDraft = (message?: string): Promise<ProseAcceptResponse> =>
-  post('/api/prose/accept', { message, capture: true })   // capture runs when the backend has credentials
+  // capture runs when the backend has credentials
+  post('/api/prose/accept', { message, capture: true } satisfies ProseAcceptRequest)
 
 export const discardDraft = (file: string): Promise<void> =>
-  post('/api/prose/discard', { file })
+  post('/api/prose/discard', { file } satisfies ProseDiscardRequest)
 
 /** The analysis pass: what would the pending draft do to the story? Slow
  *  (a full model read) and read-only — findings are argued, never proven. */
@@ -194,7 +196,7 @@ export const analyzeDraft = (): Promise<AnalyzeResponse> =>
 /** The drafting pass: generate one scene into the working tree. Slow (a
  *  full model pass); the result arrives as an ordinary draft change. */
 export const draftScene = (chapter: string, guidance?: string): Promise<DraftSceneResponse> =>
-  post('/api/prose/draft-scene', { chapter, guidance })
+  post('/api/prose/draft-scene', { chapter, guidance } satisfies DraftSceneRequest)
 
 /** A story's basemap, served from its assets/. Absent is fine — a story
  *  without one still draws its markers, so a miss stays null by design. */

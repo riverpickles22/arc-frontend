@@ -4,7 +4,7 @@ import type { Entity } from './canon'
 
 export interface BBox { lon0: number; lon1: number; lat0: number; lat1: number }
 
-export interface GeoFeature {
+interface GeoFeature {
   /** kind steers rendering: land (default), water, urban, road. Generic —
    *  arc knows registers, never place names. */
   properties?: { kind?: string }
@@ -99,40 +99,6 @@ export function fitBBox(
   if (b.lon1 - b.lon0 < 0.01) { b.lon0 -= 0.25; b.lon1 += 0.25 }
   if (b.lat1 - b.lat0 < 0.01) { b.lat0 -= 0.25; b.lat1 += 0.25 }
   return reshape(pad(b))
-}
-
-/**
- * Where an inset panel should sit: the corner of the frame whose panel
- * rectangle covers the fewest drawn points (coastline vertices + place
- * markers, already projected to frame coordinates). Ties break toward the
- * corner farthest from `avoid` (the inset's source rectangle), so the
- * panel never sits on top of the very area it excerpts. Deterministic.
- */
-export function bestCorner(
-  frame: { W: number; H: number },
-  size: { w: number; h: number },
-  points: [number, number][],
-  avoid?: { x: number; y: number },
-  margin = 14,
-): { x: number; y: number } {
-  const cands = [
-    { x: margin, y: margin },
-    { x: frame.W - size.w - margin, y: margin },
-    { x: margin, y: frame.H - size.h - margin },
-    { x: frame.W - size.w - margin, y: frame.H - size.h - margin },
-  ]
-  let best = cands[0]
-  let bestScore = Infinity
-  for (const c of cands) {
-    let covered = 0
-    for (const [px, py] of points) {
-      if (px >= c.x && px <= c.x + size.w && py >= c.y && py <= c.y + size.h) covered++
-    }
-    const d = avoid ? Math.hypot(c.x + size.w / 2 - avoid.x, c.y + size.h / 2 - avoid.y) : 0
-    const score = covered - d * 1e-6
-    if (score < bestScore) { bestScore = score; best = c }
-  }
-  return best
 }
 
 // ---- chart furniture (A24-1) ---------------------------------------------

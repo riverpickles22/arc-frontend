@@ -1,7 +1,7 @@
 // Prose diff for the draft layer: paragraphs first, then words within
 // changed paragraph pairs. Plain LCS — prose-sized inputs, no dependency.
 
-export interface Piece { kind: 'same' | 'ins' | 'del'; text: string }
+interface Piece { kind: 'same' | 'ins' | 'del'; text: string }
 
 export interface ParaDiff {
   kind: 'same' | 'ins' | 'del' | 'changed'

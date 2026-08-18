@@ -9,7 +9,7 @@ import { CopyRef } from './CopyRef'
 /** Provenance register (conventions §13): is this the author's invention or
  *  the world's record? Rendered wherever facts are read; absent = fictional,
  *  shown only when a record declares itself. */
-export function ProvenanceField({ p }: { p: Provenance }) {
+function ProvenanceField({ p }: { p: Provenance }) {
   return (
     <div className="field">
       <div className="k">provenance</div>
@@ -25,7 +25,7 @@ export function ProvenanceField({ p }: { p: Provenance }) {
   )
 }
 
-export interface PovProp {
+interface PovProp {
   active: boolean
   view: { seen: string[]; places: string[]; met: string[]; unseen: string[] } | null
   onToggle: () => void

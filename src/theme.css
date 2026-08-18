@@ -486,7 +486,6 @@ svg text { font-family: inherit; }
 }
 .draftbar.clean { border-color: var(--border); background: var(--surface-1); color: var(--muted); }
 .draftbar .db-sum { flex: 1; min-width: 0; }
-.db-toggle { display: flex; gap: 5px; align-items: center; color: var(--text-secondary); font-size: 12.5px; cursor: pointer; white-space: nowrap; }
 .ins-ct { color: var(--c2); font-weight: 600; }
 .del-ct { color: var(--c8); font-weight: 600; }
 .draftdrawer {

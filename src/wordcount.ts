@@ -20,7 +20,7 @@ export function countWords(body: string): number {
 }
 
 /** Grouped shape of what the viewer holds: a scene knows its chapter. */
-export interface CountedScene {
+interface CountedScene {
   chapter: string
   body: string
 }
@@ -52,7 +52,7 @@ export function formatWords(n: number): string {
 /** Silent-reading pace for prose. A single constant, shared by every surface
  *  that quotes a time, so two places can never disagree about how long the
  *  book takes to read. */
-export const WORDS_PER_MINUTE = 230
+const WORDS_PER_MINUTE = 230
 
 /** Minutes at reading pace. Any prose at all rounds up to a minute — "0 min"
  *  reads as an error rather than a short scene. */
@@ -74,7 +74,7 @@ export function formatReadingTime(words: number): string {
 /** Words to a page — the paperback convention. Here rather than inline in the
  *  manuscript so the chapter header and the reading footer cannot round the
  *  same chapter to different lengths. */
-export const WORDS_PER_PAGE = 250
+const WORDS_PER_PAGE = 250
 
 /** Pages in a passage. Any prose at all is at least one page; nothing drafted
  *  is no pages, the same absence `wordsByChapter` reports. */
@@ -88,7 +88,7 @@ export type ProgressRegister = 'page' | 'pages' | 'minutes' | 'words'
 
 /** The cycle, in the order a click walks it: where am I → how much of this
  *  chapter is left, in pages, then minutes, then words. */
-export const PROGRESS_ORDER: ProgressRegister[] = ['page', 'pages', 'minutes', 'words']
+const PROGRESS_ORDER: ProgressRegister[] = ['page', 'pages', 'minutes', 'words']
 
 export function nextRegister(r: ProgressRegister): ProgressRegister {
   return PROGRESS_ORDER[(PROGRESS_ORDER.indexOf(r) + 1) % PROGRESS_ORDER.length]

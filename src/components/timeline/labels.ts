@@ -5,7 +5,7 @@
 // and its start clears the previous rendered label's estimated extent.
 // Skipped labels keep their <title> tooltip — the name is a hover away.
 
-export interface LabelBox {
+interface LabelBox {
   x: number
   w: number
   /** label length in characters — width is estimated, never measured (the
@@ -13,7 +13,7 @@ export interface LabelBox {
   chars: number
 }
 
-export interface LabelOpts {
+interface LabelOpts {
   charW?: number   // estimated viewBox units per character
   pad?: number     // label inset within its box
   minW?: number    // boxes narrower than this get no label at all

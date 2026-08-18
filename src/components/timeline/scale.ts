@@ -8,14 +8,14 @@
 import type { Chapter, Era, EventDoc } from '../../canon'
 import { dateOf, eraSpanKeys, timeRefKey, yearOf } from '../../canon'
 
-export interface EraSeg {
+interface EraSeg {
   e: Era
   span: [number, number]
   w: number
   x0: number
 }
 
-export interface CalendarScale {
+interface CalendarScale {
   segs: EraSeg[]
   /** Axis x for a (fractional) year. Gaps between eras snap forward. */
   x: (yr: number) => number

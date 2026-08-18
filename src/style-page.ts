@@ -4,7 +4,7 @@
 // follow the template still renders; it just has fewer affordances.
 import { slugOf } from './md'
 
-export interface StyleSection { title: string; slug: string }
+interface StyleSection { title: string; slug: string }
 
 /** The `##` headings, for the section rail. Anchors share md.ts's slugOf so
  *  the rail's links resolve against the rendered body. */

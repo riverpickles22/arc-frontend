@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { AnalyzeResponse, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
+import type { AnalyzeResponse, AnnotationStatus, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
 import { dateOf } from '../canon'
 import { dotsFor } from '../keypoints'
 import { acceptDraft, acceptParagraph, rejectParagraph, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadLocks, suggestText, updateNote, writeScene } from '../api'
@@ -413,7 +413,7 @@ function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, top
   open: ResolvedAnnotation[]
   closed: number
   busy: boolean
-  onStatus: (id: string, status: string) => void
+  onStatus: (id: string, status: AnnotationStatus) => void
   onFocus: (id: string, scene: string, paragraph: number | null) => void
   /** The card holding attention — a note id, 'composer', or null for none. */
   active: string | null
@@ -1464,7 +1464,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     catch (e) { setErr((e as Error).message ?? String(e)) }
     finally { setNoteBusy(false) }
   }
-  const noteStatus = async (id: string, status: string) => {
+  const noteStatus = async (id: string, status: AnnotationStatus) => {
     setNoteBusy(true)
     try { await updateNote(id, { status }); onRefreshNotes() }
     catch (e) { setErr((e as Error).message ?? String(e)) }
