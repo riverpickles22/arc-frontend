@@ -941,6 +941,12 @@ p.para-changed:hover .para-reject, .para-reject:focus-visible { opacity: 1; }
 .proposed-rules { border-style: dashed; }
 .learn-now { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule, color-mix(in oklab, var(--muted) 25%, transparent)); }
 .learn-now .fsummary { margin-top: 6px; }
+/* A touchstone the manuscript has moved past: the one state on this page
+   that deserves a warning register, because a stale calibration passage
+   teaches a superseded voice with the contract's own authority. */
+.ts-standing { margin-top: 8px; }
+.ts-stale { font-size: 12px; color: var(--c6); margin: 4px 0 6px; }
+.ts-standing .fsummary { margin: 4px 0 6px; }
 .proposal {
   border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px;
 }

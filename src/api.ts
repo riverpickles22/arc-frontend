@@ -136,6 +136,12 @@ export const loadStyle = (signal?: AbortSignal): Promise<StyleResponse> =>
 export const learnStyleNow = (): Promise<{ proposed: number; considered: number; skipped: string | null }> =>
   post('/api/style/learn', {})
 
+/** Ask arc to re-anchor the contract's calibration passages: every touchstone
+ *  the manuscript has rewritten out from under §6 gets its nearest living
+ *  descendant PROPOSED. Deterministic — no model, nothing binds. */
+export const refreshTouchstones = (): Promise<{ proposed: number; current: number; skipped: string[] }> =>
+  post('/api/style/touchstones/refresh', {})
+
 export const ratifyRule = (req: RatifyRuleRequest): Promise<RatifyRuleResponse> =>
   post('/api/style/proposed', req)
 

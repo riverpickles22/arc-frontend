@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import type { ProposedRule, StyleResponse } from '../canon'
-import { learnStyleNow, ratifyRule } from '../api'
+import type { ProposedRule, ProposedTouchstone, StyleResponse, TouchstoneState } from '../canon'
+import { learnStyleNow, ratifyRule, refreshTouchstones } from '../api'
 import { mdToHtml } from '../md'
 import { checklistOf, ruleCount, sectionsOf, touchstonesOf } from '../style-page'
 
@@ -82,6 +82,7 @@ export function StyleView({ style, tab, onTab, onRefresh }: {
             <div className="frow"><span>wins on conflict</span><span>this book</span></div>
             <div className="frow"><span>rules stated</span><span>{ruleCount(body) || '—'}</span></div>
             <div className="frow"><span>touchstones</span><span>{touchstones.length || '—'}</span></div>
+            {tab === 'book' && <TouchstoneStanding states={style.touchstones} onRefresh={onRefresh} />}
             <p className="fsummary">
               Every pass that writes or judges prose loads both layers, and so does
               every new Claude session. It grows by extraction from your reactions —
@@ -100,7 +101,10 @@ export function StyleView({ style, tab, onTab, onRefresh }: {
           {style.proposed.map(r => (
             <ProposalCard key={r.id} rule={r} layer={tab === 'author' ? 'author' : 'story'} onDone={onRefresh} />
           ))}
-          <LearnNow empty={style.proposed.length === 0} onDone={onRefresh} />
+          {style.proposedTouchstones.map(t => (
+            <TouchstoneCard key={t.id} t={t} onDone={onRefresh} />
+          ))}
+          <LearnNow empty={style.proposed.length + style.proposedTouchstones.length === 0} onDone={onRefresh} />
         </div>
 
         {checklist.length > 0 && (
@@ -247,6 +251,102 @@ function LearnNow({ empty, onDone }: { empty: boolean; onDone?: () => void }) {
         {busy ? 'Reading your edits…' : 'Learn from my edits'}
       </button>
       {said && <p className="fsummary">{said}</p>}
+    </div>
+  )
+}
+
+/** The contract's calibration passages, held against the manuscript as it is
+ *  now. A touchstone binds harder than a rule — prose is imitated more
+ *  faithfully than instructions are followed — so one the book has left
+ *  behind teaches a superseded voice with the contract's own authority.
+ *  Staleness here is computed by the anchor machinery, never remembered. */
+function TouchstoneStanding({ states, onRefresh }: { states: TouchstoneState[]; onRefresh?: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [said, setSaid] = useState<string | null>(null)
+  const stale = states.filter(s => s.state === 'orphaned' || s.state === 'no-scene')
+  const drifted = states.filter(s => s.state === 'drifted')
+
+  const refresh = async () => {
+    setBusy(true); setSaid(null)
+    try {
+      const r = await refreshTouchstones()
+      setSaid(r.proposed > 0
+        ? `${r.proposed} replacement${r.proposed === 1 ? '' : 's'} proposed below — nothing lands until you ratify.`
+        : r.skipped.length ? r.skipped.join(' ') : 'Every touchstone still matches the book.')
+      onRefresh?.()
+    } catch (e) {
+      setSaid(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!states.length) return null
+  return (
+    <div className="ts-standing">
+      {stale.length > 0 && (
+        <p className="ts-stale" title="The passage this touchstone quotes is no longer in the scene. Until it is replaced, it calibrates a voice the book has moved past.">
+          ⚠ {stale.length === 1 ? `“${stale[0].quality}” no longer matches the manuscript.` : `${stale.length} touchstones no longer match the manuscript.`}
+        </p>
+      )}
+      {drifted.length > 0 && stale.length === 0 && (
+        <p className="fsummary">{drifted.length === 1 ? 'One touchstone moved but still stands.' : `${drifted.length} touchstones moved but still stand.`}</p>
+      )}
+      {stale.length > 0 && (
+        <button className="btn ghost" disabled={busy} onClick={() => void refresh()}
+          title="Find each stale passage's nearest living descendant in the scene and propose it as the replacement. Deterministic — no model — and nothing changes until you ratify.">
+          {busy ? 'Reading the manuscript…' : 'Propose replacements'}
+        </button>
+      )}
+      {said && <p className="fsummary">{said}</p>}
+    </div>
+  )
+}
+
+/** A proposed touchstone: one passage, the quality it would calibrate, and a
+ *  single destination — §6 of this book's contract. No layer choice, because
+ *  a passage of this manuscript is not the author's cross-book voice. */
+function TouchstoneCard({ t, onDone }: { t: ProposedTouchstone; onDone?: () => void }) {
+  const [busy, setBusy] = useState<'ratify' | 'dismiss' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+
+  const act = async (action: 'ratify' | 'dismiss') => {
+    setBusy(action)
+    setError(null)
+    try {
+      const res = await ratifyRule({ id: t.id, action, kind: 'touchstone' })
+      setDone(action === 'dismiss'
+        ? 'Dismissed — arc will not propose this passage again.'
+        : `Placed in §6${res.committed ? ' and committed.' : '.'}`)
+      onDone?.()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div className="proposal">
+      <div className="prop-section">Touchstone</div>
+      <div className="prop-origin" title="A calibration passage, copied from the scene file — not written by a model. It would sit in §6 for new prose to sound like.">
+        from the manuscript itself
+      </div>
+      <p className="prop-rule">{t.quality}</p>
+      <div className="prop-evidence">
+        <div className="prop-scene">{t.scene} ¶{t.paragraph + 1}</div>
+        <div className="prop-kept"><span>the passage</span>{t.passage}</div>
+      </div>
+      {error && <p className="prop-error">{error}</p>}
+      {done && <p className="prop-done">{done}</p>}
+      <div className="prop-actions">
+        <button className="btn" disabled={!!busy} onClick={() => void act('ratify')}>
+          {busy === 'ratify' ? 'Placing…' : 'Ratify into §6'}
+        </button>
+        <button className="btn ghost" disabled={!!busy} onClick={() => void act('dismiss')}>
+          {busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}
+        </button>
+      </div>
     </div>
   )
 }
