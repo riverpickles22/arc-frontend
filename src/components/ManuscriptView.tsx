@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import type { AnalyzeResponse, AnnotationStatus, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
 import { dateOf } from '../canon'
 import { dotsFor } from '../keypoints'
-import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadLocks, suggestText, updateNote, writeScene } from '../api'
+import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadLocks, redraftScene, suggestText, updateNote, writeScene } from '../api'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
@@ -1618,6 +1618,24 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     }
   }
 
+  /** The redraft pass, through the drafting bar's own plumbing: same busy
+   *  flag, same briefing panel, because the result is the same kind of thing
+   *  — a generation landing in the draft layer for the gate to judge. The
+   *  editor's pending text is flushed first; the pass reads the file. */
+  const redraft = async (scene: string, file: string, range?: [number, number]) => {
+    setGenBusy(true); setGenErr(null); setGen(null)
+    try {
+      await flushFile(file)
+      const res = await redraftScene({ scene, ...(range ? { paragraphs: range } : {}) })
+      setGen(res)
+      onRefresh()
+    } catch (e) {
+      setGenErr((e as Error).message ?? String(e))
+    } finally {
+      setGenBusy(false)
+    }
+  }
+
   // The drafting-pass bar: always present on an outline-only chapter, toggled
   // from the header once scenes exist. The result is an ordinary draft — it
   // arrives in the draft layer with its pill, and accept/discard apply.
@@ -1630,6 +1648,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         <button disabled={genBusy} onClick={generate}>
           {genBusy ? 'Drafting…' : curScenes.length ? 'Draft next scene' : 'Draft this scene'}
         </button>
+        {curScenes.length === 1 && (
+          <button disabled={genBusy}
+            title="A clean pass: rebuild the scene to its contract — order, images and sentence architecture are all in play. Locked paragraphs survive verbatim; the result is a draft for the gate."
+            onClick={() => void redraft(curScenes[0].scene, curScenes[0].file)}>
+            {genBusy ? 'Working…' : 'Redraft the scene'}
+          </button>
+        )}
       </div>
       {genBusy && <p className="gen-note">arc is drafting from the chapter's context pack — style contract, cast state, payoff fence. This takes a minute or two.</p>}
       {genErr && <p className="db-err">{genErr}</p>}
@@ -2154,6 +2179,31 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               <span className="mi-why">select the passage you want rewritten</span>
             </button>
           )}
+          {/* Redraft is the third verb: not alternatives for a selection
+              (rephrase), not the minimal answer to notes (revise), but a
+              rebuild. A selection names the paragraphs to rebuild between
+              their seams; no selection means the whole scene. */}
+          {(() => {
+            const range = selMenu.quote
+              ? (() => {
+                const covered = paragraphRange(selMenu.body, selMenu.start, selMenu.end)
+                return covered.length ? [covered[0], covered[covered.length - 1]] as [number, number] : undefined
+              })()
+              : undefined
+            const label = range ? (range[0] === range[1] ? 'Redraft this paragraph…' : 'Redraft these paragraphs…') : 'Redraft the scene…'
+            return (
+              <button disabled={genBusy}
+                title={range
+                  ? 'Rebuild the selected paragraphs between their seams. Everything outside the selection is preserved to the byte.'
+                  : 'A clean pass over the whole scene, rebuilt to its contract. Locked paragraphs survive verbatim.'}
+                onClick={() => {
+                  void redraft(selMenu.scene, selMenu.file, range)
+                  setSelMenu(null)
+                }}>
+                {label}
+              </button>
+            )
+          })()}
           {/* Synonyms answers with drop-in replacements — same part of speech,
               same case — which only means anything for one word. */}
           {isSingleWord(selMenu.quote) ? (

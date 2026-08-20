@@ -6,7 +6,7 @@
 // banner) belongs to the caller — useServerData — not here, so a down
 // backend can no longer masquerade as an empty story.
 import type {
-  AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneRequest, DraftSceneResponse, LocksResponse, MaterialResponse,
+  AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneRequest, DraftSceneResponse, LocksResponse, MaterialResponse, RedraftRequest,
   AddNoteRequest, AgentsResponse, DeleteNoteRequest, HealthResponse, NoteResponse, NotesResponse, OkResponse,
   CreateAnnotationRequest, DeleteAnnotationRequest, UpdateAnnotationRequest, CreateLockRequest, DeleteLockRequest,
   RunsResponse, RunDetailResponse,
@@ -224,6 +224,13 @@ export const analyzeDraft = (): Promise<AnalyzeResponse> =>
 
 /** The drafting pass: generate one scene into the working tree. Slow (a
  *  full model pass); the result arrives as an ordinary draft change. */
+/** The redraft pass: REBUILD a scene or passage to its contract — the third
+ *  verb beside rephrase (alternatives, writes nothing) and revise (minimal,
+ *  annotation-driven). Lands in the draft layer like any generation; locks,
+ *  the validator, and quoted withholds can refuse it server-side. */
+export const redraftScene = (req: RedraftRequest): Promise<DraftSceneResponse> =>
+  post('/api/prose/redraft', req)
+
 export const draftScene = (chapter: string, guidance?: string): Promise<DraftSceneResponse> =>
   post('/api/prose/draft-scene', { chapter, guidance } satisfies DraftSceneRequest)
 
