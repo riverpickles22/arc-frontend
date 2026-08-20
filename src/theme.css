@@ -939,6 +939,8 @@ p.para-changed:hover .para-reject, .para-reject:focus-visible { opacity: 1; }
   padding: 1px 4px; margin-left: 6px; vertical-align: 1px; font-weight: 400;
 }
 .proposed-rules { border-style: dashed; }
+.learn-now { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule, color-mix(in oklab, var(--muted) 25%, transparent)); }
+.learn-now .fsummary { margin-top: 6px; }
 .proposal {
   border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px;
 }
@@ -1026,7 +1028,13 @@ p.para-locked:hover::before { opacity: .85; }
 .prop-wrote { text-decoration: line-through; text-decoration-color: color-mix(in oklab, var(--muted) 55%, transparent); }
 .prop-wrote span { text-decoration: none; }
 .prop-error { font-size: 12px; color: var(--danger, #c4553f); margin: 4px 0 0; }
-.prop-actions { display: flex; gap: 8px; margin-top: 8px; }
+/* What actually happened, once it has. Ratifying into the author layer writes
+   a file outside the story repo and cannot be committed with it, and the card
+   says so rather than reporting both the same way. */
+.prop-done { font-size: 11.5px; color: var(--muted); margin: 6px 0 0; }
+/* Two ratify buttons and a dismiss: on a narrow rail they wrap rather than
+   squeezing the verbs into initials. */
+.prop-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .prop-actions .btn {
   font: inherit; font-size: 12px; cursor: pointer; border-radius: 6px; padding: 5px 10px;
   color: var(--text-primary); background: var(--page); border: 1px solid var(--border);

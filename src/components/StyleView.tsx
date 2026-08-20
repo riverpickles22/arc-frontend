@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ProposedRule, StyleResponse } from '../canon'
-import { ratifyRule } from '../api'
+import { learnStyleNow, ratifyRule } from '../api'
 import { mdToHtml } from '../md'
 import { checklistOf, ruleCount, sectionsOf, touchstonesOf } from '../style-page'
 
@@ -42,15 +42,13 @@ export function StyleView({ style, tab, onTab, onRefresh }: {
           <a key={s.slug} className="navitem" href={`#${s.slug}`}>{s.title}</a>
         ))}
 
-        {style.proposed.length > 0 && (
-          <>
-            <h3>Proposed <span className="reg-argued">argued</span></h3>
-            <a className="navitem" href="#proposed">
-              {style.proposed.length} rule{style.proposed.length === 1 ? '' : 's'} awaiting you
-              <span className="chmeta">from your own edits · binds nothing</span>
-            </a>
-          </>
-        )}
+        <h3>Proposed <span className="reg-argued">argued</span></h3>
+        <a className="navitem" href="#proposed">
+          {style.proposed.length
+            ? `${style.proposed.length} rule${style.proposed.length === 1 ? '' : 's'} awaiting you`
+            : 'Nothing awaiting you'}
+          <span className="chmeta">from your own edits · binds nothing</span>
+        </a>
       </nav>
 
       <article className="ms-main">
@@ -92,18 +90,18 @@ export function StyleView({ style, tab, onTab, onRefresh }: {
           </div>
         </div>
 
-        {style.proposed.length > 0 && (
-          <div className="facts proposed-rules" id="proposed">
-            <h3>Proposed rules <span className="reg-argued">argued</span></h3>
-            <p className="fsummary">
-              Arc compared what it drafted against what you kept, and argues these follow.
-              Nothing here binds any pass until you ratify it.
-            </p>
-            {style.proposed.map(r => (
-              <ProposalCard key={r.id} rule={r} layer={tab === 'author' ? 'author' : 'story'} onDone={onRefresh} />
-            ))}
-          </div>
-        )}
+        <div className="facts proposed-rules" id="proposed">
+          <h3>Proposed rules <span className="reg-argued">argued</span></h3>
+          <p className="fsummary">
+            Arc compared what it drafted against what you kept, what you refused, and
+            your own revisions, and argues these follow. Nothing here binds any pass
+            until you ratify it.
+          </p>
+          {style.proposed.map(r => (
+            <ProposalCard key={r.id} rule={r} layer={tab === 'author' ? 'author' : 'story'} onDone={onRefresh} />
+          ))}
+          <LearnNow empty={style.proposed.length === 0} onDone={onRefresh} />
+        </div>
 
         {checklist.length > 0 && (
           <div className="facts">
@@ -136,14 +134,21 @@ function ProposalCard({ rule, layer, onDone }: {
   layer: 'author' | 'story'
   onDone?: () => void
 }) {
-  const [busy, setBusy] = useState<'ratify' | 'dismiss' | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
 
-  const act = async (action: 'ratify' | 'dismiss') => {
-    setBusy(action)
+  const act = async (action: 'ratify' | 'dismiss', into: 'author' | 'story') => {
+    setBusy(action === 'dismiss' ? 'dismiss' : into)
     setError(null)
     try {
-      await ratifyRule({ id: rule.id, action, layer })
+      const res = await ratifyRule({ id: rule.id, action, layer: into })
+      // Say what actually happened, including the half that usually goes
+      // unsaid: the story layer is committed and the author layer lives
+      // outside the story repo, so "ratified" means different things.
+      setDone(action === 'dismiss'
+        ? 'Dismissed — arc will not argue this one again.'
+        : `Written to ${res.path ?? 'the contract'}${res.committed ? ' and committed.' : '. Not committed — this file is not in the story repo.'}`)
       onDone?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -151,18 +156,29 @@ function ProposalCard({ rule, layer, onDone }: {
     }
   }
 
-  // A revision-sourced rule was argued from the author's own rewrites — their
-  // preference showing directly, with no arc draft in the argument. The badge
-  // says so, so the author knowingly files it under their voice (the author
-  // tab) rather than this book's contract. The layer stays the open tab —
-  // no new control, per the ratify design.
-  const fromRevision = rule.source === 'revision'
+  // What the evidence IS, which changes what the two halves of it mean. A
+  // revision is the author against themself; a refusal is arc's prose the
+  // author declined, and calling that "you kept" would say the opposite of
+  // what happened.
+  const source = rule.source ?? 'draft'
+  const badge =
+    source === 'revision' ? { label: 'from your own revisions', why: 'Argued only from your own hand revisions — no arc draft in the argument. Likely your voice, not just this book\'s.' }
+      : source === 'refusal' ? { label: 'from what you refused', why: 'Argued from prose arc offered and you declined. The only decision git never records.' }
+        : { label: 'from what you changed', why: "Argued from the difference between arc's draft and what you kept." }
+  const [beforeLabel, afterLabel] =
+    source === 'revision' ? ['you had', 'you revised to']
+      : source === 'refusal' ? ['arc wrote', 'you refused it, keeping']
+        : ['arc wrote', 'you kept']
+
   return (
     <div className="proposal">
       {rule.section && <div className="prop-section">{rule.section}</div>}
-      {fromRevision && (
-        <div className="prop-origin" title="Argued only from your own hand revisions — no arc draft involved. Likely your voice, not just this book's.">
-          from your own revisions
+      <div className="prop-origin" title={badge.why}>{badge.label}</div>
+      {rule.layer && (
+        <div className="prop-origin" title={rule.layer === 'author'
+          ? 'Arc thinks this holds across your books — it saw the pattern in more than one scene. You decide where it goes.'
+          : "Arc thinks this is about this book. You decide where it goes."}>
+          arc suggests: {rule.layer === 'author' ? 'your style' : 'this book'}
         </div>
       )}
       <p className="prop-rule">{rule.rule}</p>
@@ -170,21 +186,67 @@ function ProposalCard({ rule, layer, onDone }: {
       {rule.evidence.map((e, i) => (
         <div className="prop-evidence" key={i}>
           <div className="prop-scene">{e.scene}</div>
-          <div className="prop-wrote"><span>{fromRevision ? 'you had' : 'arc wrote'}</span>{e.wrote}</div>
-          <div className="prop-kept"><span>{fromRevision ? 'you revised to' : 'you kept'}</span>{e.kept || <em>you cut it</em>}</div>
+          <div className="prop-wrote"><span>{beforeLabel}</span>{e.wrote}</div>
+          <div className="prop-kept"><span>{afterLabel}</span>{e.kept || <em>you cut it</em>}</div>
         </div>
       ))}
 
       {error && <p className="prop-error">{error}</p>}
+      {done && <p className="prop-done">{done}</p>}
 
+      {/* Both layers from one card. The open tab used to decide it, which
+          made a real choice into a side effect of where the author happened
+          to be standing. */}
       <div className="prop-actions">
-        <button className="btn" disabled={!!busy} onClick={() => act('ratify')}>
-          {busy === 'ratify' ? 'Ratifying…' : `Ratify into ${layer === 'author' ? 'your style' : 'this book'}`}
+        <button className="btn" disabled={!!busy} onClick={() => act('ratify', 'story')}>
+          {busy === 'story' ? 'Ratifying…' : 'Ratify into this book'}
         </button>
-        <button className="btn ghost" disabled={!!busy} onClick={() => act('dismiss')}>
+        <button className="btn" disabled={!!busy} onClick={() => act('ratify', 'author')}>
+          {busy === 'author' ? 'Ratifying…' : 'Ratify into your style'}
+        </button>
+        <button className="btn ghost" disabled={!!busy} onClick={() => act('dismiss', layer)}>
           {busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}
         </button>
       </div>
+    </div>
+  )
+}
+
+/** Run the pass now, for a review episode the author calls closed.
+ *
+ *  Arc's own trigger is a scene's draft draining, which is a good proxy for
+ *  "finished judging this" and only a proxy. This is the author saying it —
+ *  and it is also the only way to ask when nothing has drained recently. */
+function LearnNow({ empty, onDone }: { empty: boolean; onDone?: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [said, setSaid] = useState<string | null>(null)
+
+  const run = async () => {
+    setBusy(true); setSaid(null)
+    try {
+      const r = await learnStyleNow()
+      setSaid(r.proposed > 0
+        ? `${r.proposed} rule${r.proposed === 1 ? '' : 's'} proposed from ${r.considered} edit${r.considered === 1 ? '' : 's'}.`
+        : r.skipped === 'no-edits' ? 'Nothing to learn from yet — arc has no edits of yours it has not already read.'
+          : r.skipped === 'queue-full' ? 'The queue is full. Ratify or dismiss what is here first.'
+            : r.skipped === 'no-engine' ? 'No engine configured, so nothing was asked of a model.'
+              : `Nothing generalised from ${r.considered} edit${r.considered === 1 ? '' : 's'}. That is the common answer.`)
+      onDone?.()
+    } catch (e) {
+      setSaid(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="learn-now">
+      {empty && <p className="fsummary">Nothing proposed. Arc argues a rule only when the same pattern shows in two separate places.</p>}
+      <button className="btn ghost" disabled={busy} onClick={() => void run()}
+        title="Read the edits you have made since arc last looked, and argue what they imply. Proposes only — nothing is written to your contract.">
+        {busy ? 'Reading your edits…' : 'Learn from my edits'}
+      </button>
+      {said && <p className="fsummary">{said}</p>}
     </div>
   )
 }

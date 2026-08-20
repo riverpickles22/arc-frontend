@@ -131,6 +131,11 @@ export const loadStyle = (signal?: AbortSignal): Promise<StyleResponse> =>
 
 /** Ratify a proposed rule into a layer, or dismiss it. The author's click is
  *  the gate: no model runs on the far side of this call. */
+/** Run the style-learning pass now, for a review episode the author calls
+ *  closed. Nothing it produces binds anything — the queue still waits. */
+export const learnStyleNow = (): Promise<{ proposed: number; considered: number; skipped: string | null }> =>
+  post('/api/style/learn', {})
+
 export const ratifyRule = (req: RatifyRuleRequest): Promise<RatifyRuleResponse> =>
   post('/api/style/proposed', req)
 
