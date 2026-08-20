@@ -329,7 +329,22 @@ svg text { font-family: inherit; }
 .infobox .fsummary { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin: 10px 0; }
 .wiki-toc .navitem { font-size: 12.5px; padding: 3px 8px; }
 .wiki-toc .navitem.d3 { padding-left: 20px; font-size: 12px; }
-.wiki-layout > article { overflow-y: auto; padding: 20px 28px; }
+/* --pad-top is named rather than repeated: the sticky header inside this
+   container has to cover exactly this much, and a magic number in two places
+   is a number that drifts. */
+.wiki-layout > article { --pad-top: 20px; overflow-y: auto; padding: var(--pad-top) 28px 20px; }
+
+/* A sticky header pinned at top: 0 stops at the container's PADDING edge, not
+   its border edge — so this container's top padding is a band above the
+   header that the header does not cover, and prose scrolling up shows through
+   it. Paint that band, and match the header's horizontal bleed to this
+   container's 28px rather than the manuscript's 32px, which overhung by 4px
+   each side. */
+.wiki-layout > article > .ms-head { margin-left: -28px; margin-right: -28px; }
+.wiki-layout > article > .ms-head::before {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 100%;
+  height: var(--pad-top); background: var(--page);
+}
 .wiki-aside { overflow-y: auto; padding: 16px 14px; border-left: 1px solid var(--border); }
 .facts { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); padding: 12px 14px; margin-bottom: 14px; }
 .facts h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; }
@@ -363,8 +378,12 @@ svg text { font-family: inherit; }
    top and let a clipped line of prose show above the title. The horizontal
    margins are negative on purpose — they widen the background band past the
    column's padding, and the matching side padding puts the text back. */
+/* Below the draft bar, not underneath it. --draftbar-h is the bar's measured
+   height, set on .ms-scroll while the bar exists; when it does not exist the
+   property is absent and the fallback pins the header at the very top, which
+   is exactly the behaviour this had before the bar was pinned. */
 .ms-head {
-  position: sticky; top: 0; z-index: 6;
+  position: sticky; top: var(--draftbar-h, 0px); z-index: 6;
   margin: 0 -32px 18px; padding: 14px 32px 10px;
   background: var(--page);
 }
@@ -479,12 +498,34 @@ svg text { font-family: inherit; }
 .db-views button.on { background: var(--baseline); color: var(--text); }
 /* The accepted text reads as settled — it is what the book already says. */
 .mdbody.was-accepted { opacity: .82; }
+/* Pinned, because the three views it carries — Before, Changes, Proposed —
+   answer a question about the passage on screen, and a toggle you must scroll
+   to the top to reach makes you lose the passage in order to ask about it.
+   Stacks above .ms-head, whose own sticky `top` is offset by this bar's
+   measured height (--draftbar-h, published by ManuscriptView) so the two sit
+   one under the other instead of landing on the same line.
+
+   Full-bleed rather than a floating card: the negative margin carries the
+   background out to the article's padding edge, so prose passes BEHIND the
+   bar instead of showing beside it through the gap a 74ch card would leave.
+   The same treatment .ms-head already uses, for the same reason. */
 .draftbar {
-  display: flex; align-items: center; gap: 14px; max-width: 74ch; margin: 0 0 14px;
-  padding: 8px 12px; border: 1px solid var(--c4); border-radius: 8px;
-  background: color-mix(in srgb, var(--c4) 8%, var(--surface-1)); font-size: 13px;
+  position: sticky; top: 0; z-index: 7;
+  display: flex; align-items: center; gap: 14px; margin: 0 -32px 14px;
+  padding: 8px 32px; border: 0; border-bottom: 1px solid var(--c4);
+  background: color-mix(in srgb, var(--c4) 8%, var(--page)); font-size: 13px;
 }
-.draftbar.clean { border-color: var(--border); background: var(--surface-1); color: var(--muted); }
+/* A soft edge under the bar so prose scrolling beneath it ends, rather than
+   being cut off mid-line at a hard border — the courtesy .ms-head extends. */
+.draftbar::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 10px;
+  background: linear-gradient(color-mix(in srgb, var(--c4) 8%, var(--page)), transparent);
+  pointer-events: none;
+}
+.draftbar.clean {
+  border-bottom-color: var(--border); background: var(--page); color: var(--muted);
+}
+.draftbar.clean::after { background: linear-gradient(var(--page), transparent); }
 .draftbar .db-sum { flex: 1; min-width: 0; }
 .ins-ct { color: var(--c2); font-weight: 600; }
 .del-ct { color: var(--c8); font-weight: 600; }
@@ -1199,3 +1240,27 @@ p.para-locked:hover::before { opacity: .85; }
 .ag-run:hover { background: var(--baseline); }
 .ag-run code { font-size: 11.5px; color: var(--c1); }
 .ag-prompt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The sentence menu (A37-3): judging one sentence of a changed paragraph.
+   Borrows the lock menu's shape deliberately — a right-click over prose
+   should feel like one gesture across the app, not two. */
+.sent-menu {
+  position: fixed; z-index: 60; min-width: 190px;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 6px 22px rgb(0 0 0 / .32); padding: 4px; display: flex; flex-direction: column;
+}
+.sent-menu button {
+  font: inherit; font-size: 13px; text-align: left; color: var(--text-primary);
+  background: transparent; border: 0; border-radius: 5px; padding: 6px 10px; cursor: pointer;
+}
+.sent-menu button:hover:not(:disabled) { background: var(--baseline); }
+.sent-menu button:disabled { color: var(--muted); cursor: default; }
+/* Why the menu is safe to use, stated once rather than after each verb. */
+.sent-menu-note {
+  margin: 2px 4px 2px; font-size: 11px; line-height: 1.35; color: var(--muted);
+}
+
+/* A sentence inside a changed paragraph. It has to look like ordinary diffed
+   prose — the affordance is the right-click, not a border — so this only
+   marks it as pointable. */
+.para-changed ins.sent, .para-changed del.sent { cursor: context-menu; }

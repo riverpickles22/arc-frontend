@@ -12,7 +12,7 @@ import type {
   RunsResponse, RunDetailResponse,
   UpdateMaterialRequest, UpdateMaterialResponse, UpdateNoteRequest,
   WorkDecisionRequest, WorkDecisionResponse, WorkNoteRequest, WorkResponse,
-  ProseAcceptRequest, ProseAcceptResponse, ProseDiscardRequest, ProseResponse, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
+  ProseAcceptRequest, ProseAcceptResponse, ProseDiscardRequest, ProseParagraphRequest, ProseResponse, ProseSentenceRequest, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
 } from 'arc-canon-graph'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SuggestRequest, SuggestResponse } from './canon'
 import type { View } from './presentation'
@@ -85,15 +85,33 @@ export const deleteLock = (id: string): Promise<OkResponse> =>
 export const updateNote = (id: string, patch: Omit<UpdateAnnotationRequest, 'id'>): Promise<ResolvedAnnotation> =>
   post('/api/annotations/update', { id, ...patch } satisfies UpdateAnnotationRequest)
 
-/** Accept one paragraph, leaving every other pending change alone. */
-export const acceptParagraph = (file: string, paragraph: number): Promise<{ hash: string; file: string }> =>
-  post('/api/prose/accept-paragraph', { file, paragraph })
+/** Accept one paragraph, leaving every other pending change alone.
+ *
+ *  The paragraph travels as an IDENTITY, like a sentence: which version it
+ *  belongs to and its index in that version's own list. A bare number was a
+ *  draft-side index the server applied to main, so a draft that inserted a
+ *  paragraph anywhere above made the two disagree and the wrong paragraph
+ *  went into the book. */
+export const acceptParagraph = (file: string, t: ProseParagraphTarget): Promise<{ hash: string; file: string }> =>
+  post('/api/prose/accept-paragraph', { file, ...t } satisfies ProseParagraphRequest)
 
 /** Refuse one paragraph: main's words go back into the working tree and
  *  every other pending change stays pending. Commits nothing — a refused
  *  change is one the draft simply stops carrying. */
-export const rejectParagraph = (file: string, paragraph: number): Promise<{ file: string }> =>
-  post('/api/prose/reject-paragraph', { file, paragraph })
+export const rejectParagraph = (file: string, t: ProseParagraphTarget): Promise<{ file: string }> =>
+  post('/api/prose/reject-paragraph', { file, ...t } satisfies ProseParagraphRequest)
+
+type ProseParagraphTarget = Omit<ProseParagraphRequest, 'file'>
+
+/** The same two verbs at the sentence (A37-3). A sentence travels as an
+ *  IDENTITY — which side it belongs to and its index in that side's own split
+ *  — never as text: the server re-derives it by the shared rule and performs
+ *  the merge, so this endpoint cannot be used to write prose into the book. */
+export const acceptSentence = (t: ProseSentenceRequest): Promise<{ hash: string; file: string }> =>
+  post('/api/prose/accept-sentence', t satisfies ProseSentenceRequest)
+
+export const rejectSentence = (t: ProseSentenceRequest): Promise<{ file: string }> =>
+  post('/api/prose/reject-sentence', t satisfies ProseSentenceRequest)
 
 /** Write a scene's body into the working tree — the draft layer. `baseline`
  *  is the body the edit started from; the server refuses if the file moved

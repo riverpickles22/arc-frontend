@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import type { AnalyzeResponse, AnnotationStatus, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
 import { dateOf } from '../canon'
 import { dotsFor } from '../keypoints'
-import { acceptDraft, acceptParagraph, rejectParagraph, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadLocks, suggestText, updateNote, writeScene } from '../api'
+import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadLocks, suggestText, updateNote, writeScene } from '../api'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
@@ -60,19 +60,58 @@ function ContractPanel({ c, onOpenWorld }: { c: SceneContract; onOpenWorld: (id:
  *  its line whether or not the author is looking at changes. Indices come
  *  from the scene's own paragraphs, matched by text, because a diff's
  *  sequence includes deletions the body no longer has. */
-function DiffBody({ d, paraKey, onAccept, onReject, busy, flash }: {
+/** A paragraph named the way the server names it. `side` says which version
+ *  it belongs to and `paragraph` indexes that version's own list. */
+interface ParaTarget { side: 'main' | 'draft'; paragraph: number }
+
+/** The identity of a judgeable paragraph, or null when there is nothing to
+ *  judge. A rewrite and an insertion are decisions about the draft's text; a
+ *  deletion is a decision about main's. */
+function targetOf(p: ParaDiff): ParaTarget | null {
+  if (p.kind === 'del') return p.mainIndex === null ? null : { side: 'main', paragraph: p.mainIndex }
+  if (p.kind === 'changed' || p.kind === 'ins') {
+    return p.draftIndex === null ? null : { side: 'draft', paragraph: p.draftIndex }
+  }
+  return null
+}
+
+const targetKey = (t: ParaTarget): string => `${t.side}:${t.paragraph}`
+
+function DiffBody({ d, paraKey, onAccept, onReject, onSentence, busy, flash }: {
   d: ParaDiff[]
   paraKey?: (text: string) => string | undefined
-  /** Why judging one paragraph failed, shown at that paragraph. */
-  flash?: { paragraph: number; text: string } | null
+  /** Why judging one paragraph failed, shown at that paragraph. Keyed by the
+   *  paragraph's identity, not its position in the diff. */
+  flash?: { at: string; text: string } | null
   /** Accept just this paragraph. The whole-draft button at the top takes
-   *  every change as one judgment; a chapter with four edits is four. */
-  onAccept?: (paragraphIndex: number) => void
+   *  every change as one judgment; a chapter with four edits is four.
+   *
+   *  The target is an identity — which version the paragraph belongs to and
+   *  its index in THAT version — because a draft that inserts a paragraph
+   *  makes the two versions disagree about every index after it. */
+  onAccept?: (t: ParaTarget) => void
   /** And refuse just this one. The same size of decision as accepting it —
    *  the alternative was Discard, which throws away the whole scene. */
-  onReject?: (paragraphIndex: number) => void
+  onReject?: (t: ParaTarget) => void
+  /** Take or refuse ONE sentence of a changed paragraph (A37-3). The sentence
+   *  is named by identity — which side it belongs to, and its index in that
+   *  side's own split — never by its text. */
+  onSentence?: (t: { paragraph: number; side: 'main' | 'draft'; sentence: number }, verb: 'accept' | 'reject') => void
   busy?: boolean
 }) {
+  // The sentence menu: where it is, and which sentence it is about. One at a
+  // time, closed by any click elsewhere — the same manners as the lock menu.
+  const [sMenu, setSMenu] = useState<
+    { x: number; y: number; paragraph: number; side: 'main' | 'draft'; sentence: number; kind: 'ins' | 'del' } | null
+  >(null)
+  useEffect(() => {
+    if (!sMenu) return
+    const down = (ev: MouseEvent) => { if (!(ev.target as HTMLElement).closest('.sent-menu')) setSMenu(null) }
+    const key = (ev: KeyboardEvent) => { if (ev.key === 'Escape') setSMenu(null) }
+    document.addEventListener('mousedown', down)
+    document.addEventListener('keydown', key)
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
+  }, [sMenu])
   const keyOf = (p: ParaDiff): string | undefined => {
     if (!paraKey) return undefined
     const text = p.kind === 'changed'
@@ -99,42 +138,89 @@ function DiffBody({ d, paraKey, onAccept, onReject, busy, flash }: {
       {d.map((p, i) => {
         // Both verbs or neither: an author offered only "accept" reads the
         // absence as "the other option is Discard the lot".
-        const takeIt = (kp?: string) => {
-          const ix = kp ? Number(kp.slice(kp.lastIndexOf(':') + 1)) : NaN
-          if (!Number.isInteger(ix)) return null
+        const takeIt = (t: ParaTarget | null) => {
+          if (!t) return null
+          const at = targetKey(t)
+          // A deletion is judged on MAIN's side and a rewrite or insertion on
+          // the draft's, which is why the verbs are told the side rather than
+          // guessing it from a number.
+          const takes = p.kind === 'del'
+            ? 'Take this deletion into the book'
+            : 'Accept this change into the book'
+          const puts = p.kind === 'del'
+            ? 'Put this paragraph back, leaving every other pending change alone'
+            : 'Put the earlier words back, leaving every other pending change alone'
           return (
             <span className="para-verdict">
               {onAccept && (
-                <button className="para-accept" disabled={busy} title="Accept this change into the book"
-                  onClick={() => onAccept(ix)}>accept</button>
+                <button className="para-accept" disabled={busy} title={takes}
+                  onClick={() => onAccept(t)}>accept</button>
               )}
               {onReject && (
-                <button className="para-reject" disabled={busy} title="Put the earlier words back, leaving every other pending change alone"
-                  onClick={() => onReject(ix)}>reject</button>
+                <button className="para-reject" disabled={busy} title={puts}
+                  onClick={() => onReject(t)}>reject</button>
               )}
-              {flash?.paragraph === ix && <span className="para-why">{flash.text}</span>}
+              {flash?.at === at && <span className="para-why">{flash.text}</span>}
             </span>
           )
         }
+        const target = targetOf(p)
         if (p.kind === 'changed') {
           const kp = keyOf(p)
+          const pix = p.draftIndex ?? NaN
+          // Sentence granularity when the alignment is available and the verb
+          // is wired; otherwise the word-level view exactly as before. Both
+          // show before and after — the sentence view just makes each half
+          // something the author can point at.
+          const bySentence = onSentence && p.sentences?.length && Number.isInteger(pix)
           return (
             <p key={i} data-para={kp} className="para-changed">
-              {p.pieces!.map((pc, k) =>
-                pc.kind === 'same' ? <span key={k}>{pc.text} </span>
-                  : pc.kind === 'ins' ? <ins key={k}>{pc.text} </ins>
-                    : <del key={k}>{pc.text} </del>)}
-              {takeIt(kp)}
+              {bySentence
+                ? p.sentences!.map((sn, k) => {
+                    if (sn.kind === 'same') return <span key={k}>{sn.text}</span>
+                    const open = (ev: React.MouseEvent) => {
+                      ev.preventDefault()
+                      setSMenu({ x: ev.clientX, y: ev.clientY, paragraph: pix, side: sn.side, sentence: sn.index, kind: sn.kind as 'ins' | 'del' })
+                    }
+                    const title = sn.kind === 'ins'
+                      ? 'Right-click: keep or drop this new sentence'
+                      : 'Right-click: keep it deleted, or put it back'
+                    return sn.kind === 'ins'
+                      ? <ins key={k} className="sent" title={title} onContextMenu={open}>{sn.text}</ins>
+                      : <del key={k} className="sent" title={title} onContextMenu={open}>{sn.text}</del>
+                  })
+                : p.pieces!.map((pc, k) =>
+                    pc.kind === 'same' ? <span key={k}>{pc.text} </span>
+                      : pc.kind === 'ins' ? <ins key={k}>{pc.text} </ins>
+                        : <del key={k}>{pc.text} </del>)}
+              {takeIt(target)}
             </p>
           )
         }
         if (p.kind === 'ins') {
           const kp = keyOf(p)
-          return <p key={i} data-para={kp} className="para-changed"><ins>{p.text}</ins>{takeIt(kp)}</p>
+          return <p key={i} data-para={kp} className="para-changed"><ins>{p.text}</ins>{takeIt(target)}</p>
         }
-        if (p.kind === 'del') return <p key={i}><del>{p.text}</del></p>
+        // A deleted paragraph is not in the draft body at all, so it could
+        // never be found by matching text against it — which is why it had no
+        // verdict at all until the identity arrived.
+        if (p.kind === 'del') return <p key={i} className="para-changed"><del>{p.text}</del>{takeIt(target)}</p>
         return <p key={i} data-para={keyOf(p)}>{p.text}</p>
       })}
+
+      {/* Named in the author's terms, not as bare accept/reject: 'accept' on
+          struck-through text is ambiguous until it is spelled out. */}
+      {sMenu && (
+        <div className="sent-menu" style={{ left: sMenu.x, top: sMenu.y }} role="menu">
+          <button disabled={busy} onClick={() => { onSentence?.(sMenu, 'accept'); setSMenu(null) }}>
+            {sMenu.kind === 'ins' ? 'Keep this new sentence' : 'Keep it deleted'}
+          </button>
+          <button disabled={busy} onClick={() => { onSentence?.(sMenu, 'reject'); setSMenu(null) }}>
+            {sMenu.kind === 'ins' ? 'Drop this new sentence' : 'Put this sentence back'}
+          </button>
+          <p className="sent-menu-note">The rest of the paragraph stays pending.</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -545,7 +631,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   /** Why judging ONE paragraph failed, and which one. The draft banner's own
    *  error line sits at the top of the page, which for a control a thousand
    *  pixels down reads as nothing happening at all. */
-  const [flash, setFlash] = useState<{ paragraph: number; text: string } | null>(null)
+  const [flash, setFlash] = useState<{ at: string; text: string } | null>(null)
   useEffect(() => {
     if (!flash) return
     const timer = setTimeout(() => setFlash(null), 5000)
@@ -589,6 +675,43 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  the way OUT of a mode — before the switch, while the old layout is still
    *  on screen — so `switchMode` below has to be able to reach it. */
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  /** The draft bar is pinned to the top of the scroll container, and the
+   *  chapter header — sticky since it was written — has to sit BELOW it
+   *  rather than on the same line. That offset is the bar's height, published
+   *  here as a custom property and consumed by .ms-head's `top` in theme.css.
+   *
+   *  Measured rather than hardcoded, for the reason LOCK_MARK_PX carries its
+   *  own comment: the bar is conditional (no git story, or read mode, and it
+   *  does not render at all) and it wraps to two lines on a narrow window, so
+   *  any fixed number is wrong in situations the author will actually hit.
+   *  Absent bar means absent property, and the header pins at 0 as before. */
+  const draftbarRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current
+    if (!scroll) return
+    const bar = draftbarRef.current
+    if (!bar) {
+      scroll.style.removeProperty('--draftbar-h')
+      return
+    }
+    const publish = () => scroll.style.setProperty('--draftbar-h', `${Math.round(bar.getBoundingClientRect().height)}px`)
+    publish()
+    // Two triggers, deliberately. ResizeObserver is the precise one — it sees
+    // the bar change height for any reason. The window listener is the
+    // belt-and-braces: wrapping is almost always driven by the window getting
+    // narrower, and a stale offset here is not a cosmetic bug but the chapter
+    // header sitting on top of the bar's buttons. Publishing twice costs a
+    // rect read; publishing never costs the author the control they came for.
+    const ro = new ResizeObserver(publish)
+    ro.observe(bar)
+    window.addEventListener('resize', publish)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', publish)
+      scroll.style.removeProperty('--draftbar-h')
+    }
+  })
 
   /** The reader is at the very top of the chapter — head and furniture in
    *  view, nothing scrolled past. No colon, so it can never collide with a
@@ -1392,9 +1515,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       setBusy(false)
     }
   }
-  const judge = (paragraph: number, op: () => Promise<unknown>) => {
+  const judge = (at: string, op: () => Promise<unknown>) => {
     setFlash(null)
-    void run(op).catch((e: Error) => setFlash({ paragraph, text: e.message ?? String(e) }))
+    void run(op).catch((e: Error) => setFlash({ at, text: e.message ?? String(e) }))
   }
 
   const accept = () => run(async () => {
@@ -1575,7 +1698,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         )}
       <article className="ms-main">
         {draft.git && mode !== 'read' && (
-          <div className={n ? 'draftbar' : 'draftbar clean'}>
+          <div ref={draftbarRef} className={n ? 'draftbar' : 'draftbar clean'}>
             {n ? (
               <>
                 <span className="db-sum"><b>Draft</b> — {n} scene{n === 1 ? '' : 's'} changed ·{' '}
@@ -1849,8 +1972,11 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 )
                 : diffed
                 ? <DiffBody d={diffed} paraKey={paraKeyFor(s)} busy={busy} flash={flash}
-                    onAccept={ix => judge(ix, () => acceptParagraph(s.file, ix))}
-                    onReject={ix => judge(ix, () => rejectParagraph(s.file, ix))} />
+                    onAccept={t => judge(`${t.side}:${t.paragraph}`, () => acceptParagraph(s.file, t))}
+                    onReject={t => judge(`${t.side}:${t.paragraph}`, () => rejectParagraph(s.file, t))}
+                    onSentence={(t, verb) => judge(t.paragraph, () => (verb === 'accept' ? acceptSentence : rejectSentence)({
+                      file: s.file, paragraph: t.paragraph, side: t.side, sentence: t.sentence,
+                    }))} />
                 : <div className="mdbody prose" onClick={bodyClick} onMouseUp={() => captureSelection(s)}>
                   {paragraphsOf(s.body).map((p, pi) => {
                     const anchored = notes.some(n =>
