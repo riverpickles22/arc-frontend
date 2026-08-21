@@ -1007,7 +1007,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  because settling three paragraphs one context menu at a time is the same
    *  decision typed three times. */
   const [lockMenu, setLockMenu] = useState<{
-    scene: string; chapter: string; x: number; y: number
+    scene: string; x: number; y: number
     targets: { paragraph: number; para: string; lockId: string | null }[]
   } | null>(null)
 
@@ -1033,12 +1033,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
   /** Open the menu for the clicked paragraph, or for the whole selected run
    *  when the click lands inside one. */
-  const openLockMenu = useCallback((scene: string, chapter: string, body: string, clicked: number, ev: { clientX: number; clientY: number }) => {
+  const openLockMenu = useCallback((scene: string, body: string, clicked: number, ev: { clientX: number; clientY: number }) => {
     const paras = paragraphsOf(body)
     const covered = selectedParagraphs(scene, body)
     const idxs = covered.length > 1 && covered.includes(clicked) ? covered : [clicked]
     setLockMenu({
-      scene, chapter, x: ev.clientX, y: ev.clientY,
+      scene, x: ev.clientX, y: ev.clientY,
       targets: idxs.map(i => ({ paragraph: i, para: paras[i] ?? '', lockId: lockedAt.get(`${scene}:${i}`)?.id ?? null })),
     })
   }, [selectedParagraphs, lockedAt])
@@ -1845,7 +1845,32 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 disabled={!curScenes.length}
                 title={curScenes.length
                   ? `Copy the prose of all ${curScenes.length} scene${curScenes.length === 1 ? '' : 's'} in this chapter`
-                  : 'Nothing drafted in this chapter yet'} />
+                  : 'Nothing drafted in this chapter yet'}/>
+              {/* The chapter settles from ITS header, never from a menu over
+                  prose (A40-4, per the author): a chapter-sized refusal
+                  stacked beside a paragraph-sized one is one mis-click from
+                  settling a book. Each size lives on the thing it settles. */}
+              {mode !== 'read' && curScenes.length > 0 && (() => {
+                const held = chapterLockOf(cur.id)
+                return held ? (
+                  <a className="linklike lock-act" onClick={() => void unlockHere([held.id])}
+                    title={`This chapter is locked (${held.id}). Unlocking restores any section and paragraph locks it absorbed.`}>
+                    unlock chapter
+                  </a>
+                ) : (
+                  <a className="linklike lock-act"
+                    title={`Settle every scene of ${cur.id}. Section and paragraph locks beneath it are absorbed, and come back if you unlock it.`}
+                    onClick={() => {
+                      void (async () => {
+                        try { await apiCreateLock({ chapter: cur.id }) }
+                        catch (e) { console.error('chapter lock refused:', e) }
+                        reloadLocks()
+                      })()
+                    }}>
+                    lock chapter
+                  </a>
+                )
+              })()}
             </h1>
             <div className="ms-modes" role="group" aria-label="Manuscript mode">
               {(() => {
@@ -1963,6 +1988,31 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                     title="Leave a note about this whole scene — including what it does not say yet">
                     note on this scene
                   </a>
+                  <span className="sep" aria-hidden="true">|</span>
+                  {/* The section settles from ITS header, beside the scene's
+                      other actions — never from the prose menu, where it
+                      would sit one mis-click from a paragraph lock. */}
+                  {(() => {
+                    const held = sectionLockOf(s.scene)
+                    return held ? (
+                      <a className="linklike lock-act" onClick={() => void unlockHere([held.id])}
+                        title={`This section is locked (${held.id}). Unlocking restores any paragraph locks it absorbed.`}>
+                        unlock section
+                      </a>
+                    ) : (
+                      <a className="linklike lock-act"
+                        title={`Settle the whole scene ${s.scene}: every paragraph, and any it grows. Paragraph locks beneath it are absorbed, and come back if you unlock it.`}
+                        onClick={() => {
+                          void (async () => {
+                            try { await apiCreateLock({ scene: s.scene }) }
+                            catch (e) { console.error('section lock refused:', e) }
+                            reloadLocks()
+                          })()
+                        }}>
+                        lock section
+                      </a>
+                    )
+                  })()}
                 </span>
                 <span className="rests">rests on{' '}
                   {[...s.facts, ...s.events].map(id => (
@@ -1997,7 +2047,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                           title={lk ? `settled — locked (${lk.id}); right-click to unlock` : undefined}
                           onContextMenu={ev => {
                             ev.preventDefault()
-                            openLockMenu(s.scene, s.chapter, s.body, pi, ev)
+                            openLockMenu(s.scene, s.body, pi, ev)
                           }}
                           dangerouslySetInnerHTML={{ __html: mdToHtml(p).replace(/^<p>|<\/p>$/g, '') }} />
                       )
@@ -2062,7 +2112,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                         title={lk ? `settled — locked (${lk.id}); right-click to unlock` : undefined}
                         onContextMenu={ev => {
                           ev.preventDefault()
-                          openLockMenu(s.scene, s.chapter, s.body, pi, ev)
+                          openLockMenu(s.scene, s.body, pi, ev)
                         }}
                         dangerouslySetInnerHTML={{ __html: mdToHtml(p).replace(/^<p>|<\/p>$/g, '') }} />
                     )
@@ -2298,51 +2348,6 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               Unlock{unlocked.length ? ` the ${locked.length} locked` : many}
             </button>
           )}
-          {/* The wider settlements (A40-4). Each names exactly what it is
-              about to settle, because the sizes are easy to misjudge and a
-              lock is a refusal the author will meet later as a 423. A parent
-              absorbs the narrower locks beneath it and hands them back on
-              unlock — the list shows one entry while it stands. */}
-          {(() => {
-            const section = sectionLockOf(lockMenu.scene)
-            const chapter = chapterLockOf(lockMenu.chapter)
-            return <>
-              {section ? (
-                <button onClick={() => void unlockHere([section.id])}>
-                  Unlock this section
-                </button>
-              ) : (
-                <button title={`Settle the whole scene ${lockMenu.scene}: every paragraph, and any it grows. Paragraph locks beneath it are absorbed, and come back if you unlock it.`}
-                  onClick={() => {
-                    void (async () => {
-                      try { await apiCreateLock({ scene: lockMenu.scene }) }
-                      catch (e) { console.error('section lock refused:', e) }
-                      setLockMenu(null); reloadLocks()
-                    })()
-                  }}>
-                  Lock this section
-                </button>
-              )}
-              {chapter ? (
-                <button onClick={() => void unlockHere([chapter.id])}>
-                  Unlock this chapter
-                </button>
-              ) : (
-                <button title={`Settle every scene of ${lockMenu.chapter}. Section and paragraph locks beneath it are absorbed, and come back if you unlock it.`}
-                  onClick={() => {
-                    void (async () => {
-                      try { await apiCreateLock({ chapter: lockMenu.chapter }) }
-                      catch (e) { console.error('chapter lock refused:', e) }
-                      setLockMenu(null); reloadLocks()
-                      // The mode effect above follows the author out of Edit
-                      // once the lock lands in the list.
-                    })()
-                  }}>
-                  Lock this chapter
-                </button>
-              )}
-            </>
-          })()}
         </div>
         )
       })()}

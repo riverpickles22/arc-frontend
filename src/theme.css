@@ -943,6 +943,10 @@ p.para-changed:hover .para-reject, .para-reject:focus-visible { opacity: 1; }
    muted register — settled is a fact about the prose, not an alarm — instead
    of a padlock drawn on every paragraph the wide lock covers. */
 .stpill.settled { color: var(--muted); border-color: color-mix(in oklab, var(--muted) 45%, transparent); }
+/* The scope-lock actions live on their own headers, sized as actions rather
+   than headings — a chapter-sized refusal never sits in a menu beside a
+   paragraph-sized one. */
+.ms-headrow h1 .lock-act { font-size: 12px; font-weight: 400; margin-left: 10px; vertical-align: 2px; }
 .learn-now { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule, color-mix(in oklab, var(--muted) 25%, transparent)); }
 .learn-now .fsummary { margin-top: 6px; }
 /* A touchstone the manuscript has moved past: the one state on this page
