@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Canon, Entity } from '../canon'
-import { extantAt, nameOf, stateAt, timeRefKey } from '../canon'
+import type { Canon, Chapter, Entity } from '../canon'
+import { nameOf, stateAt, timeRefKey } from '../canon'
+import { displayState, livingNote, type DisplayState } from '../entity-state'
 import type { BBox, GeoJSON } from '../map-geometry'
 import { detailVisible, fitAspect, fitBBox, geoCoords, graticule, kindOf, panWindow, pickGraticuleStep, resolveCoords, scaleBar, svgPath, windowForInset, zoomWindow } from '../map-geometry'
 import { loadBasemap } from '../api'
@@ -20,12 +21,14 @@ const inBox = (b: BBox, lon: number, lat: number) =>
   lon >= b.lon0 && lon <= b.lon1 && lat >= b.lat0 && lat <= b.lat1
 
 export function MapView({
-  canon, view, colors, tEnd, selected, onSelect, onClear, touching, onOpenRun,
+  canon, view, colors, tEnd, chapter, selected, onSelect, onClear, touching, onOpenRun,
 }: {
   canon: Canon
   view: View
   colors: Record<string, string>
   tEnd: number
+  /** The chapter under the cursor — its POV and its span mark markers. */
+  chapter?: Chapter
   selected: string | null
   onSelect: (id: string) => void
   /** Empty-canvas click: the selection clears everywhere, not just here. */
@@ -213,17 +216,23 @@ export function MapView({
     [geo, pMain],
   )
 
-  // Characters positioned at T
+  // Characters positioned at T. The dead are NOT filtered out: a character
+  // deceased at T renders at their last honest location, marked as gone —
+  // before this, a death showed as a marker silently vanishing, which is a
+  // different claim than the record makes. Only the not-yet-born have no
+  // place here, because they have no state to stand on.
   const chars = useMemo(() => {
-    const out: { e: Entity; lon: number; lat: number; cond?: string; loc?: string }[] = []
+    const out: { e: Entity; ds: DisplayState; lon: number; lat: number; cond?: string; loc?: string }[] = []
     for (const e of Object.values(canon.entities)) {
-      if (e.type !== 'character' || !extantAt(e, tEnd)) continue
+      if (e.type !== 'character') continue
+      const ds = displayState(canon, e.id, tEnd, chapter)
+      if (ds.notYet) continue
       const s = stateAt(e, tEnd, canon.timeline.eras)
       const c = resolveCoords(s?.location, canon.entities)
-      if (s && c) out.push({ e, lon: c.lon, lat: c.lat, cond: s.condition, loc: s.location })
+      if (s && c) out.push({ e, ds, lon: c.lon, lat: c.lat, cond: s.condition, loc: s.location })
     }
     return out
-  }, [canon, tEnd])
+  }, [canon, tEnd, chapter])
 
   // Trail for the selected character
   const trail = useMemo(() => {
@@ -270,19 +279,37 @@ export function MapView({
             key={c.e.id + box.lon0}
             style={{ cursor: 'pointer' }}
             onClick={ev => { ev.stopPropagation(); onSelect(c.e.id) }}
-            onMouseMove={ev => showTip(ev, c.e.name, c.cond)}
+            onMouseMove={ev => showTip(ev, c.e.name, livingNote(c.ds) ?? c.cond)}
             onMouseLeave={hideTip}
           >
-            {/* Proposed places read as pending in the same register the graph
-                uses — dashed, and lighter. Position is unaffected: this is
-                decoration over a marker the projection already placed. */}
-            {c.e.status === 'proposed' && (
+            {/* Proposed reads as pending in the same register the graph
+                uses — dashed, and lighter, in the marker's OWN colour: no
+                status ever changes an entity's colour. Position is
+                unaffected: decoration over a marker already placed. */}
+            {c.ds.pending && (
               <circle cx={mx} cy={my} r={(sel ? 11 : 9.5) * scale} fill="none"
-                stroke="var(--c6)" strokeWidth={1.5} strokeDasharray="3 3" opacity={0.9} />
+                stroke={colors[c.e.id] ?? 'var(--c7)'} strokeWidth={1.5} strokeDasharray="3 3" opacity={0.9} />
             )}
             <circle cx={mx} cy={my} r={(sel ? 8 : 6.5) * scale} fill={colors[c.e.id] ?? 'var(--c7)'}
-              opacity={c.e.status === 'proposed' ? 0.45 : 1}
+              opacity={c.ds.pending ? 0.45 : c.ds.deceased ? 0.45 : 1}
               stroke="var(--surface-1)" strokeWidth={2} />
+            {/* The same vocabulary the graph draws: a slash for a life the
+                reader has passed, a point above for the chapter's POV, the
+                timeline's change-diamond for what this chapter moves. */}
+            {c.ds.deceased && (
+              <line x1={mx - 5.5 * scale} y1={my + 5.5 * scale} x2={mx + 5.5 * scale} y2={my - 5.5 * scale}
+                stroke="var(--muted)" strokeWidth={1.5} opacity={0.85} />
+            )}
+            {c.ds.pov && (
+              <circle cx={mx} cy={my - 11 * scale} r={2.5 * scale} fill={colors[c.e.id] ?? 'var(--c7)'}
+                onMouseMove={ev => { ev.stopPropagation(); showTip(ev, c.e.name, 'POV of the current chapter') }} />
+            )}
+            {c.ds.changedThisChapter && (
+              <rect x={mx + 5 * scale} y={my + 5 * scale} width={5 * scale} height={5 * scale}
+                transform={`rotate(45 ${mx + 7.5 * scale} ${my + 7.5 * scale})`}
+                fill={colors[c.e.id] ?? 'var(--c7)'} stroke="var(--surface-1)" strokeWidth={1}
+                onMouseMove={ev => { ev.stopPropagation(); showTip(ev, c.e.name, 'changes in the current chapter') }} />
+            )}
             {touching?.get(c.e.id) && (
               <circle cx={mx + 7 * scale} cy={my - 7 * scale} r={3.5 * scale}
                 fill="var(--c1)" stroke="var(--surface-1)" strokeWidth={1.5}
@@ -291,7 +318,7 @@ export function MapView({
                 onMouseLeave={hideTip} />
             )}
             <text x={lx} y={my + 4} fontSize={11.5 * scale} textAnchor={labelLeft ? 'end' : 'start'}
-              fill="var(--text-primary)" fontWeight={sel ? 650 : 400}>
+              fill={c.ds.deceased ? 'var(--muted)' : 'var(--text-primary)'} fontWeight={sel ? 650 : 400}>
               {c.e.name}
             </text>
           </g>
@@ -374,7 +401,7 @@ export function MapView({
                 projection already placed, so nothing moves when it ratifies. */}
             {p.status === 'proposed' && (
               <circle cx={x} cy={y} r={6} fill="none"
-                stroke="var(--c6)" strokeWidth={1.2} strokeDasharray="3 3" opacity={0.9} />
+                stroke="var(--map-label)" strokeWidth={1.2} strokeDasharray="3 3" opacity={0.9} />
             )}
             <circle cx={x} cy={y} r={4.5} fill="none" stroke="var(--map-label)" strokeWidth={1}
               opacity={p.status === 'proposed' ? 0.5 : 0.9} />

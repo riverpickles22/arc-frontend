@@ -333,11 +333,11 @@ function Shell({ canon, data, dark, onToggleDark }: {
         <section className="panel col-map">
           <h2>Map — where everyone is {time.bookChapter ? `at the end of ch. ${time.bookChapter.order} (${time.displayYear})` : `in ${time.year}`}</h2>
           <MapView touching={touching} onOpenRun={setOpenRun} canon={canon} view={data.view} colors={colors} tEnd={time.tEnd}
-            selected={selected} onSelect={selectAndShow} onClear={clearSelect} />
+            chapter={curChapter} selected={selected} onSelect={selectAndShow} onClear={clearSelect} />
         </section>
         <section className="panel col-graph">
           <h2>Graph — entities &amp; relationships</h2>
-          <GraphView touching={touching} onOpenRun={setOpenRun} canon={canon} tEnd={time.tEnd} selected={selected} onSelect={selectAndShow} onClear={clearSelect} dimTo={graphDim}
+          <GraphView touching={touching} onOpenRun={setOpenRun} canon={canon} tEnd={time.tEnd} chapter={curChapter} selected={selected} onSelect={selectAndShow} onClear={clearSelect} dimTo={graphDim}
             focus={{ mode: focusState.mode, onMode: m => setFocusState(s => focusOnMode(s, m)) }} />
         </section>
         <section className="panel col-profile">

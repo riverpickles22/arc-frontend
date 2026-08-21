@@ -3,8 +3,9 @@ import {
   forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY,
 } from 'd3-force'
 import type { SimulationLinkDatum, SimulationNodeDatum } from 'd3-force'
-import type { Canon } from '../canon'
-import { extantAt, nameOf, stateAt } from '../canon'
+import type { Canon, Chapter } from '../canon'
+import { nameOf, stateAt } from '../canon'
+import { displayState, livingNote } from '../entity-state'
 import { FOCUS_MODES, type FocusMode } from '../graph-focus'
 import { degreeRadius, edgeArc } from '../graph-visuals'
 import { TYPE_COLORS } from '../presentation'
@@ -20,10 +21,12 @@ interface Node extends SimulationNodeDatum {
 }
 
 export function GraphView({
-  canon, tEnd, selected, onSelect, onClear, dimTo, focus, touching, onOpenRun,
+  canon, tEnd, chapter, selected, onSelect, onClear, dimTo, focus, touching, onOpenRun,
 }: {
   canon: Canon
   tEnd: number
+  /** The chapter under the cursor — its POV and its span mark nodes. */
+  chapter?: Chapter
   selected: string | null
   onSelect: (id: string) => void
   /** Empty-canvas click: the selection clears everywhere, not just here. */
@@ -147,7 +150,10 @@ export function GraphView({
         {/* nodes */}
         {nodes.map(n => {
           const ent = canon.entities[n.id]
-          const alive = extantAt(ent, tEnd)
+          // The one derivation both surfaces share (entity-state.ts): the
+          // views render the vocabulary, they no longer invent fragments of it.
+          const ds = displayState(canon, n.id, tEnd, chapter)
+          const alive = !ds.notYet && !ds.deceased
           const sel = selected === n.id
           const dimmed = !!dimTo && !dimTo.has(n.id)
           const r = degreeRadius(n.type === 'character' ? 10 : 7.5, degree.get(n.id) ?? 0)
@@ -155,13 +161,14 @@ export function GraphView({
           // drawn as though it had always been true. Decoration only — the
           // layout above never sees status, so nothing moves when a record is
           // ratified.
-          const pending = ent.status === 'proposed'
+          const pending = ds.pending
+          const color = TYPE_COLORS[n.type] ?? 'var(--c7)'
           const run = touching?.get(n.id)
           return (
             <g key={n.id} style={{ cursor: 'pointer' }}
               onClick={ev => { ev.stopPropagation(); onSelect(n.id) }}
               onMouseMove={ev => showTip(ev, ent.name,
-                pending ? 'proposed — not yet ratified' : alive ? ent.summary.slice(0, 100) + '…' : 'not extant at this time')}
+                pending ? 'proposed — not yet ratified' : livingNote(ds) ?? ent.summary.slice(0, 100) + '…')}
               onMouseLeave={hideTip}>
               {/* the body's glow, in its own type colour */}
               <circle cx={n.x} cy={n.y} r={r + 4} fill={TYPE_COLORS[n.type] ?? 'var(--c7)'}
@@ -173,14 +180,36 @@ export function GraphView({
               )}
               {pending && (
                 <circle cx={n.x} cy={n.y} r={r + 3} fill="none"
-                  stroke="var(--c6)" strokeWidth={1.5} strokeDasharray="3 3"
+                  stroke={color} strokeWidth={1.5} strokeDasharray="3 3"
                   opacity={dimmed ? 0.2 : 0.9} />
               )}
               <circle cx={n.x} cy={n.y} r={r}
-                fill={TYPE_COLORS[n.type] ?? 'var(--c7)'}
+                fill={color}
                 opacity={dimmed ? 0.12 : pending ? 0.4 : alive ? 1 : 0.28}
                 stroke="var(--surface-1)" strokeWidth={2}
                 style={{ transition: 'opacity 240ms ease' }} />
+              {/* Deceased is not merely absent: a life the reader has passed
+                  is a different fact from one still coming, and the two faded
+                  states were indistinguishable before. The slash says closed. */}
+              {ds.deceased && !dimmed && (
+                <line x1={(n.x ?? 0) - r * 0.8} y1={(n.y ?? 0) + r * 0.8}
+                  x2={(n.x ?? 0) + r * 0.8} y2={(n.y ?? 0) - r * 0.8}
+                  stroke="var(--muted)" strokeWidth={1.5} opacity={0.85} />
+              )}
+              {/* The chapter's POV: a small steady point above the node, in
+                  the node's own colour — status never changes a colour. */}
+              {ds.pov && !dimmed && (
+                <circle cx={n.x} cy={(n.y ?? 0) - r - 6} r={2.5} fill={color}
+                  onMouseMove={ev => { ev.stopPropagation(); showTip(ev, ent.name, 'POV of the current chapter') }} />
+              )}
+              {/* The current chapter is moving this entity: the same diamond
+                  the timeline uses for a state change, at the node's foot. */}
+              {ds.changedThisChapter && !dimmed && (
+                <rect x={(n.x ?? 0) + r * 0.6} y={(n.y ?? 0) + r * 0.6} width={5} height={5}
+                  transform={`rotate(45 ${(n.x ?? 0) + r * 0.6 + 2.5} ${(n.y ?? 0) + r * 0.6 + 2.5})`}
+                  fill={color} stroke="var(--surface-1)" strokeWidth={1}
+                  onMouseMove={ev => { ev.stopPropagation(); showTip(ev, ent.name, 'changes in the current chapter') }} />
+              )}
               {run && (
                 <circle cx={(n.x ?? 0) + r} cy={(n.y ?? 0) - r} r={3.5}
                   fill="var(--c1)" stroke="var(--surface-1)" strokeWidth={1.5}
@@ -218,7 +247,7 @@ export function GraphView({
         ...(touching?.size ? [{ label: 'a run is changing this', color: 'var(--c1)' }] : []),
       ]}>
         <span className="item"><span className="swatch" style={{ background: 'transparent', border: '1px dashed var(--c1)', borderRadius: 0, width: 12, height: 0 }} />perception at T (selected)</span>
-        <span className="item" style={{ opacity: 0.4 }}>● faded = not extant at T</span>
+        <span className="item" style={{ opacity: 0.4 }}>● faded = not present at T</span>
       </Legend>
     </div>
   )
