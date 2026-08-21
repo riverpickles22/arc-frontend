@@ -105,3 +105,19 @@ test('a story with no themes.yaml still falls back to the vision table', () => {
   const vision = { path: 'docs/vision.md', canon: null, body: '## Themes\n\n| Theme | Canon carriers |\n|---|---|\n| Old way | [[char.y]] |\n' }
   expect(landingMd(canon, [vision], new Map())).toContain('**Old way** — [[char.y]]')
 })
+
+test('the thinnest story renders: no logline, no summaries, nothing to say', () => {
+  // A brand-new story may not have said what it is yet. Absence renders as
+  // absence — the landing page must never throw on a field the author has
+  // not answered.
+  const canon = {
+    story: { title: 'The Thin Story', protagonists: ['char.nell'], themes: [], status: 'material', slug: 't' },
+    chapters: [{ id: 'ch.01', type: 'chapter', order: 1, title: 'One', status: 'proposed', span: {} }],
+    entities: { 'char.nell': { id: 'char.nell', type: 'character', name: 'Nell', status: 'canon' } },
+    events: {}, relationships: [], timeline: { eras: [] },
+  } as unknown as Canon
+  const md = landingMd(canon, [], new Map())
+  expect(md).toContain('# The Thin Story')
+  expect(md).toContain('**1. One**')
+  expect(md).not.toContain('undefined')
+})

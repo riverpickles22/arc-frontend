@@ -167,8 +167,18 @@ export function eraAt(tEnd: number, eras: Era[]): Era | undefined {
 }
 
 export function yearRange(eras: Era[]): [number, number] {
-  const keys = eras.flatMap(e => eraSpanKeys(e))
-  return [Math.floor(Math.min(...keys) / 10000), Math.floor(Math.max(...keys.filter(k => k < 99999999)) / 10000)]
+  // Only dated span ends carry year information: 0 (open start) and 99999999
+  // (open end) are the shared rule's sentinels, not years, and they must not
+  // reach Math.min/max. The old code filtered only the end sentinel and only
+  // on one side, so a timeline of open-ended eras — schema-valid, since span
+  // requires no properties — returned [-Infinity, Infinity] and NaN'd every
+  // axis below. (A35-3 retires the sentinels; this guard retires with them.)
+  const keys = eras.flatMap(e => eraSpanKeys(e)).filter(k => k > 0 && k < 99999999)
+  if (!keys.length) return [1, 2]   // a timeline with no dated era anywhere: finite and drawable
+  const min = Math.floor(Math.min(...keys) / 10000)
+  const max = Math.floor(Math.max(...keys) / 10000)
+  // A single-year story still needs a nonzero axis to stand on.
+  return min === max ? [min, max + 1] : [min, max]
 }
 
 /** Display name for any id, falling back to the id itself. */

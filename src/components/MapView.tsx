@@ -391,7 +391,7 @@ export function MapView({
         return (
           <g key={p.id + box.lon0} style={{ cursor: 'pointer' }}
             onClick={ev => { ev.stopPropagation(); if (isDoor) setWin(cityWindow(p)); else onSelect(p.id) }}
-            onMouseMove={ev => showTip(ev, p.name, isDoor ? 'click to open the city' : p.summary.slice(0, 90) + '…')}
+            onMouseMove={ev => showTip(ev, p.name, isDoor ? 'click to open the city' : p.summary ? p.summary.slice(0, 90) + '…' : undefined)}
             onMouseLeave={hideTip}>
             {/* A selected place answers on the map the way a selected
                 character does — the same ring the graph draws. */}

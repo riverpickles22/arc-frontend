@@ -73,7 +73,9 @@ export function landingMd(
   const s = canon.story
   const chapters = [...canon.chapters].sort((a, b) => a.order - b.order)
   const md: string[] = [`# ${s.title}`, '']
-  md.push(`*${s.logline.replace(/\s+/g, ' ').trim()}*`, '')
+  // A brand-new story may not have said what it is yet; absence renders as
+  // absence, never as a throw on the landing page.
+  if (s.logline) md.push(`*${s.logline.replace(/\s+/g, ' ').trim()}*`, '')
   if (s.genre || s.setting) {
     md.push([s.genre && `**${s.genre}**`, s.setting && `set in ${s.setting}`].filter(Boolean).join(', ') + '.', '')
   }
@@ -81,7 +83,7 @@ export function landingMd(
   const excerptOf = (e: Entity) => {
     const a = byCanon.get(e.id)
     const p = a ? firstParagraph(a.body) : undefined
-    return p ?? e.summary.replace(/\s+/g, ' ').trim()
+    return p ?? (e.summary ?? '').replace(/\s+/g, ' ').trim()
   }
   const withArticles = (type: string) => {
     const protagonists = (s.protagonists ?? []).map(id => canon.entities[id]).filter(e => e?.type === type)
@@ -97,7 +99,8 @@ export function landingMd(
       if (part.label !== 'Chapters') md.push(`### ${part.label}`, '')
       for (const c of part.chapters) {
         const label = c.order === 0 ? 'Prologue' : `${c.order}.`
-        md.push(`**${label} ${c.title}** — ${c.summary.replace(/\s+/g, ' ').trim()}`, '')
+        const csum = (c.summary ?? '').replace(/\s+/g, ' ').trim()
+        md.push(`**${label} ${c.title}**${csum ? ` — ${csum}` : ''}`, '')
       }
     }
   }
