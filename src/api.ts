@@ -12,7 +12,7 @@ import type {
   RunsResponse, RunDetailResponse,
   UpdateMaterialRequest, UpdateMaterialResponse, UpdateNoteRequest,
   WorkDecisionRequest, WorkDecisionResponse, WorkNoteRequest, WorkResponse,
-  ProseAcceptRequest, ProseAcceptResponse, ProseDiscardRequest, ProseParagraphRequest, ProseResponse, ProseSentenceRequest, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
+  ProseAcceptRequest, ProseAcceptResponse, ProseCheckHit, ProseChecksResponse, ProseDiscardRequest, ProseParagraphRequest, ProseResponse, ProseSentenceRequest, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
 } from 'arc-canon-graph'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SuggestRequest, SuggestResponse } from './canon'
 import type { View } from './presentation'
@@ -228,6 +228,11 @@ export const analyzeDraft = (): Promise<AnalyzeResponse> =>
  *  verb beside rephrase (alternatives, writes nothing) and revise (minimal,
  *  annotation-driven). Lands in the draft layer like any generation; locks,
  *  the validator, and quoted withholds can refuse it server-side. */
+/** The mechanical checks — the proven channel. Free and instant: no engine,
+ *  no tokens, decidable by reading the characters. */
+export const loadChecks = (signal?: AbortSignal): Promise<ProseCheckHit[]> =>
+  getJson<ProseChecksResponse>('/api/prose/checks', { signal }).then(r => r.findings)
+
 export const redraftScene = (req: RedraftRequest): Promise<DraftSceneResponse> =>
   post('/api/prose/redraft', req)
 

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { AnalyzeResponse, AnnotationStatus, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
+import type { AnalyzeResponse, AnnotationStatus, Chapter, ChatResponse, DraftSceneResponse, ProseCheckHit, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
 import { dateOf } from '../canon'
 import { dotsFor } from '../keypoints'
-import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadLocks, redraftScene, suggestText, updateNote, writeScene } from '../api'
+import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene } from '../api'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
@@ -987,8 +987,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  and offers the two verbs. Re-fetched whenever the prose changes, so a
    *  lock that drifted or orphaned shows where it actually is now. */
   const [locksList, setLocksList] = useState<ResolvedLock[]>([])
+  // The proven channel: mechanical facts about the prose, free to fetch and
+  // refreshed with the locks — the two arrive together because a finding
+  // inside settled prose names its lock.
+  const [checks, setChecks] = useState<ProseCheckHit[]>([])
   const reloadLocks = useCallback(() => {
     loadLocks().then(setLocksList).catch(() => setLocksList([]))
+    loadChecks().then(setChecks).catch(() => setChecks([]))
   }, [])
   useEffect(() => { reloadLocks() }, [reloadLocks, scenes])
   /** `scene:paragraph` → lock, at the paragraph each lock RESOLVES to now. */
@@ -2020,6 +2025,22 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   ))}
                 </span>
               </div>}
+              {mode !== 'read' && (() => {
+                const mine = checks.filter(c => c.scene === s.scene)
+                if (!mine.length) return null
+                return (
+                  <div className="prose-checks">
+                    <span className="reg-proven" title="Decidable by reading the characters — no model, no judgment, the same answer every run. Everything else this page reads into your prose is argued; this is not.">proven</span>
+                    {mine.map((c, i) => (
+                      <span key={i} className="check-hit">
+                        ¶{c.paragraph + 1} {c.check.replace(/-/g, ' ')} <code>{c.excerpt}</code>
+                        {c.lock && <em title="This paragraph is settled. A typo inside a lock stays until you unlock it — arc reports it and never repairs it.">
+                          {' '}locked ({c.lock})</em>}
+                      </span>
+                    ))}
+                  </div>
+                )
+              })()}
               {mode !== 'read' && s.contract && <ContractPanel c={s.contract} onOpenWorld={onOpenWorld} />}
               {mode === 'read'
                 ? (
