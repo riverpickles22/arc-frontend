@@ -945,6 +945,12 @@ p.para-changed:hover .para-reject, .para-reject:focus-visible { opacity: 1; }
 .prose-checks .check-hit code { font-size: 11px; color: var(--muted); }
 .prose-checks .check-hit em { color: var(--muted); font-style: normal; }
 
+/* A silence in the why-trace (A44-2): the record does not say, rendered as
+   the finding it is — muted but present, never an absent section someone
+   reads as "fine". */
+.silence-line { color: var(--muted); font-style: italic; }
+.badge.silence { color: var(--c6); border-color: color-mix(in oklab, var(--c6) 45%, transparent); }
+
 .reg-argued {
   font-size: 9.5px; text-transform: uppercase; letter-spacing: .09em;
   color: var(--muted); border: 1px solid var(--border); border-radius: 3px;

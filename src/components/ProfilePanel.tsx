@@ -378,11 +378,64 @@ function ChapterProfile({
   )
 }
 
+/** "Why is this here?" (A44-2): the element's narrative role, traced from
+ *  edges the record already holds — introduced where, planted and paid off
+ *  where, carried by which theme. The dependents half lives in
+ *  ImpactSection above, which shipped first; this section adds the rest,
+ *  and renders SILENCE as a finding: "the record does not say" is the
+ *  orphan report's information, per element, where the author is looking. */
+function WhySection({ canon, id, prose, onSelect }: {
+  canon: Canon; id: string; prose: ProseScene[]; onSelect: (id: string) => void
+}) {
+  const why = useMemo(
+    () => loadGraph(canon).whyHere(id, prose.map(sc => ({ scene: sc.scene, chapter: sc.chapter, facts: sc.facts, events: sc.events }))),
+    [canon, id, prose],
+  )
+  const has = why.introduced || why.setup.length || why.payoffs.length || why.themes.length || why.silences.length
+  if (!has) return null
+  return (
+    <div className="field">
+      <div className="k">why this is here</div>
+      <div className="v">
+        {why.introduced && (
+          <div>
+            introduced <Ref id={why.introduced.chapter} canon={canon} onSelect={onSelect} />
+            {why.introduced.scene && <> · <code>{why.introduced.scene}</code></>}
+            {' '}<span className="badge">{why.introduced.via}</span>
+          </div>
+        )}
+        {why.setup.map((x, i) => (
+          <div key={'su' + i}>planted by <Ref id={x.from} canon={canon} onSelect={onSelect} /> <span className="badge">{x.via}</span></div>
+        ))}
+        {why.payoffs.map((x, i) => (
+          <div key={'po' + i}>
+            plants <Ref id={x.to} canon={canon} onSelect={onSelect} />{' '}
+            <span className="badge">{x.via}</span>
+            {!x.firesOnPage && <span className="badge silence" title="Nothing downstream of this payoff is on the page — planted, never fired. The dangling-payoff report flags this same edge.">never fires</span>}
+          </div>
+        ))}
+        {why.themes.map(th => (
+          <div key={th.id}>carried by <Ref id={th.id} canon={canon} onSelect={onSelect} /> ({th.name})</div>
+        ))}
+        {/* Silence is a finding, not an empty state: each question the walks
+            cannot answer says so in words, in the proven register — an
+            element the record cannot place is editorial information. */}
+        {why.silences.map((line, i) => (
+          <div key={'si' + i} className="silence-line">{line}</div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function ProfilePanel({
   canon, id, tEnd, onSelect, prose, onJumpTo, refAnchor, pov,
 }: { canon: Canon; id: string | null; tEnd: number; onSelect: (id: string) => void; prose: ProseScene[]; onJumpTo?: (k: number) => void; refAnchor?: string; pov?: PovProp }) {
   if (!id) return <div className="empty">Select a character, place, or event.</div>
-  const impact = <ImpactSection canon={canon} id={id} prose={prose} onSelect={onSelect} />
+  const impact = <>
+    <WhySection canon={canon} id={id} prose={prose} onSelect={onSelect} />
+    <ImpactSection canon={canon} id={id} prose={prose} onSelect={onSelect} />
+  </>
   const e = canon.entities[id]
   if (e) return <EntityProfile e={e} canon={canon} tEnd={tEnd} onSelect={onSelect} refAnchor={refAnchor} pov={pov}>{impact}</EntityProfile>
   const ev = canon.events[id]
