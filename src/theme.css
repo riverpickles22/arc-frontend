@@ -939,6 +939,10 @@ p.para-changed:hover .para-reject, .para-reject:focus-visible { opacity: 1; }
   padding: 1px 4px; margin-left: 6px; vertical-align: 1px; font-weight: 400;
 }
 .proposed-rules { border-style: dashed; }
+/* A scene settled entire (A40-4): one quiet chip in the header, in the
+   muted register — settled is a fact about the prose, not an alarm — instead
+   of a padlock drawn on every paragraph the wide lock covers. */
+.stpill.settled { color: var(--muted); border-color: color-mix(in oklab, var(--muted) 45%, transparent); }
 .learn-now { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule, color-mix(in oklab, var(--muted) 25%, transparent)); }
 .learn-now .fsummary { margin-top: 6px; }
 /* A touchstone the manuscript has moved past: the one state on this page

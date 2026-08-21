@@ -1007,7 +1007,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  because settling three paragraphs one context menu at a time is the same
    *  decision typed three times. */
   const [lockMenu, setLockMenu] = useState<{
-    scene: string; x: number; y: number
+    scene: string; chapter: string; x: number; y: number
     targets: { paragraph: number; para: string; lockId: string | null }[]
   } | null>(null)
 
@@ -1033,12 +1033,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
   /** Open the menu for the clicked paragraph, or for the whole selected run
    *  when the click lands inside one. */
-  const openLockMenu = useCallback((scene: string, body: string, clicked: number, ev: { clientX: number; clientY: number }) => {
+  const openLockMenu = useCallback((scene: string, chapter: string, body: string, clicked: number, ev: { clientX: number; clientY: number }) => {
     const paras = paragraphsOf(body)
     const covered = selectedParagraphs(scene, body)
     const idxs = covered.length > 1 && covered.includes(clicked) ? covered : [clicked]
     setLockMenu({
-      scene, x: ev.clientX, y: ev.clientY,
+      scene, chapter, x: ev.clientX, y: ev.clientY,
       targets: idxs.map(i => ({ paragraph: i, para: paras[i] ?? '', lockId: lockedAt.get(`${scene}:${i}`)?.id ?? null })),
     })
   }, [selectedParagraphs, lockedAt])
@@ -1077,6 +1077,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
   /** Why the last keystroke did not happen. Cleared on the next successful
    *  one — a refusal explains itself in passing, it does not accumulate. */
+  /** The scope locks standing over a scene or chapter — active ones only,
+   *  which is all the server returns. One entry does the work of many, so
+   *  these are what the menu offers to lift. */
+  const sectionLockOf = useCallback((scene: string) => locksList.find(l => l.anchor.scene === scene && l.anchor.paragraph == null) ?? null, [locksList])
+  const chapterLockOf = useCallback((chapter: string) => locksList.find(l => l.anchor.chapter === chapter) ?? null, [locksList])
+
   const [lockedNote, setLockedNote] = useState<string | null>(null)
   useEffect(() => {
     if (!lockedNote) return
@@ -1275,6 +1281,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   }, [diffs])
 
   const cur = chapters.length ? chapters[Math.min(chapterIx, chapters.length - 1)] : undefined
+
+  // Edit must not stay selected over a chapter that got locked — by this
+  // session's click or anyone else's. The same follow-the-author-out the
+  // view switcher does when a non-proposed view is chosen while editing.
+  useEffect(() => {
+    if (mode === 'edit' && cur && chapterLockOf(cur.id)) switchMode('notes')
+  }, [mode, cur, chapterLockOf, switchMode])
   const curScenes = useMemo(
     () => (cur ? scenes.filter(s => s.chapter === cur.id).sort((a, b) => a.file.localeCompare(b.file)) : []),
     [scenes, cur],
@@ -1835,13 +1848,32 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   : 'Nothing drafted in this chapter yet'} />
             </h1>
             <div className="ms-modes" role="group" aria-label="Manuscript mode">
-              <button className={mode === 'edit' ? 'on' : ''} aria-pressed={mode === 'edit'}
-                disabled={!draft.git} onClick={() => switchMode('edit')}
-                title={draft.git
-                  ? `Click anywhere in the prose and type — it lands in the draft layer as you go. ${MODE_CHORD} cycles the mode.`
-                  : 'Editing needs the story to be a git repository — there is no draft layer without one.'}>
-                Edit
-              </button>
+              {(() => {
+                // A locked chapter is the author's own word for what a
+                // finished chapter is for: Notes and Read, not Edit. The
+                // button stays visible and says WHY — a greyed control with
+                // no reason reads as a bug — and aria-disabled rather than
+                // disabled so the hover can actually reach the reason.
+                const chLock = chapterLockOf(cur.id)
+                if (chLock) {
+                  return (
+                    <button className="off" aria-disabled="true" aria-pressed={false}
+                      onClick={ev => ev.preventDefault()}
+                      title={`This chapter is locked (${chLock.id}) — you settled it entire. Unlock it from the prose right-click menu to edit.`}>
+                      Edit
+                    </button>
+                  )
+                }
+                return (
+                  <button className={mode === 'edit' ? 'on' : ''} aria-pressed={mode === 'edit'}
+                    disabled={!draft.git} onClick={() => switchMode('edit')}
+                    title={draft.git
+                      ? `Click anywhere in the prose and type — it lands in the draft layer as you go. ${MODE_CHORD} cycles the mode.`
+                      : 'Editing needs the story to be a git repository — there is no draft layer without one.'}>
+                    Edit
+                  </button>
+                )
+              })()}
               <button className={mode === 'notes' ? 'on' : ''} aria-pressed={mode === 'notes'}
                 onClick={() => switchMode('notes')}
                 title={`Select prose to leave a note, click a note to focus it. ${MODE_CHORD} cycles the mode.`}>
@@ -1887,6 +1919,17 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               {mode !== 'read' && <div className="scene-head">
                 <code>{s.scene}</code>
                 <span className={`stpill ${s.status}`}>{s.status}</span>
+                {(() => {
+                  // The wider settlements read from the header, once — not as
+                  // a padlock drawn on every paragraph they cover (A40-4).
+                  const wide = chapterLockOf(s.chapter) ?? sectionLockOf(s.scene)
+                  return wide ? (
+                    <span className="stpill settled"
+                      title={`${wide.anchor.chapter ? 'This chapter' : 'This section'} is locked (${wide.id}) — settled entire. Unlock from the prose right-click menu.`}>
+                      settled
+                    </span>
+                  ) : null
+                })()}
                 {change && <span className={`stpill ${change.status}`}>draft · {change.status}</span>}
                 {mode === 'edit' && view === 'proposed' && editStatus[s.file]?.state === 'saving' && (
                   <span className="fsummary">saving…</span>
@@ -1954,7 +1997,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                           title={lk ? `settled — locked (${lk.id}); right-click to unlock` : undefined}
                           onContextMenu={ev => {
                             ev.preventDefault()
-                            openLockMenu(s.scene, s.body, pi, ev)
+                            openLockMenu(s.scene, s.chapter, s.body, pi, ev)
                           }}
                           dangerouslySetInnerHTML={{ __html: mdToHtml(p).replace(/^<p>|<\/p>$/g, '') }} />
                       )
@@ -2019,7 +2062,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                         title={lk ? `settled — locked (${lk.id}); right-click to unlock` : undefined}
                         onContextMenu={ev => {
                           ev.preventDefault()
-                          openLockMenu(s.scene, s.body, pi, ev)
+                          openLockMenu(s.scene, s.chapter, s.body, pi, ev)
                         }}
                         dangerouslySetInnerHTML={{ __html: mdToHtml(p).replace(/^<p>|<\/p>$/g, '') }} />
                     )
@@ -2255,6 +2298,51 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               Unlock{unlocked.length ? ` the ${locked.length} locked` : many}
             </button>
           )}
+          {/* The wider settlements (A40-4). Each names exactly what it is
+              about to settle, because the sizes are easy to misjudge and a
+              lock is a refusal the author will meet later as a 423. A parent
+              absorbs the narrower locks beneath it and hands them back on
+              unlock — the list shows one entry while it stands. */}
+          {(() => {
+            const section = sectionLockOf(lockMenu.scene)
+            const chapter = chapterLockOf(lockMenu.chapter)
+            return <>
+              {section ? (
+                <button onClick={() => void unlockHere([section.id])}>
+                  Unlock this section
+                </button>
+              ) : (
+                <button title={`Settle the whole scene ${lockMenu.scene}: every paragraph, and any it grows. Paragraph locks beneath it are absorbed, and come back if you unlock it.`}
+                  onClick={() => {
+                    void (async () => {
+                      try { await apiCreateLock({ scene: lockMenu.scene }) }
+                      catch (e) { console.error('section lock refused:', e) }
+                      setLockMenu(null); reloadLocks()
+                    })()
+                  }}>
+                  Lock this section
+                </button>
+              )}
+              {chapter ? (
+                <button onClick={() => void unlockHere([chapter.id])}>
+                  Unlock this chapter
+                </button>
+              ) : (
+                <button title={`Settle every scene of ${lockMenu.chapter}. Section and paragraph locks beneath it are absorbed, and come back if you unlock it.`}
+                  onClick={() => {
+                    void (async () => {
+                      try { await apiCreateLock({ chapter: lockMenu.chapter }) }
+                      catch (e) { console.error('chapter lock refused:', e) }
+                      setLockMenu(null); reloadLocks()
+                      // The mode effect above follows the author out of Edit
+                      // once the lock lands in the list.
+                    })()
+                  }}>
+                  Lock this chapter
+                </button>
+              )}
+            </>
+          })()}
         </div>
         )
       })()}
