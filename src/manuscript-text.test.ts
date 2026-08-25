@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+  coversWholeScene,
   chapterText, copyableScenes, isSingleWord, offsetOfParagraph, paragraphAtOffset, paragraphRange, sceneText,
 } from './manuscript-text'
 
@@ -172,4 +173,12 @@ test('a backwards selection covers the same paragraphs as a forwards one', () =>
 test('blank-line runs do not put phantom paragraphs in the range', () => {
   const body = 'First.\n\n\n\nSecond.\n\nThird.'
   expect(paragraphRange(body, 0, body.length)).toEqual([0, 1, 2])
+})
+
+test('coversWholeScene: full coverage, gaps, and the state an action would produce', () => {
+  expect(coversWholeScene(3, [0, 1, 2])).toBe(true)
+  expect(coversWholeScene(3, [0, 2])).toBe(false)
+  expect(coversWholeScene(3, [0, 2], [1])).toBe(true, 'the flow asks about after, not before')
+  expect(coversWholeScene(0, [])).toBe(false, 'an empty scene is not a settled scene')
+  expect(coversWholeScene(3, [0, 1, 2, 5])).toBe(true, 'stray indices beyond the scene change nothing')
 })

@@ -142,3 +142,18 @@ export const isSingleWord = (selection: string): boolean => {
   const t = selection.trim()
   return t.length > 0 && !/\s/.test(t)
 }
+
+
+/** Does a set of locked paragraph indices cover the whole scene — every
+ *  paragraph, no gaps? The question behind two fixes (A40-4 follow-up): a
+ *  scene whose paragraphs are ALL individually locked is settled in
+ *  substance, and both the section control and the lock flow must see that.
+ *  `adding` lets the flow ask about the state an action WOULD produce. */
+export function coversWholeScene(paragraphCount: number, locked: Iterable<number>, adding: Iterable<number> = []): boolean {
+  if (paragraphCount <= 0) return false
+  const have = new Set<number>()
+  for (const i of locked) have.add(i)
+  for (const i of adding) have.add(i)
+  for (let i = 0; i < paragraphCount; i++) if (!have.has(i)) return false
+  return true
+}

@@ -13,7 +13,7 @@ import {
 } from '../wordcount'
 import { CopyProse, CopyRef } from './CopyRef'
 import {
-  chapterText, copyableScenes, isSingleWord, offsetOfParagraph, paragraphAtOffset, paragraphRange, sceneText,
+  chapterText, copyableScenes, coversWholeScene, isSingleWord, offsetOfParagraph, paragraphAtOffset, paragraphRange, sceneText,
 } from '../manuscript-text'
 import { stack } from '../note-stack'
 import { Working } from './Working'
@@ -1012,7 +1012,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  because settling three paragraphs one context menu at a time is the same
    *  decision typed three times. */
   const [lockMenu, setLockMenu] = useState<{
-    scene: string; x: number; y: number
+    scene: string; body: string; x: number; y: number
     targets: { paragraph: number; para: string; lockId: string | null }[]
   } | null>(null)
 
@@ -1043,21 +1043,35 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     const covered = selectedParagraphs(scene, body)
     const idxs = covered.length > 1 && covered.includes(clicked) ? covered : [clicked]
     setLockMenu({
-      scene, x: ev.clientX, y: ev.clientY,
+      scene, body, x: ev.clientX, y: ev.clientY,
       targets: idxs.map(i => ({ paragraph: i, para: paras[i] ?? '', lockId: lockedAt.get(`${scene}:${i}`)?.id ?? null })),
     })
   }, [selectedParagraphs, lockedAt])
 
-  // Sequentially, never in parallel: the server names each lock by reading the
-  // highest number already on disk, so two writes in flight at once would both
-  // claim the same id and one would land on top of the other.
-  const lockHere = useCallback(async (scene: string, targets: { paragraph: number; para: string }[]) => {
+  const lockHere = useCallback(async (scene: string, body: string, targets: { paragraph: number; para: string }[]) => {
+    // The bug this closes: select a whole scene, lock it, and the flow made
+    // N paragraph locks — the scene read as fully settled while the section
+    // control still offered to settle it. When the action would cover every
+    // paragraph, the author's decision is section-sized, so ONE section lock
+    // is created instead; any paragraph locks already there are absorbed by
+    // the parent and come back if it lifts (A40-2).
+    const already = locksList
+      .filter(l => l.anchor.scene === scene && l.anchor.paragraph != null)
+      .map(l => l.anchor.paragraph!)
+    if (coversWholeScene(paragraphsOf(body).length, already, targets.map(t => t.paragraph))) {
+      try { await apiCreateLock({ scene }) }
+      catch (e) { console.error('section lock refused:', e) }
+      setLockMenu(null); setSelMenu(null); reloadLocks()
+      return
+    }
+    // Sequentially, never in parallel: the server names each lock by reading
+    // the highest number already on disk.
     for (const t of targets) {
       try { await apiCreateLock({ scene, paragraph: t.paragraph, quote: t.para }) }
       catch (e) { console.error(`lock refused (paragraph ${t.paragraph + 1}):`, e) }
     }
     setLockMenu(null); setSelMenu(null); reloadLocks()
-  }, [reloadLocks])
+  }, [reloadLocks, locksList])
   const unlockHere = useCallback(async (ids: string[]) => {
     for (const id of ids) {
       try { await apiDeleteLock(id) } catch (e) { console.error('unlock refused:', e) }
@@ -1999,12 +2013,27 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                       would sit one mis-click from a paragraph lock. */}
                   {(() => {
                     const held = sectionLockOf(s.scene)
-                    return held ? (
+                    if (held) return (
                       <a className="linklike lock-act" onClick={() => void unlockHere([held.id])}
                         title={`This section is locked (${held.id}). Unlocking restores any paragraph locks it absorbed.`}>
                         unlock section
                       </a>
-                    ) : (
+                    )
+                    // A scene whose paragraphs are ALL individually locked is
+                    // settled in substance, and the control must say so — a
+                    // header offering to lock what already reads as locked is
+                    // the state reversed. Unlocking here lifts every one of
+                    // those paragraph locks, because that is what the author
+                    // is looking at.
+                    const mine = locksList.filter(l => l.anchor.scene === s.scene && l.anchor.paragraph != null)
+                    if (coversWholeScene(paragraphsOf(s.body).length, mine.map(l => l.anchor.paragraph!))) return (
+                      <a className="linklike lock-act"
+                        title={`Every paragraph of this scene is locked (${mine.length} paragraph locks) — the section is settled in substance. Unlocking lifts all of them.`}
+                        onClick={() => void unlockHere(mine.map(l => l.id))}>
+                        unlock section
+                      </a>
+                    )
+                    return (
                       <a className="linklike lock-act"
                         title={`Settle the whole scene ${s.scene}: every paragraph, and any it grows. Paragraph locks beneath it are absorbed, and come back if you unlock it.`}
                         onClick={() => {
@@ -2265,7 +2294,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               </button>
               {unlocked.length > 0 && (
                 <button title="Settled prose: nothing may rewrite this — not an edit, not a revision pass — until you unlock it"
-                  onClick={() => { void flushFile(selMenu.file).then(() => lockHere(selMenu.scene, unlocked)) }}>
+                  onClick={() => { void flushFile(selMenu.file).then(() => lockHere(selMenu.scene, selMenu.body, unlocked)) }}>
                   Lock{locked.length ? ` the other ${unlocked.length}` : many}
                 </button>
               )}
@@ -2360,7 +2389,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           </button>
           {unlocked.length > 0 && (
             <button title="Settled prose: nothing may rewrite this — not an edit, not a revision pass — until you unlock it"
-              onClick={() => void lockHere(lockMenu.scene, unlocked)}>
+              onClick={() => void lockHere(lockMenu.scene, lockMenu.body, unlocked)}>
               Lock{locked.length ? ` the other ${unlocked.length}` : many}
             </button>
           )}
