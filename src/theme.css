@@ -421,8 +421,9 @@ svg text { font-family: inherit; }
    bindings — in four colours, so nothing led and all of it competed with the
    prose two lines below. Now the id carries the only accent, state is quiet
    text, and the actions are not drawn until wanted. */
-.scene-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 12.5px;
+.scene-head { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; font-size: 12.5px;
   color: var(--text-secondary); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 12px; }
+
 .scene-head code { font-size: 12px; color: var(--c1); }
 .scene-head .rests { color: var(--muted); flex-basis: 100%; }
 .scene-head .rests .wikilink { color: var(--c1); cursor: pointer; margin-left: 6px; }
@@ -433,6 +434,11 @@ svg text { font-family: inherit; }
    which only moves the cost to the moment you need one. */
 .scene-acts {
   display: inline-flex; align-items: baseline; gap: 8px; margin-left: auto;
+  /* The cluster wraps as ONE unit: when the facts grow (a settled chip
+     arriving), the whole verb row moves down together instead of tearing
+     mid-list — a row that breaks between two verbs reads as run-off, not
+     as wrapping. */
+  flex-wrap: nowrap; white-space: nowrap;
 }
 .scene-acts .linklike, .scene-acts .copyref { color: var(--muted); }
 .scene-acts .linklike:hover, .scene-acts .copyref:hover { color: var(--text-primary); }

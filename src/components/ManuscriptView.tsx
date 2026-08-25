@@ -1962,7 +1962,10 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   too, so the keyboard never loses what the pointer gains. */}
               {mode !== 'read' && <div className="scene-head">
                 <code>{s.scene}</code>
-                <span className={`stpill ${s.status}`}>{s.status}</span>
+                {/* The default state needs no label — every scene is proposed
+                    for months, and a pill that is always present says
+                    nothing. Ratification is the news, so only that shows. */}
+                {s.status !== 'proposed' && <span className={`stpill ${s.status}`}>{s.status}</span>}
                 {(() => {
                   // The wider settlements read from the header, once — not as
                   // a padlock drawn on every paragraph they cover (A40-4).
@@ -1974,7 +1977,11 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                     </span>
                   ) : null
                 })()}
-                {change && <span className={`stpill ${change.status}`}>draft · {change.status}</span>}
+                {change && <span className={`stpill ${change.status}`}
+                  title={change.status === 'added' ? 'This scene exists only in the draft layer — accept or discard it whole.'
+                    : change.status === 'deleted' ? 'The draft deletes this scene — accept or discard the deletion.'
+                      : 'Unaccepted edits — review them in the prose below, or through the draft bar.'}>
+                  draft</span>}
                 {mode === 'edit' && view === 'proposed' && editStatus[s.file]?.state === 'saving' && (
                   <span className="fsummary">saving…</span>
                 )}
@@ -1990,7 +1997,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 <span className="scene-acts">
                   <CopyRef text={s.scene} />
                   <span className="sep" aria-hidden="true">|</span>
-                  <CopyProse get={() => sceneText(s)} label="copy text"
+                  <CopyProse get={() => sceneText(s)} label="copy"
                     title="Copy this scene's prose" disabled={!s.body.trim()} />
                   {s.body.trim() && (<>
                     <span className="sep" aria-hidden="true">|</span>
@@ -2005,7 +2012,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                       scene does NOT say, which has no passage to select. */}
                   <a className="linklike" onClick={() => noteOnScene(s.scene)}
                     title="Leave a note about this whole scene — including what it does not say yet">
-                    note on this scene
+                    scene note
                   </a>
                   <span className="sep" aria-hidden="true">|</span>
                   {/* The section settles from ITS header, beside the scene's
