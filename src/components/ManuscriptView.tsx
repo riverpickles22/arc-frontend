@@ -877,7 +877,15 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       setEditStatus(s => { if (!(file in s)) return s; const next = { ...s }; delete next[file]; return next })   // idle = no entry
       onRefresh()   // the draft layer picks it up as an ordinary change
     } catch (e) {
-      setEditStatus(s => ({ ...s, [file]: { state: 'error', message: (e as Error).message ?? String(e) } }))
+      const message = (e as Error).message ?? String(e)
+      // A lock refusal is not a retryable save error: the text must snap
+      // back to what the book holds, or the screen shows an edit the record
+      // refused as if it stuck.
+      if (/locked/i.test(message)) {
+        const back = lastSavedRef.current[file]
+        if (back !== undefined) setOverrides(prev => ({ ...prev, [file]: back }))
+      }
+      setEditStatus(s => ({ ...s, [file]: { state: 'error', message } }))
     }
   }, [onRefresh])
 
@@ -903,6 +911,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   }, [])
 
   const onEditChange = (file: string, text: string, currentBody: string, el?: HTMLTextAreaElement) => {
+    const refusal = editRefusal(file, text, currentBody)
+    if (refusal) { setLockedNote(refusal); return }
     if (lastSavedRef.current[file] === undefined) lastSavedRef.current[file] = currentBody
     setOverrides(prev => ({ ...prev, [file]: text }))
     if (el) autosize(el)
@@ -1101,6 +1111,48 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  these are what the menu offers to lift. */
   const sectionLockOf = useCallback((scene: string) => locksList.find(l => l.anchor.scene === scene && l.anchor.paragraph == null) ?? null, [locksList])
   const chapterLockOf = useCallback((chapter: string) => locksList.find(l => l.anchor.chapter === chapter) ?? null, [locksList])
+
+  /** The lock that holds a scene WHOLE, if any: its chapter's lock, its own
+   *  section lock, or paragraph locks that cover every paragraph — the same
+   *  de facto rule the lock-section button reads (A46-4). A scene held whole
+   *  is not editable at all; a scene held in part is guarded per paragraph. */
+  function heldLockOf(sc: ProseScene, body: string): ResolvedLock | null {
+    const wide = chapterLockOf(sc.chapter) ?? sectionLockOf(sc.scene)
+    if (wide) return wide
+    const mine = locksList.filter(l =>
+      l.anchor.scene === sc.scene && l.anchor.paragraph != null &&
+      (l.resolution.state === 'resolved' || l.resolution.state === 'drifted'))
+    if (!mine.length) return null
+    return coversWholeScene(paragraphsOf(body).length, mine.map(l => l.resolution.paragraph!)) ? mine[0] : null
+  }
+
+  /** Every editing path funnels into onEditChange, so the lock's LAST word is
+   *  said here: the keystroke guard (EditorLocks) and the read-only editor
+   *  are the interface, and this is the floor under them — a programmatic
+   *  write (a suggestion applied, a menu insert) meets the same wall the
+   *  keyboard does. Returns the refusal, or null to let the edit through. */
+  function editRefusal(file: string, text: string, currentBody: string): string | null {
+    const sc = byFile.get(file)
+    if (!sc) return null
+    const cur = overridesRef.current[file] ?? currentBody
+    const squash = (t: string) => t.replace(/\s+/g, ' ').trim()
+    const held = heldLockOf(sc, cur)
+    if (held && squash(text) !== squash(cur)) {
+      return held.anchor.chapter
+        ? `This chapter is locked (${held.id}) — settled entire. Unlock it to edit.`
+        : `This section is locked (${held.id}) — settled entire. Unlock it to edit.`
+    }
+    // Partial paragraph locks: the settled text must survive the edit as a
+    // paragraph of its own — the same survival test the keystroke guard runs.
+    const lockedTexts = paragraphsOf(cur).filter((_, i) => lockedAt.has(`${sc.scene}:${i}`))
+    if (lockedTexts.length) {
+      const after = paragraphsOf(text)
+      const lost = lockedTexts.find(t =>
+        after.filter(q => q === t).length < lockedTexts.filter(q => q === t).length)
+      if (lost !== undefined) return 'That would change a locked paragraph — unlock it first, or work around it.'
+    }
+    return null
+  }
 
   const [lockedNote, setLockedNote] = useState<string | null>(null)
   useEffect(() => {
@@ -2121,9 +2173,22 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   // Clicking a textarea places the caret natively; there is
                   // no caret math to get right or wrong.
                   <div className="scene-edit">
-                    <textarea value={overrides[s.file] ?? s.body} spellCheck ref={autosize}
-                      onChange={ev => onEditChange(s.file, ev.target.value, s.body, ev.target)}
-                      onContextMenu={ev => onEditorContextMenu(ev, s)} />
+                    {(() => {
+                      const body = overrides[s.file] ?? s.body
+                      const held = heldLockOf(s, body)
+                      return (<>
+                        {held && (
+                          <p className="locked-note standing">
+                            {held.anchor.chapter ? 'This chapter is settled — locked' : 'This section is settled — locked'}
+                            {` (${held.id}). Nothing here is editable until the author unlocks it from the right-click menu.`}
+                          </p>
+                        )}
+                        <textarea value={body} spellCheck ref={autosize} readOnly={!!held}
+                          className={held ? 'held' : undefined}
+                          onChange={ev => onEditChange(s.file, ev.target.value, s.body, ev.target)}
+                          onContextMenu={ev => onEditorContextMenu(ev, s)} />
+                      </>)
+                    })()}
                     {/* What is settled, shown where it sits. A textarea has no
                         regions to mark, so the padlocks are measured onto the
                         gutter beside it — the same measurement that puts note

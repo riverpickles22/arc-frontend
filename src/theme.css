@@ -753,6 +753,19 @@ svg text { font-family: inherit; }
   background: var(--surface-1); border: 1px solid color-mix(in oklab, var(--c4) 45%, var(--border));
 }
 
+/* A scene held WHOLE (its own lock, its chapter's, or paragraph locks
+   covering everything) is not editable at all, and looks it: the editor
+   goes flat and the notice stands — a standing fact about the scene, not a
+   reminder about one keystroke, so it neither floats nor fades (A46-4). */
+.locked-note.standing { position: static; align-self: stretch; margin: 0 0 6px; }
+.scene-edit textarea.held {
+  cursor: not-allowed;
+  color: var(--text-secondary);
+  background: color-mix(in oklab, var(--surface-1) 60%, transparent);
+  border-style: dashed;
+}
+.scene-edit textarea.held:focus { border-color: var(--border); }
+
 /* Judge one change where you see it. Held quiet until the paragraph is
    hovered — a column of buttons down the page would read as chrome, and the
    author is here to read the prose, not the affordances.
