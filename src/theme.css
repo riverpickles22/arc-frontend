@@ -294,10 +294,6 @@ svg text { font-family: inherit; }
 .nav-scene code { font-size: 11px; }
 .nav-scene:hover { color: var(--c1); background: var(--surface-1); }
 
-/* The nav lands a scene at the top of the scroll — keep it clear of the
-   sticky draft bar (A48). */
-.scene { scroll-margin-top: 64px; }
-
 .nav-total {
   display: flex; justify-content: space-between; gap: 8px;
   margin: 10px 8px 0; padding-top: 8px; border-top: 1px solid var(--border);

@@ -1554,14 +1554,20 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     return () => window.removeEventListener('keydown', onKey)
   }, [sel])
 
-  /** Jump the manuscript to a scene. The <section data-scene> wrapper exists
-   *  in every mode, so the nav link works whether the prose is being read,
-   *  annotated, or edited; scroll-margin on the section keeps the landing
-   *  clear of the draft bar. Instant, not smooth — the author asked for the
-   *  scene to simply APPEAR, not to be carried down the page to it. */
+  /** Jump the manuscript to a scene — landing on its HEADER, the sc.* row.
+   *  Instant, not smooth: the author asked for the scene to simply APPEAR.
+   *  scrollIntoView's "start" is not enough here, because the draft bar and
+   *  the chapter head are sticky and paint over the top of the scroll box —
+   *  the scene head would land exactly underneath them and the first visible
+   *  thing would be the contract. Measure the stack and stop short of it. */
   const jumpToScene = useCallback((scene: string) => {
-    scrollRef.current?.querySelector(`[data-scene="${CSS.escape(scene)}"]`)
-      ?.scrollIntoView({ behavior: 'auto', block: 'start' })
+    const box = scrollRef.current
+    const target = box?.querySelector<HTMLElement>(`[data-scene="${CSS.escape(scene)}"]`)
+    if (!box || !target) return
+    const cover = (box.querySelector<HTMLElement>('.draftbar')?.offsetHeight ?? 0)
+      + (box.querySelector<HTMLElement>('.ms-head')?.offsetHeight ?? 0)
+    const top = target.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop
+    box.scrollTop = top - cover - 8
   }, [])
 
   if (!chapters.length || !cur) return <div className="empty">No chapters in canon yet.</div>
