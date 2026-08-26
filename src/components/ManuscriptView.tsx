@@ -2021,10 +2021,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 {(() => {
                   // The wider settlements read from the header, once — not as
                   // a padlock drawn on every paragraph they cover (A40-4).
-                  const wide = chapterLockOf(s.chapter) ?? sectionLockOf(s.scene)
-                  return wide ? (
+                  // Hover carries the whole story: what is locked, by which
+                  // record, and that nothing here is editable — the pill is
+                  // the one place this is said, per the author (A46-4).
+                  const held = heldLockOf(s, overrides[s.file] ?? s.body)
+                  return held ? (
                     <span className="stpill settled"
-                      title={`${wide.anchor.chapter ? 'This chapter' : 'This section'} is locked (${wide.id}) — settled entire. Unlock from the prose right-click menu.`}>
+                      title={`${held.anchor.chapter ? 'This chapter is settled — locked' : 'This section is settled — locked'} (${held.id}). Nothing here is editable until the author unlocks it from the right-click menu.`}>
                       settled
                     </span>
                   ) : null
@@ -2176,18 +2179,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                     {(() => {
                       const body = overrides[s.file] ?? s.body
                       const held = heldLockOf(s, body)
-                      return (<>
-                        {held && (
-                          <p className="locked-note standing">
-                            {held.anchor.chapter ? 'This chapter is settled — locked' : 'This section is settled — locked'}
-                            {` (${held.id}). Nothing here is editable until the author unlocks it from the right-click menu.`}
-                          </p>
-                        )}
+                      return (
                         <textarea value={body} spellCheck ref={autosize} readOnly={!!held}
                           className={held ? 'held' : undefined}
+                          title={held ? `Settled — locked (${held.id}). Hover the pill by the scene number for the full story.` : undefined}
                           onChange={ev => onEditChange(s.file, ev.target.value, s.body, ev.target)}
                           onContextMenu={ev => onEditorContextMenu(ev, s)} />
-                      </>)
+                      )
                     })()}
                     {/* What is settled, shown where it sits. A textarea has no
                         regions to mark, so the padlocks are measured onto the

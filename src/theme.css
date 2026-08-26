@@ -755,9 +755,8 @@ svg text { font-family: inherit; }
 
 /* A scene held WHOLE (its own lock, its chapter's, or paragraph locks
    covering everything) is not editable at all, and looks it: the editor
-   goes flat and the notice stands — a standing fact about the scene, not a
-   reminder about one keystroke, so it neither floats nor fades (A46-4). */
-.locked-note.standing { position: static; align-self: stretch; margin: 0 0 6px; }
+   goes flat. The words live on the scene head's "settled" pill — hover
+   tells the whole story; the prose is not crowded by a banner (A46-4). */
 .scene-edit textarea.held {
   cursor: not-allowed;
   color: var(--text-secondary);
