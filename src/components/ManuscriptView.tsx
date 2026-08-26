@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { AnalyzeResponse, AnnotationStatus, Chapter, ChatResponse, DraftSceneResponse, ProseCheckHit, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
 import { dateOf } from '../canon'
@@ -1554,6 +1554,16 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     return () => window.removeEventListener('keydown', onKey)
   }, [sel])
 
+  /** Jump the manuscript to a scene. The <section data-scene> wrapper exists
+   *  in every mode, so the nav link works whether the prose is being read,
+   *  annotated, or edited; scroll-margin on the section keeps the landing
+   *  clear of the draft bar. Instant, not smooth — the author asked for the
+   *  scene to simply APPEAR, not to be carried down the page to it. */
+  const jumpToScene = useCallback((scene: string) => {
+    scrollRef.current?.querySelector(`[data-scene="${CSS.escape(scene)}"]`)
+      ?.scrollIntoView({ behavior: 'auto', block: 'start' })
+  }, [])
+
   if (!chapters.length || !cur) return <div className="empty">No chapters in canon yet.</div>
   const curDeleted = draft.changes.filter(c => c.status === 'deleted' && c.main?.chapter === cur.id)
   const scenesOf = (id: string) => scenes.filter(s => s.chapter === id).length
@@ -1760,8 +1770,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         <h3>Chapters</h3>
         {chapters.map((c, i) => {
           const w = wordsBy.get(c.id) ?? 0
-          return (
-          <button key={c.id} className={i === chapterIx ? 'navitem sel' : 'navitem'} onClick={() => gotoChapter(i)}>
+          return (<Fragment key={c.id}>
+          <button className={i === chapterIx ? 'navitem sel' : 'navitem'} onClick={() => gotoChapter(i)}>
             <span className="chn">{c.order === 0 ? 'P' : c.order}</span> {c.title}
             <span className="chmeta">{scenesOf(c.id) ? `${scenesOf(c.id)} scene${scenesOf(c.id) === 1 ? '' : 's'}` : 'outline'}
               {w > 0 && <>
@@ -1770,7 +1780,19 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               </>}
             </span>
           </button>
-        )})}
+          {/* The open chapter unfolds its scenes: the nav's answer to "take
+              me there" without scrolling the prose to find it (A48). Only
+              the selected chapter — every chapter unfolded is a wall. */}
+          {i === chapterIx && curScenes.length > 0 && (
+            <div className="nav-scenes">
+              {curScenes.map(sc => (
+                <a key={sc.scene} className="nav-scene" onClick={() => jumpToScene(sc.scene)}>
+                  <code>{sc.scene}</code>
+                </a>
+              ))}
+            </div>
+          )}
+          </Fragment>)})}
         {bookWords > 0 && (
           <p className="nav-total">
             <span>{formatWords(bookWords)} words drafted</span>
