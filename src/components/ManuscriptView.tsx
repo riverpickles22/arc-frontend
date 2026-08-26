@@ -11,7 +11,7 @@ import {
   formatReadingTime, formatWords, nextRegister, pageCount, progressLabel, totalWords, wordsByChapter,
   type ProgressRegister,
 } from '../wordcount'
-import { CopyProse, CopyRef } from './CopyRef'
+import { CopyProse } from './CopyRef'
 import {
   chapterText, copyableScenes, coversWholeScene, isSingleWord, offsetOfParagraph, paragraphAtOffset, paragraphRange, sceneText,
 } from '../manuscript-text'
@@ -2050,8 +2050,6 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                     target into the gap beside it. aria-hidden because a
                     screen reader should hear four actions, not three pipes. */}
                 <span className="scene-acts">
-                  <CopyRef text={s.scene} />
-                  <span className="sep" aria-hidden="true">|</span>
                   <CopyProse get={() => sceneText(s)} label="copy"
                     title="Copy this scene's prose" disabled={!s.body.trim()} />
                   {s.body.trim() && (<>
