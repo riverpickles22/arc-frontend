@@ -951,6 +951,13 @@ p.para-changed:hover .para-reject, .para-reject:focus-visible { opacity: 1; }
 .prose-checks .check-hit code { font-size: 11px; color: var(--muted); }
 .prose-checks .check-hit em { color: var(--muted); font-style: normal; }
 
+/* The inspector's NOW block (A45-1): the state at the cursor's moment leads
+   the panel, set apart so the eye lands on what is true before who they
+   are. The journey's rungs are the time instrument — a hand, not a list. */
+.now-field { border-left: 2px solid var(--c1); padding-left: 9px; }
+.statecard .when.jumpable { cursor: pointer; }
+.statecard .when.jumpable:hover { color: var(--c1); }
+
 /* A silence in the why-trace (A44-2): the record does not say, rendered as
    the finding it is — muted but present, never an absent section someone
    reads as "fine". */

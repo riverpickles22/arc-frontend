@@ -176,12 +176,16 @@ function ImpactSection({ canon, id, prose, onSelect }: {
 }
 
 function StateCard({
-  s, canon, active, onSelect,
-}: { s: State; canon: Canon; active: boolean; onSelect: (id: string) => void }) {
+  s, canon, active, onSelect, onJumpTo,
+}: { s: State; canon: Canon; active: boolean; onSelect: (id: string) => void; onJumpTo?: (k: number) => void }) {
   const eraName = canon.timeline.eras.find(e => e.id === s.at.era)?.name ?? s.at.era
   return (
     <div className={`statecard${active ? ' active' : ''}`}>
-      <div className="when">
+      {/* The spine's rung: clicking a state moves the whole World page to
+          that moment — the journey is an instrument, not a list. */}
+      <div className={`when${onJumpTo ? ' jumpable' : ''}`}
+        title={onJumpTo ? 'Move the World page to this moment' : undefined}
+        onClick={onJumpTo ? () => onJumpTo(timeRefKey(s.at, canon.timeline.eras)) : undefined}>
         {s.at.date ?? '—'}{s.at.approximate ? ' (approx.)' : ''}
         <span className="era">{eraName}</span>
         {active && <span className="badge">state at T</span>}
@@ -219,8 +223,8 @@ function StateCard({
 }
 
 function EntityProfile({
-  e, canon, tEnd, onSelect, refAnchor, pov, children,
-}: { e: Entity; canon: Canon; tEnd: number; onSelect: (id: string) => void; refAnchor?: string; pov?: PovProp; children?: ReactNode }) {
+  e, canon, tEnd, onSelect, refAnchor, pov, children, onJumpTo,
+}: { e: Entity; canon: Canon; tEnd: number; onSelect: (id: string) => void; refAnchor?: string; pov?: PovProp; children?: ReactNode; onJumpTo?: (k: number) => void }) {
   const active = stateAt(e, tEnd, canon.timeline.eras)
   const edges = canon.relationships.filter(r => r.from === e.id || r.to === e.id)
   return (
@@ -231,7 +235,49 @@ function EntityProfile({
       </h3>
       <div className="sub">{e.type}{e.species ? ` · ${e.species}` : ''}{e.kind ? ` · ${e.kind}` : ''} · {e.id}
         {' '}<CopyRef text={refAnchor ? `${e.id}@${refAnchor}` : e.id} /></div>
-      <div className="summary">{e.summary}</div>
+      {/* STATE FIRST (A45-1). On the World page the useful thing about an
+          entity is not its biography but what is true of it at the selected
+          moment — where, wanting what, fearing what, carrying what. The
+          durable characterisation lives below, under "About"; the Wiki is
+          where biography belongs. An entity with no states renders exactly
+          as it always did. */}
+      {active && (
+        <div className="field now-field">
+          <div className="k">now — at the cursor's moment</div>
+          <StateCard s={active} canon={canon} active onSelect={onSelect} />
+        </div>
+      )}
+      {/* TYPED BY WHAT IT INSPECTS (A45-2). A place answers with who is
+          there at T — every entity whose state locates them in it; an
+          object answers with whoever's state carries it. Both are stateAt
+          scans over walks the record already holds; a generic profile made
+          every kind look like the same kind of thing, which is exactly what
+          the record says they are not. */}
+      {e.type === 'place' && (() => {
+        const here = Object.values(canon.entities).filter(o =>
+          o.id !== e.id && stateAt(o, tEnd, canon.timeline.eras)?.location === e.id)
+        return here.length ? (
+          <div className="field now-field">
+            <div className="k">here now</div>
+            <div className="v">{here.map(o => (
+              <div key={o.id}><Ref id={o.id} canon={canon} onSelect={onSelect} /></div>
+            ))}</div>
+          </div>
+        ) : null
+      })()}
+      {e.type === 'object' && (() => {
+        const holder = Object.values(canon.entities).find(o =>
+          (stateAt(o, tEnd, canon.timeline.eras)?.possessions ?? []).includes(e.id))
+        return holder ? (
+          <div className="field now-field">
+            <div className="k">held by</div>
+            <div className="v"><Ref id={holder.id} canon={canon} onSelect={onSelect} /></div>
+          </div>
+        ) : null
+      })()}
+      {active
+        ? <div className="field"><div className="k">about {e.name}</div><div className="v">{e.summary}</div></div>
+        : <div className="summary">{e.summary}</div>}
       {e.appearance && <div className="field"><div className="k">appearance</div><div className="v">{e.appearance}</div></div>}
       {e.voice && <div className="field"><div className="k">voice / signature</div><div className="v">{e.voice}</div></div>}
       {e.sensory && <div className="field"><div className="k">sensory</div><div className="v">{e.sensory}</div></div>}
@@ -287,7 +333,7 @@ function EntityProfile({
             return (
               <div key={i}>
                 {lines.length > 0 && <div className="state-delta">changed: {lines.join(' · ')}</div>}
-                <StateCard s={s} canon={canon} active={s === active} onSelect={onSelect} />
+                <StateCard s={s} canon={canon} active={s === active} onSelect={onSelect} onJumpTo={onJumpTo} />
               </div>
             )
           })}
@@ -437,10 +483,95 @@ export function ProfilePanel({
     <ImpactSection canon={canon} id={id} prose={prose} onSelect={onSelect} />
   </>
   const e = canon.entities[id]
-  if (e) return <EntityProfile e={e} canon={canon} tEnd={tEnd} onSelect={onSelect} refAnchor={refAnchor} pov={pov}>{impact}</EntityProfile>
+  if (e) return <EntityProfile e={e} canon={canon} tEnd={tEnd} onSelect={onSelect} refAnchor={refAnchor} pov={pov} onJumpTo={onJumpTo}>{impact}</EntityProfile>
   const ev = canon.events[id]
   if (ev) return <EventProfile ev={ev} canon={canon} tEnd={tEnd} onSelect={onSelect} onJumpTo={onJumpTo} refAnchor={refAnchor}>{impact}</EventProfile>
   const ch = (canon.chapters ?? []).find(c => c.id === id)
   if (ch) return <ChapterProfile c={ch} canon={canon} onSelect={onSelect} />
+  // Relationships and themes are collections, not entities — which is why
+  // both used to fall through to "Unknown id" when a link brought the
+  // author here. An inspector answers every kind of click (A45-2).
+  const rel = canon.relationships.find(r => r.id === id)
+  if (rel) return <RelationshipProfile r={rel} canon={canon} tEnd={tEnd} onSelect={onSelect} />
+  const th = (canon.themes ?? []).find(t => t.id === id)
+  if (th) return <ThemeProfile t={th} canon={canon} prose={prose} onSelect={onSelect} />
   return <div className="empty">Unknown id: {id}</div>
+}
+
+/** A relationship inspected as what it is: two endpoints, a kind, a span —
+ *  and its EVOLUTION, read from each endpoint's own states: how each has
+ *  perceived the other, moment by moment. The objective edge is one line;
+ *  the perception trail is where the story lives (perception is subjective
+ *  and lives in states, never on the edge — the record's own rule). */
+function RelationshipProfile({ r, canon, tEnd, onSelect }: {
+  r: Canon['relationships'][number]; canon: Canon; tEnd: number; onSelect: (id: string) => void
+}) {
+  const stances = (of: string, toward: string) => {
+    const e = canon.entities[of]
+    return (e?.states ?? [])
+      .map(st => ({ at: st.at.date ?? st.at.era, k: timeRefKey(st.at, canon.timeline.eras), stance: st.relationships?.find(x => x.toward === toward)?.stance }))
+      .filter((x): x is { at: string; k: number; stance: string } => !!x.stance)
+  }
+  const sides = [
+    { of: r.from, toward: r.to, trail: stances(r.from, r.to) },
+    { of: r.to, toward: r.from, trail: stances(r.to, r.from) },
+  ].filter(sd => sd.trail.length)
+  return (
+    <div className="profile">
+      <h3>
+        <Ref id={r.from} canon={canon} onSelect={onSelect} /> {r.directed ? '→' : '↔'} <Ref id={r.to} canon={canon} onSelect={onSelect} />
+        {r.status !== 'canon' && <span className={`badge ${r.status}`}>{r.status}</span>}
+      </h3>
+      <div className="sub">relationship · {r.kind} · {r.id} <CopyRef text={r.id} /></div>
+      {r.span && (r.span.start || r.span.end) && (
+        <div className="sub">{dateOf(r.span.start) ?? '…'} — {dateOf(r.span.end) ?? 'open'}</div>
+      )}
+      <div className="summary">{r.summary}</div>
+      {sides.map(sd => (
+        <div className="field" key={sd.of}>
+          <div className="k">how <Ref id={sd.of} canon={canon} onSelect={onSelect} /> has seen <Ref id={sd.toward} canon={canon} onSelect={onSelect} /></div>
+          <div className="v">
+            {sd.trail.map((x, i) => (
+              <div key={i} className={x.k <= tEnd ? '' : 'pov-unseen'}>
+                <b>{x.at}</b> {x.stance}{x.k > tEnd && <span className="badge">after T</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** A theme inspected as what it is: carriers, motifs, and where it actually
+ *  reaches the page — the themes() walk the wiki already trusts. */
+function ThemeProfile({ t, canon, prose, onSelect }: {
+  t: NonNullable<Canon['themes']>[number]; canon: Canon; prose: ProseScene[]; onSelect: (id: string) => void
+}) {
+  const reach = useMemo(() => loadGraph(canon).themes(
+    prose.map(sc => ({ scene: sc.scene, chapter: sc.chapter, motifs: sc.contract?.motifs })),
+  ).themes.find(x => x.id === t.id), [canon, prose, t.id])
+  return (
+    <div className="profile">
+      <h3>{t.name ?? t.id}{t.status && t.status !== 'canon' && <span className={`badge ${t.status}`}>{t.status}</span>}</h3>
+      <div className="sub">theme · {t.id} <CopyRef text={t.id} /></div>
+      {t.summary && <div className="summary">{t.summary}</div>}
+      {(t.carriers ?? []).length > 0 && (
+        <div className="field">
+          <div className="k">carried by</div>
+          <div className="v">{t.carriers!.map(c => <div key={c}><Ref id={c} canon={canon} onSelect={onSelect} /></div>)}</div>
+        </div>
+      )}
+      {(t.motifs ?? []).length > 0 && (
+        <div className="field"><div className="k">motifs</div><div className="v">{t.motifs!.join(' · ')}</div></div>
+      )}
+      <div className="field">
+        <div className="k">on the page</div>
+        <div className="v">{reach?.scenes.length
+          ? reach.scenes.map(sc => <div key={sc}><code>{sc}</code></div>)
+          : <span className="silence-line">no drafted scene names its motifs yet</span>}</div>
+      </div>
+      {t.narrative_notes && <div className="field"><div className="k">notes</div><div className="v">{t.narrative_notes}</div></div>}
+    </div>
+  )
 }
