@@ -553,6 +553,17 @@ function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, top
               ? <div className="note-scope">about all of {n.anchor.scene}</div>
               : null}
           {n.resolution.note && <div className="note-why">{n.resolution.note}</div>}
+          {/* An orphaned anchor still knows what it was about: the paragraphs
+              were captured when the note was made, exactly because prose does
+              not stand still (A49-1). "Passage gone" alone made the author
+              reconstruct from memory. */}
+          {n.resolution.state === 'orphaned' && (n.anchor.paragraphs?.length ?? 0) > 0 && (
+            <blockquote className="note-quote note-was">
+              was about: {n.anchor.paragraphs![0].length > 160
+                ? n.anchor.paragraphs![0].slice(0, 160) + '…'
+                : n.anchor.paragraphs![0]}
+            </blockquote>
+          )}
           {editing?.id === n.id ? (
             <>
               <textarea className="note-edit" autoFocus rows={4} value={editing.text}
