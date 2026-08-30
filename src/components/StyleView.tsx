@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import type { ProposedRule, ProposedTouchstone, StyleResponse, TouchstoneState } from '../canon'
+import type { ProposedRule, StyleResponse } from '../canon'
+import type { ProposedTouchstone, TouchstoneState } from 'arc-canon-graph/api-types.ts'
 import { learnStyleNow, ratifyRule, refreshTouchstones } from '../api'
 import { mdToHtml } from '../md'
 import { checklistOf, ruleCount, sectionsOf, touchstonesOf } from '../style-page'

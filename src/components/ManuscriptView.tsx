@@ -1,9 +1,12 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { AnalyzeResponse, AnnotationStatus, Chapter, ChatResponse, DraftSceneResponse, ProseCheckHit, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
+import type { AnalyzeResponse, AnnotationStatus, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
+import type { ProseCheckHit } from 'arc-canon-graph/api-types.ts'
 import { dateOf } from '../canon'
 import { dotsFor } from '../keypoints'
-import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene } from '../api'
+import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, rerouteScene, adoptRoute, dropRoute } from '../api'
+import type { RouteAlternative, RouteLockNotice } from 'arc-canon-graph/api-types.ts'
+import { byNewest, coverageRows, lockNotice, overlapLabel, seedLabel } from '../routes-view'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
@@ -658,6 +661,15 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const [gen, setGen] = useState<DraftSceneResponse | null>(null)
   const [guidance, setGuidance] = useState('')
   const [showGen, setShowGen] = useState(false)
+
+  // The reroute pass (A51): alternatives BESIDE the manuscript, not in it.
+  // Their own busy flag and error line — a route is not a draft until the
+  // author adopts it, so nothing here touches the draft layer's controls.
+  const [routes, setRoutes] = useState<RouteAlternative[]>([])
+  const [routeLocks, setRouteLocks] = useState<RouteLockNotice[]>([])
+  const [routeBusy, setRouteBusy] = useState(false)
+  const [routeErr, setRouteErr] = useState<string | null>(null)
+  const [routeOpen, setRouteOpen] = useState<string | null>(null)
 
   // Annotations: select prose, write the thought, keep reading. No
   // categorisation, no scope declaration — the author's only job is the note.
@@ -1375,6 +1387,18 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     [scenes, cur],
   )
 
+  // The reroute pass (A51): existing alternatives load with the scene. Placed
+  // with the other hooks, above the empty-canon return.
+  const routeScene = curScenes.length === 1 ? curScenes[0].scene : null
+  useEffect(() => {
+    if (!routeScene) { setRoutes([]); setRouteLocks([]); setRouteErr(null); return }
+    const ctrl = new AbortController()
+    listRoutes(routeScene, ctrl.signal)
+      .then(r => { setRoutes(byNewest(r.alternatives)); setRouteLocks(r.locks) })
+      .catch(() => { /* a down backend is the page banner's news, not this panel's */ })
+    return () => ctrl.abort()
+  }, [routeScene])
+
   const chapterNotes = useMemo(
     () => notes.filter(x => curScenes.some(s => s.scene === x.anchor.scene))
       .filter(x => x.status !== 'resolved' && x.status !== 'dropped'),
@@ -1747,28 +1771,80 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     }
   }
 
+  // The reroute pass (A51): another way to the same destination. The current
+  // prose is withheld from the pass; the alternatives land beside the scene,
+  // and only adopt makes one the draft — the gate applies after that, as to
+  // any generation. Existing alternatives load with the scene.
+  const notice = lockNotice(routeLocks)
+
+  const reroute = async (scene: string, file: string) => {
+    setRouteBusy(true); setRouteErr(null)
+    try {
+      await flushFile(file)
+      const res = await rerouteScene({ scene, count: 2, ...(guidance.trim() ? { guidance: guidance.trim() } : {}) })
+      setRoutes(prev => byNewest([...res.alternatives, ...prev.filter(p => !res.alternatives.some(a => a.id === p.id))]))
+      if (res.alternatives[0]) setRouteOpen(res.alternatives[0].id)
+      if (res.refused.length) setRouteErr(res.refused.map(r => `${seedLabel(r.seed)}: ${r.reason}`).join(' · '))
+    } catch (e) {
+      setRouteErr((e as Error).message ?? String(e))
+    } finally {
+      setRouteBusy(false)
+    }
+  }
+  const adopt = async (scene: string, id: string) => {
+    setRouteBusy(true); setRouteErr(null)
+    try {
+      await adoptRoute(scene, id)
+      onRefresh()   // the draft layer now carries the route as an ordinary change
+    } catch (e) {
+      setRouteErr((e as Error).message ?? String(e))
+    } finally {
+      setRouteBusy(false)
+    }
+  }
+  const drop = async (scene: string, id: string) => {
+    setRouteErr(null)
+    try {
+      await dropRoute(scene, id)
+      setRoutes(prev => prev.filter(a => a.id !== id))
+    } catch (e) {
+      setRouteErr((e as Error).message ?? String(e))
+    }
+  }
+
   // The drafting-pass bar: always present on an outline-only chapter, toggled
   // from the header once scenes exist. The result is an ordinary draft — it
   // arrives in the draft layer with its pill, and accept/discard apply.
   const genBar = (
     <div className="genbar">
       <div className="genrow">
-        <input value={guidance} disabled={genBusy}
+        <input value={guidance} disabled={genBusy || routeBusy}
           placeholder="guidance (optional) — tone, focus, what to lean into"
           onChange={ev => setGuidance(ev.target.value)} />
-        <button disabled={genBusy} onClick={generate}>
+        <button disabled={genBusy || routeBusy} onClick={generate}>
           {genBusy ? 'Drafting…' : curScenes.length ? 'Draft next scene' : 'Draft this scene'}
         </button>
         {curScenes.length === 1 && (
-          <button disabled={genBusy}
+          <button disabled={genBusy || routeBusy}
             title="A clean pass: rebuild the scene to its contract — order, images and sentence architecture are all in play. Locked paragraphs survive verbatim; the result is a draft for the gate."
             onClick={() => void redraft(curScenes[0].scene, curScenes[0].file)}>
             {genBusy ? 'Working…' : 'Redraft the scene'}
           </button>
         )}
+        {curScenes.length === 1 && (
+          <button disabled={genBusy || routeBusy || !!notice.blocked}
+            title={notice.blocked ?? 'Another way through: the same contract reached by a different route. The current prose is withheld from the pass; two alternatives land beside the scene, to adopt or drop.'}
+            onClick={() => void reroute(curScenes[0].scene, curScenes[0].file)}>
+            {routeBusy ? 'Rerouting…' : 'Another way through'}
+          </button>
+        )}
       </div>
       {genBusy && <p className="gen-note">arc is drafting from the chapter's context pack — style contract, cast state, payoff fence. This takes a minute or two.</p>}
       {genErr && <p className="db-err">{genErr}</p>}
+      {curScenes.length === 1 && notice.blocked && <p className="db-err">{notice.blocked}</p>}
+      {curScenes.length === 1 && notice.constrain && <p className="gen-note">{notice.constrain}</p>}
+      {routeBusy && <p className="gen-note">arc is taking another way through — the destination and the known route go in, the prose stays out. Two alternatives, a minute or two each.</p>}
+      {routeErr && <p className="db-err">{routeErr}</p>}
       {gen && (
         <div className="db-capture">
           <h3>Drafting pass — briefing</h3>
@@ -1776,6 +1852,51 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
             ? <p className="gen-note">Wrote <code>{gen.file}</code> as a working-tree draft — review it below, then accept or discard.</p>
             : <p className="db-err">The pass finished without writing a scene — see the briefing.</p>}
           <div className="db-capture-reply">{gen.reply}</div>
+        </div>
+      )}
+      {curScenes.length === 1 && routes.length > 0 && (
+        <div className="routes">
+          <h3>Another way through — {routes.length} {routes.length === 1 ? 'route' : 'routes'} beside the scene, none in it</h3>
+          {routes.map(alt => (
+            <details key={alt.id} className="route" open={routeOpen === alt.id}
+              onToggle={ev => { if ((ev.target as HTMLDetailsElement).open) setRouteOpen(alt.id); else if (routeOpen === alt.id) setRouteOpen(null) }}>
+              <summary>
+                <span className="route-seed">{seedLabel(alt.seed)}</span>
+                <span className="route-meta">{overlapLabel(alt.overlap)}</span>
+                <span className="route-meta">{new Date(alt.created_at).toLocaleString()}</span>
+                {alt.guidance && <span className="route-meta">guidance: {alt.guidance}</span>}
+              </summary>
+              <div className="route-body">
+                {alt.retried && <p className="gen-note">Retried once — the gate refused the first answer: {alt.retried}</p>}
+                <div className="route-cols">
+                  <div>
+                    <h4>The scene as it stands</h4>
+                    {paragraphsOf(curScenes[0].body).map((p, i) => <p key={i}>{p}</p>)}
+                  </div>
+                  <div>
+                    <h4>This route</h4>
+                    {paragraphsOf(alt.body).map((p, i) => <p key={i}>{p}</p>)}
+                  </div>
+                </div>
+                <h4>Where the required beats land — the pass argues, you judge</h4>
+                {alt.coverage
+                  ? (
+                    <table className="route-coverage"><tbody>
+                      {coverageRows(alt.coverage).map((r, i) => <tr key={i}><td>{r.item}</td><td>{r.where}</td></tr>)}
+                    </tbody></table>
+                  )
+                  : <p className="gen-note">not reported — the answer carried no readable coverage tail.</p>}
+                <h4>Briefing (argued)</h4>
+                <div className="db-capture-reply">{alt.briefing || '(none)'}</div>
+                <div className="route-actions">
+                  <button disabled={routeBusy}
+                    title="Replace the working-tree scene with this route. It becomes the draft — accept or discard through the ordinary gate. Key points and notes anchored on the old route may orphan; attention lists them."
+                    onClick={() => void adopt(alt.scene, alt.id)}>Adopt into the draft</button>
+                  <button disabled={routeBusy} onClick={() => void drop(alt.scene, alt.id)}>Drop</button>
+                </div>
+              </div>
+            </details>
+          ))}
         </div>
       )}
     </div>
@@ -2249,7 +2370,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 ? <DiffBody d={diffed} paraKey={paraKeyFor(s)} busy={busy} flash={flash}
                     onAccept={t => judge(`${t.side}:${t.paragraph}`, () => acceptParagraph(s.file, t))}
                     onReject={t => judge(`${t.side}:${t.paragraph}`, () => rejectParagraph(s.file, t))}
-                    onSentence={(t, verb) => judge(t.paragraph, () => (verb === 'accept' ? acceptSentence : rejectSentence)({
+                    onSentence={(t, verb) => judge(`${t.side}:${t.paragraph}`, () => (verb === 'accept' ? acceptSentence : rejectSentence)({
                       file: s.file, paragraph: t.paragraph, side: t.side, sentence: t.sentence,
                     }))} />
                 : <div className="mdbody prose" onClick={bodyClick} onMouseUp={() => captureSelection(s)}>

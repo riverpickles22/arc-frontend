@@ -50,7 +50,7 @@ test('the three lives: living, deceased, and not yet present are three states', 
 
   const unborn = displayState(canon, 'char.unborn', T)
   expect(unborn.notYet).toBe(true)
-  expect(unborn.deceased).toBe(false, 'a death the reader passed and an arrival still coming are different facts')
+  expect(unborn.deceased).toBe(false)   // a death the reader passed and an arrival still coming are different facts
 
   expect(livingNote(dead)).toMatch(/no longer living/)
   expect(livingNote(unborn)).toMatch(/not yet present/)
@@ -70,7 +70,7 @@ test('proposed is decoration data, never a different colour', () => {
 test('the chapter under the cursor marks its POV and what it is moving', () => {
   const ds = displayState(canon, 'char.living', T, chapter)
   expect(ds.pov).toBe(true)
-  expect(ds.changedThisChapter).toBe(true, 'the 1900 state sits inside the chapter span')
+  expect(ds.changedThisChapter).toBe(true)   // the 1900 state sits inside the chapter span
   expect(displayState(canon, 'char.dead', T, chapter).changedThisChapter).toBe(false)
   expect(displayState(canon, 'char.dead', T, chapter).pov).toBe(false)
   // No chapter, no chapter-relative claims.

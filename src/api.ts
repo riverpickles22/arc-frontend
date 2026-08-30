@@ -14,6 +14,7 @@ import type {
   WorkDecisionRequest, WorkDecisionResponse, WorkNoteRequest, WorkResponse,
   ProseAcceptRequest, ProseAcceptResponse, ProseCheckHit, ProseChecksResponse, ProseDiscardRequest, ProseParagraphRequest, ProseResponse, ProseSentenceRequest, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
 } from 'arc-canon-graph'
+import type { AdoptRouteRequest, AdoptRouteResponse, DropRouteRequest, RerouteRequest, RerouteResponse, RouteListResponse } from 'arc-canon-graph/api-types.ts'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SuggestRequest, SuggestResponse } from './canon'
 import type { View } from './presentation'
 import type { GeoJSON } from './map-geometry'
@@ -235,6 +236,22 @@ export const loadChecks = (signal?: AbortSignal): Promise<ProseCheckHit[]> =>
 
 export const redraftScene = (req: RedraftRequest): Promise<DraftSceneResponse> =>
   post('/api/prose/redraft', req)
+
+/** The reroute pass: another way to the same destination. The alternatives
+ *  land BESIDE the manuscript — listing is free, running is a full pass per
+ *  alternative, adopt is the lock-gated scene write (the draft layer then
+ *  shows it as an ordinary change), drop deletes the file. */
+export const listRoutes = (scene: string, signal?: AbortSignal): Promise<RouteListResponse> =>
+  getJson<RouteListResponse>(`/api/prose/reroute?scene=${encodeURIComponent(scene)}`, { signal })
+
+export const rerouteScene = (req: RerouteRequest): Promise<RerouteResponse> =>
+  post('/api/prose/reroute', req)
+
+export const adoptRoute = (scene: string, alt: string): Promise<AdoptRouteResponse> =>
+  post('/api/prose/reroute/adopt', { scene, alt } satisfies AdoptRouteRequest)
+
+export const dropRoute = (scene: string, alt: string): Promise<{ ok: true }> =>
+  post('/api/prose/reroute/drop', { scene, alt } satisfies DropRouteRequest)
 
 export const draftScene = (chapter: string, guidance?: string): Promise<DraftSceneResponse> =>
   post('/api/prose/draft-scene', { chapter, guidance } satisfies DraftSceneRequest)

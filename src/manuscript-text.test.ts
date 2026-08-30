@@ -178,7 +178,7 @@ test('blank-line runs do not put phantom paragraphs in the range', () => {
 test('coversWholeScene: full coverage, gaps, and the state an action would produce', () => {
   expect(coversWholeScene(3, [0, 1, 2])).toBe(true)
   expect(coversWholeScene(3, [0, 2])).toBe(false)
-  expect(coversWholeScene(3, [0, 2], [1])).toBe(true, 'the flow asks about after, not before')
-  expect(coversWholeScene(0, [])).toBe(false, 'an empty scene is not a settled scene')
-  expect(coversWholeScene(3, [0, 1, 2, 5])).toBe(true, 'stray indices beyond the scene change nothing')
+  expect(coversWholeScene(3, [0, 2], [1])).toBe(true)   // the flow asks about after, not before
+  expect(coversWholeScene(0, [])).toBe(false)   // an empty scene is not a settled scene
+  expect(coversWholeScene(3, [0, 1, 2, 5])).toBe(true)   // stray indices beyond the scene change nothing
 })

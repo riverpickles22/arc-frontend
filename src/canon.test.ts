@@ -27,7 +27,7 @@ test('every era open-ended is schema-valid, and must not NaN the axis', () => {
 test('open ends fall back to the years the timeline does state', () => {
   const [a, b] = yearRange([era({ start: '1848', end: '1902' }), era({ start: '1903' })])
   expect(a).toBe(1848)
-  expect(b).toBe(1903, 'the open era contributes its start, not a sentinel year')
+  expect(b).toBe(1903)   // the open era contributes its start, not a sentinel year
 })
 
 test('a single-year story still gets a nonzero axis', () => {
