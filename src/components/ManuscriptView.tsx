@@ -4,9 +4,15 @@ import type { AnalyzeResponse, AnnotationStatus, Chapter, ChatResponse, DraftSce
 import type { ProseCheckHit } from 'arc-canon-graph/api-types.ts'
 import { dateOf } from '../canon'
 import { dotsFor } from '../keypoints'
-import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, rerouteScene, adoptRoute, dropRoute } from '../api'
+import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, loadRouteCounts, rerouteScene, reviseRoute, addRouteNote, deleteRouteNote, adoptRoute, dropRoute } from '../api'
 import type { RouteAlternative, RouteLockNotice } from 'arc-canon-graph/api-types.ts'
-import { byNewest, coverageRows, lockNotice, overlapLabel, seedLabel } from '../routes-view'
+import { byNewest, chainsOf, isRouteKey, lockNotice, quoteOf, railCards, railMeta, routeKey, routeParagraphOf, seedLabel, standDownCount } from '../routes-view'
+import type { RailCard } from '../routes-view'
+
+/** A scene holds this many other ways through at a time; the backend is
+ *  where the rule lives (arc-backend/src/reroute.ts MAX_ROUTES). */
+const MAX_ROUTES = 4
+import { RouteReader, RouteTabs } from './RouteReader'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
 import { diffProse, diffStats, type ParaDiff } from '../diff'
@@ -494,55 +500,85 @@ function writePosition(chapter: string, a: Anchor): void {
  *  passages that provoked them (conventions §14). A note whose passage has
  *  moved says so; a note whose passage is gone keeps its quote and waits —
  *  arc never guesses where a thought now belongs. */
-function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, tops, cardRef, active, editing, onEdit, onEditCancel, onEditSave }: {
-  notes: ResolvedAnnotation[]
-  /** The cards actually rendered, in the same order `tops` was measured for.
-   *  Kept as a prop rather than recomputed here: measuring one list and
-   *  rendering another is what slid every card off its paragraph. */
-  open: ResolvedAnnotation[]
-  closed: number
+/** The notes rail: the author's thoughts anchored to the passages that
+ *  provoked them (conventions §14) — the chapter's notes, and, while the
+ *  author is reading a route, that route's notes in the same column beside
+ *  the same kind of prose. One rail, because a note is a note wherever it
+ *  was left; a route's card is tinted, because a note on a proposal is not a
+ *  note on the book.
+ *
+ *  It renders `cards` and nothing else, in that order. The measuring pass
+ *  walks the SAME array — measuring one list and rendering another is what
+ *  slid every card off its paragraph. */
+function NotesRail({ cards, tops, cardRef, railRef, head, empty, active, busy, onStatus, onFocus, editing, onEdit, onEditCancel, onEditSave, composer, route }: {
+  /** the one ordered list; index i is tops[i] and cardRef(i) */
+  cards: RailCard[]
+  /** Final y for each card, aligned to the passage it annotates. */
+  tops: number[]
+  cardRef: (i: number, el: HTMLDivElement | null) => void
+  /** the rail element itself — the measure pass grows its min-height */
+  railRef: React.Ref<HTMLDivElement>
+  head: { meta: string; extra: ReactNode }
+  empty: ReactNode
+  /** The card holding attention — a note id, a route note id, 'composer', or null. */
+  active: string | null
   busy: boolean
   onStatus: (id: string, status: AnnotationStatus) => void
-  onFocus: (id: string, scene: string, paragraph: number | null) => void
-  /** The card holding attention — a note id, 'composer', or null for none. */
-  active: string | null
-  /** The note being revised, and its working text. First phrasings are rough;
-   *  a note the author cannot sharpen is one they drop and rewrite, losing
-   *  its anchor and its place in the record. */
+  /** id of the card, and the anchor key its prose is at (null = no passage) */
+  onFocus: (id: string, key: string | null) => void
   editing: { id: string; text: string } | null
   onEdit: (n: ResolvedAnnotation) => void
   onEditCancel: () => void
   onEditSave: (text: string) => void
-  /** The note being written, rendered here rather than in the manuscript —
-   *  a note is composed where it will live, and the prose never scrolls.
-   *  Positioned like any other card; it holds index 0 of `tops`. */
+  /** The note being written, rendered here rather than in the manuscript — a
+   *  note is composed where it will live, and the prose never scrolls. */
   composer: ReactNode
-  /** Final y for each card, aligned to the paragraph it annotates. The
-   *  composer, when present, is first. */
-  tops: number[]
-  cardRef: (i: number, el: HTMLDivElement | null) => void
+  /** the open route, for a route card's quote and its one action */
+  route: { body: string; busy: boolean; onRemove: (note: string) => void } | null
 }) {
   return (
-    <div className="notes-rail">
-      <h3>Notes{notes.length > 0 && (
-        <span className="chmeta">{open.length} open{closed ? ` · ${closed} closed` : ''}</span>
-      )}</h3>
-      {composer && (
-        <div className={`note-slot${active && active !== 'composer' ? ' note-dim' : ''}`}
-          ref={el => cardRef(0, el)} style={{ top: tops[0] ?? 0 }}>
-          {composer}
-        </div>
-      )}
-      {!notes.length && !composer && (
-        <p className="fsummary">Select any passage to leave one. Notes stay anchored to the
-          text that provoked them — and say so when the manuscript moves underneath.</p>
-      )}
-      {open.map((n, i) => (
-        <div key={n.id} ref={el => cardRef(composer ? i + 1 : i, el)}
-          onClick={() => onFocus(n.id, n.anchor.scene, n.resolution.paragraph)}
-          className={`note note-${n.resolution.state}`
-            + (active === n.id ? ' note-active' : active ? ' note-dim' : '')}
-          style={{ top: tops[composer ? i + 1 : i] ?? 0 }}>
+    <div className="notes-rail" ref={railRef}>
+      <h3>Notes{head.meta && <span className="chmeta">{head.meta}</span>}{head.extra}</h3>
+      {cards.length === 0 && empty}
+      {cards.map((c, i) => {
+        const at = { ref: (el: HTMLDivElement | null) => cardRef(i, el), style: { top: tops[i] ?? 0 } }
+        if (c.kind === 'composer') {
+          return (
+            <div key="composer" {...at}
+              className={`note-slot${active && active !== 'composer' ? ' note-dim' : ''}`}>
+              {composer}
+            </div>
+          )
+        }
+        if (c.kind === 'route') {
+          const n = c.note
+          return (
+            <div key={n.id} {...at}
+              onClick={() => onFocus(n.id, c.key)}
+              className={'note note-route' + (active === n.id ? ' note-active' : active ? ' note-dim' : '')}>
+              <div className="note-head">
+                <code>{n.paragraph === null ? 'the route' : `¶${n.paragraph}`}</code>
+                <span className="note-state">on this route</span>
+              </div>
+              {n.paragraph !== null && route && (
+                <blockquote className="note-quote">{quoteOf(route.body, n.paragraph)}</blockquote>
+              )}
+              <div className="note-body">{n.body}</div>
+              {active === n.id && route && (
+                <div className="note-acts">
+                  <button disabled={route.busy}
+                    onClick={ev => { ev.stopPropagation(); route.onRemove(n.id) }}>delete</button>
+                </div>
+              )}
+            </div>
+          )
+        }
+        const n = c.note
+        return (
+          <div key={n.id} {...at}
+            onClick={() => onFocus(n.id, c.key)}
+            className={`note note-${n.resolution.state}`
+              + (active === n.id ? ' note-active' : active ? ' note-dim' : '')}>
           <div className="note-head">
             <code>{n.id.replace('note.', '#')}</code>
             {STATE_LABEL[n.resolution.state] && <span className="note-state">{STATE_LABEL[n.resolution.state]}</span>}
@@ -593,9 +629,9 @@ function NotesRail({ notes, open, closed, busy, onStatus, onFocus, composer, top
               </div>
             </>
           )}
-        </div>
-      ))}
-      {open.length === 0 && notes.length > 0 && <p className="fsummary">Nothing open on this chapter.</p>}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -666,10 +702,16 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // Their own busy flag and error line — a route is not a draft until the
   // author adopts it, so nothing here touches the draft layer's controls.
   const [routes, setRoutes] = useState<RouteAlternative[]>([])
+  /** routes waiting per scene, for the manuscript's markers — one read */
+  const [routeCounts, setRouteCounts] = useState<Record<string, number>>({})
+  /** which scene's routes the author has open, if any */
+  const [routesFor, setRoutesFor] = useState<string | null>(null)
+  /** which route is being read in place of the scene; null = the scene itself */
+  const [readingRoute, setReadingRoute] = useState<string | null>(null)
+  const [routeNoteBusy, setRouteNoteBusy] = useState(false)
   const [routeLocks, setRouteLocks] = useState<RouteLockNotice[]>([])
   const [routeBusy, setRouteBusy] = useState(false)
   const [routeErr, setRouteErr] = useState<string | null>(null)
-  const [routeOpen, setRouteOpen] = useState<string | null>(null)
 
   // Annotations: select prose, write the thought, keep reading. No
   // categorisation, no scope declaration — the author's only job is the note.
@@ -679,7 +721,14 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // No paragraph means the composer is writing about the whole scene (§14) —
   // the shape a note about something ABSENT has to take, since an absence
   // cannot be selected.
-  const [sel, setSel] = useState<{ scene: string; paragraph?: number; quote?: string; yHint?: number } | null>(null)
+  /** The note being written — the manuscript's and a route's are ONE state,
+   *  so only one can be open, one key listener serves both, and Escape means
+   *  the same thing in each. `on` rather than `kind`: the wire's
+   *  CreateAnnotationRequest already has a `kind`. */
+  type Composing =
+    | { on: 'scene'; scene: string; paragraph?: number; quote?: string; yHint?: number }
+    | { on: 'route'; alt: string; paragraph: number | null; quote?: string }
+  const [sel, setSel] = useState<Composing | null>(null)
   const [noteText, setNoteText] = useState('')
   const [noteBusy, setNoteBusy] = useState(false)
   const [focused, setFocused] = useState<string | null>(null)
@@ -1279,6 +1328,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     const box = colsRef.current
     const yHint = box ? Math.max(0, selMenu.y - box.getBoundingClientRect().top) : 0
     setSel({
+      on: 'scene',
       scene: selMenu.scene,
       paragraph: paragraphAtOffset(selMenu.body, selMenu.start),
       quote: selMenu.quote,
@@ -1338,6 +1388,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const cardsRef = useRef<(HTMLDivElement | null)[]>([])
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const [tops, setTops] = useState<number[]>([])
+  const railRef = useRef<HTMLDivElement>(null)
   const setCard = useCallback((i: number, el: HTMLDivElement | null) => { cardsRef.current[i] = el }, [])
 
   // The analysis pass: what would this draft do to the story? Read-only, and
@@ -1389,15 +1440,28 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
   // The reroute pass (A51): existing alternatives load with the scene. Placed
   // with the other hooks, above the empty-canon return.
-  const routeScene = curScenes.length === 1 ? curScenes[0].scene : null
+  const [countsTick, setCountsTick] = useState(0)
+  const refreshCounts = useCallback(() => setCountsTick(t => t + 1), [])
   useEffect(() => {
-    if (!routeScene) { setRoutes([]); setRouteLocks([]); setRouteErr(null); return }
     const ctrl = new AbortController()
-    listRoutes(routeScene, ctrl.signal)
+    loadRouteCounts(ctrl.signal)
+      .then(r => setRouteCounts(r.counts))
+      .catch(() => { /* a down backend is the page banner's news, not a marker's */ })
+    return () => ctrl.abort()
+  }, [countsTick])
+
+  // A chapter of one scene opens its routes by itself, as it always did;
+  // any other scene is opened from its marker.
+  const soleScene = curScenes.length === 1 ? curScenes[0].scene : null
+  useEffect(() => { setRoutesFor(prev => (prev && curScenes.some(s => s.scene === prev) ? prev : soleScene)) }, [curScenes, soleScene])
+  useEffect(() => {
+    if (!routesFor) { setRoutes([]); setRouteLocks([]); setRouteErr(null); return }
+    const ctrl = new AbortController()
+    listRoutes(routesFor, ctrl.signal)
       .then(r => { setRoutes(byNewest(r.alternatives)); setRouteLocks(r.locks) })
       .catch(() => { /* a down backend is the page banner's news, not this panel's */ })
     return () => ctrl.abort()
-  }, [routeScene])
+  }, [routesFor])
 
   const chapterNotes = useMemo(
     () => notes.filter(x => curScenes.some(s => s.scene === x.anchor.scene))
@@ -1471,6 +1535,14 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  (A28-4's rule, shared by note cards and the margin rail's dots). Null
    *  when the key measures against nothing. */
   const lineAt = useCallback((box: HTMLElement, base: number, key: string): number | null => {
+    // A route's paragraphs live in their own attribute namespace: the reading
+    // position sweeps [data-para] across this whole region, and a bare number
+    // there would read as a scene key with no scene.
+    if (isRouteKey(key)) {
+      const p = routeParagraphOf(key)
+      const el = box.querySelector<HTMLElement>(`.rr-route[data-rpara="${p}"], .rr-route [data-rpara="${p}"]`)
+      return el ? el.getBoundingClientRect().top - base : null
+    }
     const el = box.querySelector<HTMLElement>(`[data-para="${key}"]`)
     if (el) return el.getBoundingClientRect().top - base
     const scene = key.slice(0, key.lastIndexOf(':'))
@@ -1521,36 +1593,79 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     [chapterNotes],
   )
 
-  // Measure after paint: where each annotated paragraph sits, then stack the
-  // cards so none overlaps its neighbour. Cards keep their own height, so one
-  // extra pass settles it.
+  // Which route is being read — derived ONCE, here, because the rail and the
+  // reader must never disagree about it. An id that no longer resolves
+  // (adopted, dropped, rewritten into a new head) falls back to the newest.
+  const routeChain = useMemo(() => {
+    if (!readingRoute) return null
+    const cs = chainsOf(routes)
+    return cs.find(c => c.head.id === readingRoute) ?? cs[0] ?? null
+  }, [routes, readingRoute])
+  const readingAlt = routeChain?.head ?? null
+
+  // The composer's anchor. A whole-route composer measures against the route's
+  // head (¶0), not the top of a column the route sits a long way down.
+  const composerAnchor = useMemo(() => {
+    if (!sel) return null
+    if (sel.on === 'route') return { key: routeKey(sel.paragraph) }
+    return { key: sel.paragraph == null ? null : `${sel.scene}:${sel.paragraph}`, yHint: sel.yHint }
+  }, [sel])
+
+  // The one list: rendered by the rail, measured by the effect below, built by
+  // a pure function that is tested where a component cannot be.
+  const cards = useMemo(() => railCards({
+    notes: openNotes, routedScene: routesFor, route: readingAlt, composer: composerAnchor,
+  }), [openNotes, routesFor, readingAlt, composerAnchor])
+
+  /** Open the rail's composer against a route paragraph (null = the route as
+   *  a whole). The manuscript's composer and this one are ONE state, so only
+   *  one can be open and Escape means the same thing in both. */
+  const composeRoute = useCallback((alt: string, paragraph: number | null, quote: string) => {
+    if (sel && noteText.trim()) return          // never discard words already typed
+    setSel({ on: 'route', alt, paragraph, quote: quote.replace(/\s+/g, ' ').trim().slice(0, 180) })
+    setNoteText('')
+    setActive('composer')
+    setFocused(routeKey(paragraph))
+  }, [sel, noteText])
+
+  /** Below this the rail has no room beside the prose and falls in under it. */
+  const WIDE = '(min-width: 1100px)'
+
+  // Measure after paint: where each card's passage sits, then stack them so
+  // none overlaps its neighbour. Cards keep their own height, so one extra
+  // pass settles it. Space is only ever taken DOWN the rail — no card, and no
+  // composer opening, can move a line of prose in either column.
   useLayoutEffect(() => {
     const box = colsRef.current
     if (!box) return
+    cardsRef.current.length = cards.length     // a shrunk list must not measure a stale card
     const measure = () => {
       const base = box.getBoundingClientRect().top
-      const lineOf = (key: string | null) => (key === null ? 0 : lineAt(box, base, key) ?? 0)
-      // Exactly the cards the rail renders, in render order: the composer
-      // first when open, then the notes it shows.
-      const keys = [
-        // A scene composer measures against no paragraph, so it takes the top
-        // of the column — where the note it is about to make will also sit.
-        ...(sel ? [sel.paragraph == null ? null : `${sel.scene}:${sel.paragraph}`] : []),
-        ...openNotes.map(x => (x.resolution.paragraph === null ? null : `${x.anchor.scene}:${x.resolution.paragraph}`)),
-      ]
-      const desired = keys.map(lineOf)
+      const desired = cards.map(c => (c.key === null ? 0 : lineAt(box, base, c.key) ?? 0))
       // A composer born in Edit mode measures against nothing (no [data-para]
-      // in a textarea) — it carries its own line instead.
-      if (sel?.yHint !== undefined && desired.length > 0 && desired[0] === 0) desired[0] = sel.yHint
-      const heights = keys.map((_, i) => cardsRef.current[i]?.offsetHeight ?? 0)
+      // inside a textarea) — it carries its own line instead.
+      const first = cards[0]
+      if (first?.kind === 'composer' && first.yHint !== undefined && desired[0] === 0) desired[0] = first.yHint
+      const heights = cards.map((_, i) => cardsRef.current[i]?.offsetHeight ?? 0)
       const next = stack(desired, heights)
       setTops(prev => (prev.length === next.length && prev.every((v, i) => Math.abs(v - next[i]) < 1) ? prev : next))
+      // The cards are out of flow and contribute no height, so a tall stack
+      // would run past the bottom of its own column. Written straight onto the
+      // rail's node: it is a measurement, not state, and state set from an
+      // effect is a lint error here.
+      const rail = railRef.current
+      if (!rail) return
+      const need = window.matchMedia(WIDE).matches && next.length
+        ? Math.max(...next.map((t, i) => t + heights[i])) + 24
+        : 0
+      const cur = parseFloat(rail.style.minHeight || '0')
+      if (Math.abs(cur - need) > 1) rail.style.minHeight = need ? `${need}px` : ''
     }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(box)
     return () => ro.disconnect()
-  }, [openNotes, sel, view, diffs, mode, lineAt])
+  }, [cards, view, diffs, mode, lineAt])
 
   // Escape steps back out of whatever holds attention, without discarding a
   // half-written note unless the composer is what is focused.
@@ -1702,7 +1817,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       // paragraph the selection touches only as a last resort.
       paragraph = ix > -1 ? ix : 0
     }
-    setSel({ scene: scene.scene, paragraph, quote })
+    setSel({ on: 'scene', scene: scene.scene, paragraph, quote })
     setNoteText('')
     setActive('composer')
   }
@@ -1710,7 +1825,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  quote. The gesture carries the scope — the author is never asked to
    *  choose one. */
   const noteOnScene = (scene: string) => {
-    setSel({ scene })
+    setSel({ on: 'scene', scene })
     setNoteText('')
     setActive('composer')
   }
@@ -1718,8 +1833,22 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const saveNote = async () => {
     if (!sel || !noteText.trim()) return
     setNoteBusy(true)
-    try { await createNote({ ...sel, body: noteText }); setSel(null); setActive(null); setNoteText(''); onRefreshNotes() }
-    catch (e) { setErr((e as Error).message ?? String(e)) }
+    try {
+      if (sel.on === 'route') {
+        if (routesFor) await saveRouteNoteFor(routesFor, sel.alt, noteText.trim(), sel.paragraph)
+      } else {
+        // Explicit fields, never a spread: this object carries `on` and
+        // `yHint`, and CreateAnnotationRequest has its own `kind`.
+        await createNote({
+          scene: sel.scene,
+          ...(sel.paragraph == null ? {} : { paragraph: sel.paragraph }),
+          ...(sel.quote ? { quote: sel.quote } : {}),
+          body: noteText,
+        })
+        onRefreshNotes()
+      }
+      setSel(null); setActive(null); setNoteText('')
+    } catch (e) { setErr((e as Error).message ?? String(e)) }
     finally { setNoteBusy(false) }
   }
   const noteStatus = async (id: string, status: AnnotationStatus) => {
@@ -1782,9 +1911,46 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     try {
       await flushFile(file)
       const res = await rerouteScene({ scene, count: 2, ...(guidance.trim() ? { guidance: guidance.trim() } : {}) })
+      // The answers belong to the scene that was asked, so open that scene:
+      // when routesFor already names it the merge stands, and when it does
+      // not, the listing effect refetches and is authoritative.
       setRoutes(prev => byNewest([...res.alternatives, ...prev.filter(p => !res.alternatives.some(a => a.id === p.id))]))
-      if (res.alternatives[0]) setRouteOpen(res.alternatives[0].id)
+      setRoutesFor(scene)
+      if (res.alternatives[0]) setReadingRoute(res.alternatives[0].id)
       if (res.refused.length) setRouteErr(res.refused.map(r => `${seedLabel(r.seed)}: ${r.reason}`).join(' · '))
+      refreshCounts()
+    } catch (e) {
+      setRouteErr((e as Error).message ?? String(e))
+    } finally {
+      setRouteBusy(false)
+    }
+  }
+  // Notes on a route (A58): the author's reactions, kept with the route and
+  // read by the rewrite as its brief.
+  const mergeAlt = (alt: RouteAlternative) =>
+    setRoutes(prev => prev.map(a => (a.id === alt.id ? alt : a)))
+  const saveRouteNoteFor = async (scene: string, alt: string, body: string, paragraph: number | null) => {
+    setRouteNoteBusy(true)
+    try { mergeAlt((await addRouteNote({ scene, alt, body, paragraph })).alternative) }
+    catch (e) { setRouteErr((e as Error).message ?? String(e)) }
+    finally { setRouteNoteBusy(false) }
+  }
+  const removeRouteNote = async (scene: string, alt: string, note: string) => {
+    setRouteNoteBusy(true)
+    try { mergeAlt((await deleteRouteNote({ scene, alt, note })).alternative) }
+    catch (e) { setRouteErr((e as Error).message ?? String(e)) }
+    finally { setRouteNoteBusy(false) }
+  }
+
+  // The rewrite (A57): the route goes back through the pass with the
+  // author's note; the result lands as a new version of the same route.
+  const reviseFor = async (scene: string, id: string, extra: string) => {
+    setRouteBusy(true); setRouteErr(null)
+    try {
+      const res = await reviseRoute({ scene, alt: id, ...(extra ? { note: extra } : {}) })
+      setRoutes(prev => byNewest([...res.alternatives, ...prev.filter(p => !res.alternatives.some(a => a.id === p.id))]))
+      if (res.refused.length) setRouteErr(res.refused.map(r => `${seedLabel(r.seed)}: ${r.reason}`).join(' · '))
+      refreshCounts()
     } catch (e) {
       setRouteErr((e as Error).message ?? String(e))
     } finally {
@@ -1795,6 +1961,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     setRouteBusy(true); setRouteErr(null)
     try {
       await adoptRoute(scene, id)
+      refreshCounts()
       onRefresh()   // the draft layer now carries the route as an ordinary change
     } catch (e) {
       setRouteErr((e as Error).message ?? String(e))
@@ -1807,6 +1974,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     try {
       await dropRoute(scene, id)
       setRoutes(prev => prev.filter(a => a.id !== id))
+      refreshCounts()
     } catch (e) {
       setRouteErr((e as Error).message ?? String(e))
     }
@@ -1831,13 +1999,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
             {genBusy ? 'Working…' : 'Redraft the scene'}
           </button>
         )}
-        {curScenes.length === 1 && (
-          <button disabled={genBusy || routeBusy || !!notice.blocked}
-            title={notice.blocked ?? 'Another way through: the same contract reached by a different route. The current prose is withheld from the pass; two alternatives land beside the scene, to adopt or drop.'}
-            onClick={() => void reroute(curScenes[0].scene, curScenes[0].file)}>
-            {routeBusy ? 'Rerouting…' : 'Another way through'}
-          </button>
-        )}
+
       </div>
       {genBusy && <p className="gen-note">arc is drafting from the chapter's context pack — style contract, cast state, payoff fence. This takes a minute or two.</p>}
       {genErr && <p className="db-err">{genErr}</p>}
@@ -1854,51 +2016,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           <div className="db-capture-reply">{gen.reply}</div>
         </div>
       )}
-      {curScenes.length === 1 && routes.length > 0 && (
-        <div className="routes">
-          <h3>Another way through — {routes.length} {routes.length === 1 ? 'route' : 'routes'} beside the scene, none in it</h3>
-          {routes.map(alt => (
-            <details key={alt.id} className="route" open={routeOpen === alt.id}
-              onToggle={ev => { if ((ev.target as HTMLDetailsElement).open) setRouteOpen(alt.id); else if (routeOpen === alt.id) setRouteOpen(null) }}>
-              <summary>
-                <span className="route-seed">{seedLabel(alt.seed)}</span>
-                <span className="route-meta">{overlapLabel(alt.overlap)}</span>
-                <span className="route-meta">{new Date(alt.created_at).toLocaleString()}</span>
-                {alt.guidance && <span className="route-meta">guidance: {alt.guidance}</span>}
-              </summary>
-              <div className="route-body">
-                {alt.retried && <p className="gen-note">Retried once — the gate refused the first answer: {alt.retried}</p>}
-                <div className="route-cols">
-                  <div>
-                    <h4>The scene as it stands</h4>
-                    {paragraphsOf(curScenes[0].body).map((p, i) => <p key={i}>{p}</p>)}
-                  </div>
-                  <div>
-                    <h4>This route</h4>
-                    {paragraphsOf(alt.body).map((p, i) => <p key={i}>{p}</p>)}
-                  </div>
-                </div>
-                <h4>Where the required beats land — the pass argues, you judge</h4>
-                {alt.coverage
-                  ? (
-                    <table className="route-coverage"><tbody>
-                      {coverageRows(alt.coverage).map((r, i) => <tr key={i}><td>{r.item}</td><td>{r.where}</td></tr>)}
-                    </tbody></table>
-                  )
-                  : <p className="gen-note">not reported — the answer carried no readable coverage tail.</p>}
-                <h4>Briefing (argued)</h4>
-                <div className="db-capture-reply">{alt.briefing || '(none)'}</div>
-                <div className="route-actions">
-                  <button disabled={routeBusy}
-                    title="Replace the working-tree scene with this route. It becomes the draft — accept or discard through the ordinary gate. Key points and notes anchored on the old route may orphan; attention lists them."
-                    onClick={() => void adopt(alt.scene, alt.id)}>Adopt into the draft</button>
-                  <button disabled={routeBusy} onClick={() => void drop(alt.scene, alt.id)}>Drop</button>
-                </div>
-              </div>
-            </details>
-          ))}
-        </div>
-      )}
+
     </div>
   )
 
@@ -1926,6 +2044,11 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               {curScenes.map(sc => (
                 <a key={sc.scene} className="nav-scene" onClick={() => jumpToScene(sc.scene)}>
                   <code>{sc.scene}</code>
+                  {routeCounts[sc.scene] > 0 && (
+                    <span className="nav-routes" title={`${routeCounts[sc.scene]} another way through this scene, waiting for you`}>
+                      {routeCounts[sc.scene]} ⤳
+                    </span>
+                  )}
                 </a>
               ))}
             </div>
@@ -2166,7 +2289,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           const beforeBody = view === 'before' && change ? (change.main?.body ?? null) : undefined
           const notYetInBook = view === 'before' && change?.status === 'added'
           return (
-            <section key={s.scene} className="scene" data-scene={s.scene}>
+            <Fragment key={s.scene}>
+            <section className="scene" data-scene={s.scene}>
               {/* The header states what the scene IS — its id, its state, what
                   it rests on. What you can DO to it arrives on hover, because
                   four actions at the same weight as the facts made a row that
@@ -2174,6 +2298,49 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   too, so the keyboard never loses what the pointer gains. */}
               {mode !== 'read' && <div className="scene-head">
                 <code>{s.scene}</code>
+                {routeCounts[s.scene] > 0 && (
+                  <button className="scene-routes" disabled={routeBusy}
+                    title="Read the other ways through this scene, and decide."
+                    onClick={() => {
+                      const opening = routesFor !== s.scene
+                      setRoutesFor(opening ? s.scene : null)
+                      setReadingRoute(null)
+                    }}>
+                    {routesFor === s.scene
+                      ? 'hide the routes'
+                      : `${routeCounts[s.scene]} route${routeCounts[s.scene] === 1 ? '' : 's'} waiting`}
+                  </button>
+                )}
+                {/* Asking for a route belongs on the scene it is about, beside
+                    the routes it produces — not inside the drafting bar, and
+                    not only in a chapter that happens to hold one scene. A
+                    settled scene says why rather than offering a run the
+                    backend would refuse with 423. */}
+                {(() => {
+                  const settled = heldLockOf(s, overrides[s.file] ?? s.body)
+                  if (settled) return (
+                    <span className="scene-routes is-off"
+                      title={`This ${settled.anchor.chapter ? 'chapter' : 'section'} is settled — locked (${settled.id}). Unlock it to take another way through.`}>
+                      settled — no other way through
+                    </span>
+                  )
+                  // The cap is the backend's rule; the viewer says it before
+                  // the press so the refusal is never a surprise. Cancelling a
+                  // route lowers the count and the control returns.
+                  if ((routeCounts[s.scene] ?? 0) >= MAX_ROUTES) return (
+                    <span className="scene-routes is-off"
+                      title={`A scene holds ${MAX_ROUTES} other ways through at a time. Cancel one you are done with to make room for another.`}>
+                      full — cancel one to add another
+                    </span>
+                  )
+                  return (
+                    <button className="scene-routes" disabled={genBusy || routeBusy}
+                      title="Take another way through this scene: the same contract reached by a different route. The current prose is withheld from the pass; two alternatives land beside the scene, to read and decide."
+                      onClick={() => void reroute(s.scene, s.file)}>
+                      {routeBusy ? 'finding another way…' : 'another way through'}
+                    </button>
+                  )
+                })()}
                 {/* The default state needs no label — every scene is proposed
                     for months, and a pill that is always present says
                     nothing. Ratification is the news, so only that shows. */}
@@ -2291,7 +2458,31 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 )
               })()}
               {mode !== 'read' && s.contract && <ContractPanel c={s.contract} onOpenWorld={onOpenWorld} />}
-              {mode === 'read'
+              {/* The routes fold INTO the scene: one reading area, and a tab
+                  strip that swaps what is in it. */}
+              {routesFor === s.scene && routes.length > 0 && mode !== 'read' && (
+                <RouteTabs routes={routes} selectedId={readingRoute}
+                  onSelect={id => {
+                    // Leaving a route leaves its notes. A composer opened
+                    // against route A must never be filed against route B.
+                    setReadingRoute(id); setSel(null); setNoteText(''); setActive(null); setFocused(null)
+                  }} />
+              )}
+              {routesFor === s.scene && routeChain && mode !== 'read'
+                ? (
+                  <RouteReader
+                    chain={routeChain!}
+                    busy={routeBusy}
+                    error={routeErr}
+                    focusedKey={focused}
+                    onCompose={composeRoute}
+                    onFocusNote={(id, n) => { setActive(id); setFocused(routeKey(n)) }}
+                    onRevise={(alt, extra) => reviseFor(s.scene, alt, extra)}
+                    onAdopt={alt => adopt(s.scene, alt)}
+                    onDrop={alt => drop(s.scene, alt)}
+                  />
+                )
+                : mode === 'read'
                 ? (
                   // The book, and only the book: the working tree's prose —
                   // what a reader would meet if the draft were accepted —
@@ -2397,6 +2588,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   })}
                 </div>}
             </section>
+            </Fragment>
           )
         })}
 
@@ -2421,6 +2613,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
         {curScenes.length > 0 && showGen && mode !== 'read' && genBar}
 
+
+
+
         {!curScenes.length && !curDeleted.length && (
           <>
             <p className="ms-empty">No scenes drafted yet — the outline above is this chapter's canon summary.
@@ -2444,26 +2639,52 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       </article>
 
       {mode !== 'read' && <NotesRail
-        notes={chapterNotes} open={openNotes} closed={chapterNotes.length - openNotes.length}
-        tops={tops} cardRef={setCard} active={active}
-        busy={noteBusy} onStatus={noteStatus}
+        /* A route swap is a cut, not a slide: `.notes-rail > .note` carries a
+           top transition, so surviving nodes would glide from one route's
+           geometry to another's. Keying on the route remounts the cards. */
+        key={readingAlt?.id ?? 'scene'}
+        cards={cards} tops={tops} cardRef={setCard} railRef={railRef}
+        active={active} busy={noteBusy} onStatus={noteStatus}
         editing={editing}
         onEdit={n => { setEditing({ id: n.id, text: n.body }); setActive(n.id) }}
         onEditCancel={() => setEditing(null)}
         onEditSave={saveEdit}
-        onFocus={(id, scene, para) => {
-          setActive(id)
-          setFocused(para === null ? null : `${scene}:${para}`)
+        onFocus={(id, key) => { setActive(id); setFocused(key) }}
+        head={{
+          meta: railMeta({
+            route: readingAlt,
+            open: cards.filter(c => c.kind === 'note').length,
+            standDown: standDownCount(openNotes, routesFor, readingAlt),
+          }),
+          extra: readingAlt && (
+            /* The ONLY way to file a note about the whole route — it moved
+               with the rail, so it stays where the route's notes are. */
+            <button className="rr-link" disabled={noteBusy}
+              onClick={() => composeRoute(readingAlt.id, null, '')}>whole route</button>
+          ),
         }}
+        empty={readingAlt
+          ? <p className="fsummary">Highlight a phrase in the route to leave a note beside it. Your notes are what a rewrite reads.</p>
+          : <p className="fsummary">Select any passage to leave one. Notes stay anchored to the
+              text that provoked them — and say so when the manuscript moves underneath.</p>}
+        route={readingAlt && routesFor
+          ? { body: readingAlt.body, busy: routeNoteBusy, onRemove: note => void removeRouteNote(routesFor, readingAlt.id, note) }
+          : null}
         composer={sel && (
           <div className="note-composer">
             {sel.quote
               ? <blockquote className="note-quote">{sel.quote}</blockquote>
-              : <div className="note-scope">about all of {sel.scene}</div>}
-            <textarea ref={composerRef} value={noteText} rows={4}
-              placeholder={sel.quote
-                ? 'What did you notice? Write it as you would say it — arc works out the scope.'
-                : 'What about this scene? Including what it does not say yet.'}
+              : <div className="note-scope">{sel.on === 'route'
+                  ? (sel.paragraph === null ? 'about all of this route' : `about all of ¶${sel.paragraph}`)
+                  : `about all of ${sel.scene}`}</div>}
+            <textarea ref={composerRef} value={noteText} rows={4} disabled={noteBusy}
+              placeholder={sel.on === 'route'
+                ? (sel.paragraph === null
+                    ? 'What about this route? Including what it does not do yet.'
+                    : 'What did you notice? Write it as you would say it.')
+                : sel.quote
+                  ? 'What did you notice? Write it as you would say it — arc works out the scope.'
+                  : 'What about this scene? Including what it does not say yet.'}
               onChange={ev => setNoteText(ev.target.value)}
               onKeyDown={ev => {
                 if (ev.key === 'Escape') { setSel(null); setActive(null) }

@@ -688,6 +688,57 @@ svg text { font-family: inherit; }
 .route-coverage td { font-size: 12.5px; padding: 2px 10px 2px 0; vertical-align: top; color: var(--text-secondary); }
 .route-coverage td:last-child { white-space: nowrap; }
 .route-actions { display: flex; gap: 8px; margin-top: 10px; }
+.route-revise { align-items: center; }
+.route-hint { font-weight: 400; color: var(--text-secondary); font-size: 12px; }
+.route-para { cursor: pointer; border-radius: 3px; padding: 1px 3px; margin-left: -3px; }
+.route-para:hover { background: var(--c-hover, rgba(127,127,127,.10)); }
+.route-para.noted { box-shadow: inset 2px 0 0 var(--c1); }
+.route-para-mark { color: var(--c1); font-size: 11px; }
+.route-notes { margin-top: 14px; }
+.route-note { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; padding: 3px 0; }
+.route-note-where { color: var(--text-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.route-note-body { flex: 1; }
+.route-note-x { border: 0; background: none; cursor: pointer; color: var(--text-secondary); font-size: 15px; line-height: 1; padding: 0 4px; }
+.route-note-x:hover { color: var(--c8); }
+.route-note-add { margin-top: 6px; font-size: 12px; }
+.route-notes-past { opacity: .75; }
+.route-notes-past h4 { font-size: 12px; color: var(--text-secondary); margin-bottom: 2px; }
+
+/* The route reader (A59-1). The prose column and the notes rail are SIBLING
+   columns; every card is out of the prose's flow, so nothing a note does can
+   move a line of the route. */
+.rr-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 6px; }
+.rr-tab { font: inherit; font-size: 12.5px; text-align: left; color: var(--text-secondary);
+  background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+.rr-tab:hover { background: var(--c-hover, rgba(127,127,127,.08)); }
+.rr-tab.is-on { border-color: var(--c1); color: var(--text-primary); }
+.rr-tab small { display: block; color: var(--text-secondary); font-size: 11px; margin-top: 1px; }
+.rr-meta { font-size: 12px; color: var(--text-secondary); margin: 0 0 10px; }
+.rr-cols { position: relative; }
+.rr-main { min-width: 0; padding-left: 34px; }
+.rr-prose p { position: relative; margin: 0 0 10px; font-size: 13.5px; line-height: 1.7; }
+.rr-prose .rr-n { position: absolute; left: -34px; top: .35em; width: 24px; text-align: right;
+  font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: var(--text-secondary); }
+/* Both marks net to zero width and touch no vertical property: a paragraph is
+   laid out identically whether or not it carries notes. */
+.rr-prose p.has-note { border-left: 2px solid var(--c1); padding-left: 10px; margin-left: -12px; cursor: pointer; }
+.rr-prose p.note-focus { border-left: 3px solid var(--c1); padding-left: 10px; margin-left: -13px;
+  background: color-mix(in oklab, var(--c1) 14%, transparent); border-radius: 0 4px 4px 0; }
+.rr-link { margin-left: auto; font: inherit; font-size: 11px; color: var(--c1); background: none;
+  border: 0; cursor: pointer; text-transform: none; letter-spacing: 0; }
+.rr-more { margin-top: 18px; }
+.notes-rail > .note-route { border-left: 3px solid var(--c1); }
+.notes-rail > .note-route .note-head code { color: var(--c1); }
+.nav-routes { margin-left: 6px; font-size: 10.5px; color: var(--c1); font-variant-numeric: tabular-nums; }
+.scene-routes { font: inherit; font-size: 11px; color: var(--c1); background: transparent;
+  border: 1px solid var(--border); border-radius: 6px; padding: 1px 8px; margin-left: 8px; cursor: pointer; }
+.scene-routes:hover { border-color: var(--c1); }
+.scene-routes:disabled { opacity: .5; cursor: default; }
+.scene-routes.is-off { color: var(--text-secondary); border-color: transparent; cursor: default; }
+.route-revise input { flex: 1; min-width: 0; }
+.route-earlier { margin-top: 12px; }
+.route-earlier > summary { cursor: pointer; color: var(--text-secondary); font-size: 0.9em; }
+.route-earlier-one { margin: 10px 0 0; padding: 10px 12px; border-left: 2px solid var(--border); }
 @media (max-width: 900px) { .route-cols { grid-template-columns: 1fr; } }
 .cap-action { font-size: 11px; font-family: ui-monospace, monospace; color: var(--c2);
   border: 1px solid var(--border); border-radius: 5px; padding: 1px 7px; width: fit-content; }

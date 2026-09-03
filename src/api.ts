@@ -14,7 +14,7 @@ import type {
   WorkDecisionRequest, WorkDecisionResponse, WorkNoteRequest, WorkResponse,
   ProseAcceptRequest, ProseAcceptResponse, ProseCheckHit, ProseChecksResponse, ProseDiscardRequest, ProseParagraphRequest, ProseResponse, ProseSentenceRequest, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
 } from 'arc-canon-graph'
-import type { AdoptRouteRequest, AdoptRouteResponse, DropRouteRequest, RerouteRequest, RerouteResponse, RouteListResponse } from 'arc-canon-graph/api-types.ts'
+import type { AdoptRouteRequest, AdoptRouteResponse, DropRouteRequest, AddRouteNoteRequest, DeleteRouteNoteRequest, RouteAlternative, RerouteRequest, ReviseRouteRequest, RerouteResponse, RouteListResponse } from 'arc-canon-graph/api-types.ts'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SuggestRequest, SuggestResponse } from './canon'
 import type { View } from './presentation'
 import type { GeoJSON } from './map-geometry'
@@ -252,6 +252,24 @@ export const adoptRoute = (scene: string, alt: string): Promise<AdoptRouteRespon
 
 export const dropRoute = (scene: string, alt: string): Promise<{ ok: true }> =>
   post('/api/prose/reroute/drop', { scene, alt } satisfies DropRouteRequest)
+
+/** Rewrite one alternative under the author's note — the result is a new
+ *  version of the same route; the old version stays beside it. */
+export const reviseRoute = (req: ReviseRouteRequest): Promise<RerouteResponse> =>
+  post('/api/prose/reroute/revise', req)
+
+/** A note on a route — about one of its paragraphs, or the whole of it.
+ *  Notes live with the route and are what a rewrite reads. */
+/** How many routes wait on each scene — one read for the whole story, so the
+ *  manuscript can mark every scene without a request per scene. */
+export const loadRouteCounts = (signal?: AbortSignal): Promise<{ counts: Record<string, number> }> =>
+  getJson<{ counts: Record<string, number> }>('/api/prose/reroute/counts', { signal })
+
+export const addRouteNote = (req: AddRouteNoteRequest): Promise<{ alternative: RouteAlternative }> =>
+  post('/api/prose/reroute/note', req)
+
+export const deleteRouteNote = (req: DeleteRouteNoteRequest): Promise<{ alternative: RouteAlternative }> =>
+  post('/api/prose/reroute/note/delete', req)
 
 export const draftScene = (chapter: string, guidance?: string): Promise<DraftSceneResponse> =>
   post('/api/prose/draft-scene', { chapter, guidance } satisfies DraftSceneRequest)

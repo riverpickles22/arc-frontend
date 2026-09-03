@@ -22,10 +22,10 @@ export const RAIL_FLOOR = 34
  * after one at line 900 would otherwise be shoved to the bottom of the rail,
  * nowhere near the passage it belongs to.
  */
-export function stack(desired: number[], heights: number[], gap = 10): number[] {
+export function stack(desired: number[], heights: number[], gap = 10, floorAt = RAIL_FLOOR): number[] {
   const order = desired.map((_, i) => i).sort((a, b) => desired[a] - desired[b])
   const out = new Array<number>(desired.length).fill(0)
-  let floor = RAIL_FLOOR
+  let floor = floorAt
   for (const i of order) {
     const top = Math.max(desired[i], floor)
     floor = top + (heights[i] || 0) + gap
