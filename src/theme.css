@@ -24,6 +24,21 @@
   --c6: light-dark(#eb6834, #d95926); /* orange */
   --c7: light-dark(#4a3aa7, #9085e9); /* violet */
   --c8: light-dark(#e34948, #e66767); /* red */
+  /* Semantic inks, chosen by what a thing IS rather than by slot. The
+     manuscript page once set every non-prose mark in the blue slot, so a
+     scene id, the selected chapter, a lock control, a pass that asks arc to
+     write, and a count of routes waiting for the author all read as one
+     kind of thing. Four inks sort them:
+       ref  — a reference into the record: ids, wikilinks, what a scene rests on
+       act  — an author action on the record: lock, note, read from here; quiet
+       pass — a control that asks arc to write; what it makes is a proposal
+       wait — something waiting for the author's decision: routes, proposals
+     The wait ink is the proposal amber the top bar already speaks, darkened
+     for light-mode text so it clears 4.5:1 on the page (c4 does not). */
+  --ink-ref: var(--c1);
+  --ink-act: var(--muted);
+  --ink-pass: var(--c7);
+  --ink-wait: light-dark(#8a5d00, #dba33c);
   /* The chart family. The World map is a chart of the story's world, not a
      diagram — so water has depth, the coast has the glow of old nautical
      charts' water-lining, and land lifts off the sea. All derived from the
@@ -237,7 +252,9 @@ svg text { font-family: inherit; }
 }
 .focusmodes button + button { border-left: 1px solid var(--border); }
 .focusmodes button.sel { color: var(--text-primary); background: var(--panel); font-weight: 650; }
-.linklike { color: var(--c1); cursor: pointer; text-decoration: none; }
+.linklike { color: var(--ink-ref); cursor: pointer; text-decoration: none; }
+/* A link that asks arc to write is a pass, not a reference. */
+.linklike.pass-act { color: var(--ink-pass); }
 .linklike:hover { text-decoration: underline; }
 .empty { color: var(--muted); padding: 12px; }
 
@@ -260,7 +277,9 @@ svg text { font-family: inherit; }
   color: var(--text-secondary); background: transparent; border: 1px solid transparent; border-radius: 8px;
 }
 .pagenav button:hover { color: var(--text-primary); background: var(--panel); }
-.pagenav button.sel { color: var(--c1); border-color: var(--c1); }
+/* The open page is the one you are on, not a link: primary text, and the
+   accent only in the border that marks it. */
+.pagenav button.sel { color: var(--text-primary); border-color: var(--ink-ref); }
 .degraded {
   margin-top: 4px; padding: 5px 10px; font-size: 12.5px; border-radius: 8px;
   color: var(--c6); border: 1px solid var(--c6);
@@ -277,7 +296,9 @@ svg text { font-family: inherit; }
   border-radius: 0 6px 6px 0; cursor: pointer; line-height: 1.35;
 }
 .navitem:hover { color: var(--text-primary); background: var(--panel); }
-.navitem.sel { color: var(--c1); border-left-color: var(--c1); background: var(--panel); }
+/* Same rule as the page tab: the chapter you are in reads as primary text
+   beside its bar, so it no longer matches the links around it. */
+.navitem.sel { color: var(--text-primary); border-left-color: var(--ink-ref); background: var(--panel); }
 .navitem .chn { display: inline-block; min-width: 18px; font-variant-numeric: tabular-nums; color: var(--muted); }
 /* Chapter meta sits on its own line, indented under the title: a float put
    the word count in collision with any long chapter name. */
@@ -292,7 +313,7 @@ svg text { font-family: inherit; }
   color: var(--text-secondary); text-decoration: none; border-radius: 6px;
 }
 .nav-scene code { font-size: 11px; }
-.nav-scene:hover { color: var(--c1); background: var(--surface-1); }
+.nav-scene:hover { color: var(--ink-ref); background: var(--surface-1); }
 
 /* The paragraph an orphaned note was made on, from its captured snapshot —
    quieter than a live quote, because it is memory, not the page (A49-1). */
@@ -438,9 +459,9 @@ svg text { font-family: inherit; }
 .scene-head { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; font-size: 12.5px;
   color: var(--text-secondary); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 12px; }
 
-.scene-head code { font-size: 12px; color: var(--c1); }
+.scene-head code { font-size: 12px; color: var(--ink-ref); }
 .scene-head .rests { color: var(--muted); flex-basis: 100%; }
-.scene-head .rests .wikilink { color: var(--c1); cursor: pointer; margin-left: 6px; }
+.scene-head .rests .wikilink { color: var(--ink-ref); cursor: pointer; margin-left: 6px; }
 
 /* The actions: always present, pushed to the end of the first line, and set
    in one muted weight so they sit behind the id and the prose in the reading
@@ -474,7 +495,7 @@ svg text { font-family: inherit; }
   font-size: 11px; text-transform: lowercase; letter-spacing: .02em;
 }
 .stpill { font-size: 10.5px; font-weight: 600; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border); }
-.stpill.proposed { color: var(--c4); border-color: var(--c4); }
+.stpill.proposed { color: var(--ink-wait); border-color: var(--ink-wait); }
 .stpill.canon { color: var(--c8); border-color: var(--c8); }
 .ms-empty { max-width: 74ch; color: var(--muted); font-size: 14px; font-style: italic; }
 
@@ -730,10 +751,24 @@ svg text { font-family: inherit; }
 .rail-notice { font-size: 12px; line-height: 1.5; color: var(--c4); margin: 0 0 10px; }
 .notes-rail > .note-route { border-left: 3px solid var(--c1); }
 .notes-rail > .note-route .note-head code { color: var(--c1); }
-.nav-routes { margin-left: 6px; font-size: 10.5px; color: var(--c1); font-variant-numeric: tabular-nums; }
-.scene-routes { font: inherit; font-size: 11px; color: var(--c1); background: transparent;
+.nav-routes { margin-left: 6px; font-size: 10.5px; color: var(--ink-wait); font-variant-numeric: tabular-nums; }
+/* One chip shape, two inks: routes WAITING is a count of proposals for the
+   author to decide, so it wears the wait ink; ANOTHER WAY THROUGH asks arc
+   to write and wears the pass ink. Before, both were the id's blue. */
+.scene-routes { font: inherit; font-size: 11px; color: var(--text-secondary); background: transparent;
   border: 1px solid var(--border); border-radius: 6px; padding: 1px 8px; margin-left: 8px; cursor: pointer; }
-.scene-routes:hover { border-color: var(--c1); }
+.scene-routes.wait { color: var(--ink-wait); border-color: color-mix(in oklab, var(--ink-wait) 45%, transparent); }
+.scene-routes.pass { color: var(--ink-pass); border-color: color-mix(in oklab, var(--ink-pass) 45%, transparent); }
+.scene-routes.wait:hover { border-color: var(--ink-wait); }
+.scene-routes.pass:hover { border-color: var(--ink-pass); }
+/* The armed reroute (A62): the control becomes a question in the same slot,
+   in the same pass ink, with its way out beside it. Inline, not a modal —
+   the scene it is about stays in view while the author decides. */
+.scene-routes-ask { display: inline-flex; align-items: baseline; gap: 8px; margin-left: 8px; font-size: 11px; }
+.scene-routes-ask .ask-q { color: var(--ink-pass); }
+.scene-routes-ask .scene-routes { margin-left: 0; }
+.scene-routes-ask .ask-no { font-size: 11px; color: var(--ink-act); }
+.scene-routes-ask .ask-no:hover { color: var(--text-primary); text-decoration: none; }
 .scene-routes:disabled { opacity: .5; cursor: default; }
 .scene-routes.is-off { color: var(--text-secondary); border-color: transparent; cursor: default; }
 .route-revise input { flex: 1; min-width: 0; }
@@ -1071,7 +1106,10 @@ p.para-changed:hover .para-reject, .para-reject:focus-visible { opacity: 1; }
 /* The scope-lock actions live on their own headers, sized as actions rather
    than headings — a chapter-sized refusal never sits in a menu beside a
    paragraph-sized one. */
-.ms-headrow h1 .lock-act { font-size: 12px; font-weight: 400; margin-left: 10px; vertical-align: 2px; }
+/* The chapter's lock is an author action like the scene row's: the same
+   quiet ink, brightening on approach, not a link's blue. */
+.ms-headrow h1 .lock-act { font-size: 12px; font-weight: 400; margin-left: 10px; vertical-align: 2px; color: var(--ink-act); }
+.ms-headrow h1 .lock-act:hover { color: var(--text-primary); }
 .learn-now { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule, color-mix(in oklab, var(--muted) 25%, transparent)); }
 .learn-now .fsummary { margin-top: 6px; }
 /* A touchstone the manuscript has moved past: the one state on this page

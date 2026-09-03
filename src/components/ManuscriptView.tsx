@@ -678,6 +678,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const [view, setView] = useState<'before' | 'changes' | 'proposed'>(() => readMode() === 'edit' ? 'proposed' : 'changes')
   const showChanges = view === 'changes'
   const [drawer, setDrawer] = useState(false)
+  /** The drawer is the review of what is pending, so it goes when the pending
+   *  work does — discarding the last change while it is open would otherwise
+   *  leave the author inside an empty panel whose only exit button has just
+   *  been hidden along with everything it was reviewing. */
+  useEffect(() => {
+    if (!draft.changes.length) setDrawer(false)
+  }, [draft.changes.length])
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -716,6 +723,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const [routeNoteBusy, setRouteNoteBusy] = useState(false)
   const [routeLocks, setRouteLocks] = useState<RouteLockNotice[]>([])
   const [routeBusy, setRouteBusy] = useState(false)
+  // Asking for a route costs a minute or two of model time and lands two
+  // alternatives beside the scene, so the control asks once before it
+  // writes: the first click arms it, the second runs (per the author,
+  // A62). The viewer's own grammar — discard and cancel-route already
+  // work this way — not a browser dialog, which blocks the page and reads
+  // as the browser's question rather than arc's.
+  const [rerouteArmed, setRerouteArmed] = useState<string | null>(null)
   const [routeErr, setRouteErr] = useState<string | null>(null)
 
   // Annotations: select prose, write the thought, keep reading. No
@@ -1416,7 +1430,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     // Leaving a chapter is leaving off somewhere in it.
     const here = anchorNow()
     if (here && chapterKey) writePosition(chapterKey, here)
-    flushAllEdits(); setArmed(null); setGen(null); setGenErr(null); setShowGen(false); onChapter(i)
+    flushAllEdits(); setArmed(null); setRerouteArmed(null); setGen(null); setGenErr(null); setShowGen(false); onChapter(i)
   }
 
   const byFile = useMemo(() => new Map(scenes.map(s => [s.file, s])), [scenes])
@@ -1948,7 +1962,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     setRouteBusy(true); setRouteErr(null)
     try {
       await flushFile(file)
-      const res = await rerouteScene({ scene, count: 2, ...(guidance.trim() ? { guidance: guidance.trim() } : {}) })
+      const res = await rerouteScene({ scene, count: 1, ...(guidance.trim() ? { guidance: guidance.trim() } : {}) })
       // The answers belong to the scene that was asked, so open that scene:
       // when routesFor already names it the merge stands, and when it does
       // not, the listing effect refetches and is authoritative.
@@ -2043,7 +2057,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       {genErr && <p className="db-err">{genErr}</p>}
       {curScenes.length === 1 && notice.blocked && <p className="db-err">{notice.blocked}</p>}
       {curScenes.length === 1 && notice.constrain && <p className="gen-note">{notice.constrain}</p>}
-      {routeBusy && <p className="gen-note">arc is taking another way through — the destination and the known route go in, the prose stays out. Two alternatives, a minute or two each.</p>}
+      {routeBusy && <p className="gen-note">arc is taking another way through — the destination and the known route go in, the prose stays out. One alternative, a minute or two.</p>}
       {routeErr && <p className="db-err">{routeErr}</p>}
       {gen && (
         <div className="db-capture">
@@ -2152,7 +2166,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
             ) : (
               <span className="db-sum">Manuscript matches main — no draft changes.</span>
             )}
-            <button className="themeToggle" onClick={toggleDrawer}>{drawer ? 'Close' : 'Review'}</button>
+            {/* Nothing pending is nothing to review: with a clean draft the
+                drawer holds no files, no analysis and no accept, so the
+                button would only invite a click that leads nowhere. */}
+            {n > 0 && (
+              <button className="themeToggle" onClick={toggleDrawer}>{drawer ? 'Close' : 'Review'}</button>
+            )}
           </div>
         )}
 
@@ -2307,7 +2326,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
             {words > 0 && ` · ${formatWords(words)} words · ~${pages} page${pages === 1 ? '' : 's'} · ${formatReadingTime(words)} read`}
             {' · '}<span className={`stpill ${cur.status}`}>{cur.status}</span>
             {curScenes.length > 0 && mode !== 'read' && (
-              <>{' · '}<a className="linklike" onClick={() => setShowGen(o => !o)}>
+              <>{' · '}<a className="linklike pass-act" onClick={() => setShowGen(o => !o)}>
                 {showGen ? 'hide drafting' : 'draft next scene'}</a></>
             )}</p>
         </header>
@@ -2337,7 +2356,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               {mode !== 'read' && <div className="scene-head">
                 <code>{s.scene}</code>
                 {routeCounts[s.scene] > 0 && (
-                  <button className="scene-routes" disabled={routeBusy}
+                  <button className="scene-routes wait" disabled={routeBusy}
                     title="Read the other ways through this scene, and decide."
                     onClick={() => {
                       const opening = routesFor !== s.scene
@@ -2371,10 +2390,24 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                       full — cancel one to add another
                     </span>
                   )
+                  if (rerouteArmed === s.scene && !routeBusy) return (
+                    <span className="scene-routes-ask" role="group" aria-label="Confirm another way through">
+                      <span className="ask-q">one more way?</span>
+                      <button className="scene-routes pass" disabled={genBusy}
+                        title="Run the pass now: the current prose is withheld, and one alternative lands beside the scene to read and decide."
+                        onClick={() => { setRerouteArmed(null); void reroute(s.scene, s.file) }}>
+                        go
+                      </button>
+                      <a className="linklike ask-no" onClick={() => setRerouteArmed(null)}
+                        title="Leave the scene as it is — nothing is sent.">
+                        no
+                      </a>
+                    </span>
+                  )
                   return (
-                    <button className="scene-routes" disabled={genBusy || routeBusy}
-                      title="Take another way through this scene: the same contract reached by a different route. The current prose is withheld from the pass; two alternatives land beside the scene, to read and decide."
-                      onClick={() => void reroute(s.scene, s.file)}>
+                    <button className="scene-routes pass" disabled={genBusy || routeBusy}
+                      title="Take another way through this scene: the same contract reached by a different route, one alternative per press. Asks before it writes — nothing is sent on this click."
+                      onClick={() => setRerouteArmed(s.scene)}>
                       {routeBusy ? 'finding another way…' : 'another way through'}
                     </button>
                   )
