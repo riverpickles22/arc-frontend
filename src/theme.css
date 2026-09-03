@@ -727,6 +727,7 @@ svg text { font-family: inherit; }
 .rr-link { margin-left: auto; font: inherit; font-size: 11px; color: var(--c1); background: none;
   border: 0; cursor: pointer; text-transform: none; letter-spacing: 0; }
 .rr-more { margin-top: 18px; }
+.rail-notice { font-size: 12px; line-height: 1.5; color: var(--c4); margin: 0 0 10px; }
 .notes-rail > .note-route { border-left: 3px solid var(--c1); }
 .notes-rail > .note-route .note-head code { color: var(--c1); }
 .nav-routes { margin-left: 6px; font-size: 10.5px; color: var(--c1); font-variant-numeric: tabular-nums; }
@@ -1131,6 +1132,7 @@ p.para-changed:hover .para-reject, .para-reject:focus-visible { opacity: 1; }
    theme's ink and stays one weight across platforms. Quiet at rest; it comes
    up to full strength when the pointer is on the paragraph, which is the
    moment the author wants the state confirmed. */
+.sel-note { margin: 0; padding: 2px 4px; font-size: 12px; line-height: 1.45; color: var(--text-secondary); max-width: 22em; }
 p.para-locked { position: relative; }
 p.para-locked::before {
   content: ''; position: absolute; left: -22px; top: .5em;

@@ -105,11 +105,6 @@ export function RouteReader(props: RouteReaderProps) {
       {error && <p className="db-err">{error}</p>}
 
       <p className="route-hint">Highlight any phrase to leave a note in the margin beside it — the same margin the chapter's notes use. Your notes are what a rewrite reads.</p>
-      <p className="rr-meta">
-        {overlapLabel(alt.overlap)} · {new Date(alt.created_at).toLocaleString()}
-        {alt.guidance ? ` · ${alt.revises ? 'rewritten for' : 'guidance'}: ${alt.guidance}` : ''}
-      </p>
-      {alt.retried && <p className="gen-note">Retried once — the gate refused the first answer: {alt.retried}</p>}
 
       <div className="rr-cols">
         <article className="rr-main">
@@ -139,7 +134,15 @@ export function RouteReader(props: RouteReaderProps) {
       </div>
 
       <details className="more rr-more">
-        <summary>Where the required beats land, and the briefing</summary>
+        <summary>How this route came to be, and where the beats land</summary>
+        {/* The machinery reads here, not over the prose: a reader who wants
+            to know how the route was made can open it, and nobody else has
+            to. */}
+        <p className="gen-note">
+          Made {new Date(alt.created_at).toLocaleString()} · {overlapLabel(alt.overlap)}
+          {alt.guidance ? ` · ${alt.revises ? 'rewritten for' : 'asked for'}: ${alt.guidance}` : ''}
+        </p>
+        {alt.retried && <p className="gen-note">The first answer was refused and it tried again: {alt.retried}</p>}
         {alt.coverage
           ? <table className="route-coverage"><tbody>
               {coverageRows(alt.coverage).map((r, i) => <tr key={i}><td>{r.item}</td><td>{r.where}</td></tr>)}

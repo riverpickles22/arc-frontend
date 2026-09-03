@@ -510,7 +510,7 @@ function writePosition(chapter: string, a: Anchor): void {
  *  It renders `cards` and nothing else, in that order. The measuring pass
  *  walks the SAME array — measuring one list and rendering another is what
  *  slid every card off its paragraph. */
-function NotesRail({ cards, tops, cardRef, railRef, head, empty, active, busy, onStatus, onFocus, editing, onEdit, onEditCancel, onEditSave, composer, route }: {
+function NotesRail({ cards, tops, cardRef, railRef, head, empty, notice, active, busy, onStatus, onFocus, editing, onEdit, onEditCancel, onEditSave, composer, route }: {
   /** the one ordered list; index i is tops[i] and cardRef(i) */
   cards: RailCard[]
   /** Final y for each card, aligned to the passage it annotates. */
@@ -519,6 +519,8 @@ function NotesRail({ cards, tops, cardRef, railRef, head, empty, active, busy, o
   /** the rail element itself — the measure pass grows its min-height */
   railRef: React.Ref<HTMLDivElement>
   head: { meta: string; extra: ReactNode }
+  /** why the last note was refused, if one was */
+  notice: ReactNode
   empty: ReactNode
   /** The card holding attention — a note id, a route note id, 'composer', or null. */
   active: string | null
@@ -539,6 +541,7 @@ function NotesRail({ cards, tops, cardRef, railRef, head, empty, active, busy, o
   return (
     <div className="notes-rail" ref={railRef}>
       <h3>Notes{head.meta && <span className="chmeta">{head.meta}</span>}{head.extra}</h3>
+      {notice && <p className="rail-notice">{notice}</p>}
       {cards.length === 0 && empty}
       {cards.map((c, i) => {
         const at = { ref: (el: HTMLDivElement | null) => cardRef(i, el), style: { top: tops[i] ?? 0 } }
@@ -678,6 +681,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  /** why the last note was refused, shown in the rail until the next gesture */
+  const [noteRefusal, setNoteRefusal] = useState<string | null>(null)
   /** Why judging ONE paragraph failed, and which one. The draft banner's own
    *  error line sits at the top of the page, which for a control a thousand
    *  pixels down reads as nothing happening at all. */
@@ -1095,6 +1100,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  decision typed three times. */
   const [lockMenu, setLockMenu] = useState<{
     scene: string; body: string; x: number; y: number
+    /** what was selected when the menu opened — Copy is offered only if any */
+    quote: string
     targets: { paragraph: number; para: string; lockId: string | null }[]
   } | null>(null)
 
@@ -1126,6 +1133,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     const idxs = covered.length > 1 && covered.includes(clicked) ? covered : [clicked]
     setLockMenu({
       scene, body, x: ev.clientX, y: ev.clientY,
+      // Captured at open: Copy is only offered when there is something to
+      // copy, and by render time the click may have collapsed the selection.
+      quote: (window.getSelection()?.toString() ?? '').trim(),
       targets: idxs.map(i => ({ paragraph: i, para: paras[i] ?? '', lockId: lockedAt.get(`${scene}:${i}`)?.id ?? null })),
     })
   }, [selectedParagraphs, lockedAt])
@@ -1325,6 +1335,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  [data-para] lines to measure against. */
   const noteFromMenu = () => {
     if (!selMenu) return
+    const locked = noteLockOn(selMenu.scene, paragraphAtOffset(selMenu.body, selMenu.start))
+    if (locked) { refuseNote(locked); return }
     const box = colsRef.current
     const yHint = box ? Math.max(0, selMenu.y - box.getBoundingClientRect().top) : 0
     setSel({
@@ -1622,6 +1634,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  one can be open and Escape means the same thing in both. */
   const composeRoute = useCallback((alt: string, paragraph: number | null, quote: string) => {
     if (sel && noteText.trim()) return          // never discard words already typed
+    setNoteRefusal(null)
     setSel({ on: 'route', alt, paragraph, quote: quote.replace(/\s+/g, ' ').trim().slice(0, 180) })
     setNoteText('')
     setActive('composer')
@@ -1817,14 +1830,39 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       // paragraph the selection touches only as a last resort.
       paragraph = ix > -1 ? ix : 0
     }
+    const locked = noteLockOn(scene.scene, paragraph)
+    if (locked) { refuseNote(locked); return }
+    setNoteRefusal(null)
     setSel({ on: 'scene', scene: scene.scene, paragraph, quote })
     setNoteText('')
     setActive('composer')
   }
+  /** The lock that forbids a note here, or null. Settled prose takes no
+   *  notes for the same reason it takes no edits: the author closed it, and
+   *  a lock that means one thing to the editor and another to the margin
+   *  means nothing. Reading and resolving existing notes is untouched — the
+   *  lock closes the writing, not the record. */
+  function noteLockOn(sceneId: string, paragraph?: number): ResolvedLock | null {
+    const sc = scenes.find(x => x.scene === sceneId)
+    const held = sc ? heldLockOf(sc, overrides[sc.file] ?? sc.body) : null
+    if (held) return held
+    return paragraph === undefined ? null : lockedAt.get(`${sceneId}:${paragraph}`) ?? null
+  }
+  const refuseNote = (l: ResolvedLock) => {
+    // Not setErr: that banner only renders while a draft is pending, so a
+    // refusal would have been silent exactly when nothing else explained it.
+    // It reads in the rail, where the note would have appeared.
+    setNoteRefusal(`This passage is settled — locked (${l.id}). Unlock it from the right-click menu to leave a note on it.`)
+    setSelMenu(null)
+  }
+
   /** A note about the whole scene: no selection, so no paragraph and no
    *  quote. The gesture carries the scope — the author is never asked to
    *  choose one. */
   const noteOnScene = (scene: string) => {
+    const locked = noteLockOn(scene)
+    if (locked) { refuseNote(locked); return }
+    setNoteRefusal(null)
     setSel({ on: 'scene', scene })
     setNoteText('')
     setActive('composer')
@@ -2502,10 +2540,16 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                         nn.anchor.scene === s.scene && nn.resolution.paragraph === pi &&
                         nn.status !== 'resolved' && nn.status !== 'dropped')
                       const lk = lockedAt.get(`${s.scene}:${pi}`)
+                      // A wider lock settles every paragraph beneath it: no padlock
+                      // here (A40-4 — the header carries it once), but just as closed,
+                      // so just as inert to the pointer.
+                      const widerLock = heldLockOf(s, overrides[s.file] ?? s.body)
                       return (
                         <p key={pi} data-para={`${s.scene}:${pi}`}
-                          className={`${anchored ? 'has-note' : ''}${lk ? ' para-locked' : ''}`}
-                          title={lk ? `settled — locked (${lk.id}); right-click to unlock` : undefined}
+                          className={`${anchored ? 'has-note' : ''}${lk ? ' para-locked' : ''}${!lk && widerLock ? ' para-settled' : ''}`}
+                          title={lk ? `settled — locked (${lk.id}); right-click to unlock`
+                           : widerLock ? `settled — this ${widerLock.anchor.chapter ? 'chapter' : 'section'} is locked (${widerLock.id}); unlock it from the header above`
+                           : undefined}
                           onContextMenu={ev => {
                             ev.preventDefault()
                             openLockMenu(s.scene, s.body, pi, ev)
@@ -2574,11 +2618,17 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                       n.anchor.scene === s.scene && n.resolution.paragraph === pi &&
                       n.status !== 'resolved' && n.status !== 'dropped')
                     const lk = lockedAt.get(`${s.scene}:${pi}`)
+                    // A wider lock settles every paragraph beneath it: no padlock
+                    // here (A40-4 — the header carries it once), but just as closed,
+                    // so just as inert to the pointer.
+                    const widerLock = heldLockOf(s, overrides[s.file] ?? s.body)
                     return (
                       <p key={pi} data-para={`${s.scene}:${pi}`}
                         onClick={noteHere ? () => { setActive(noteHere.id); setFocused(`${s.scene}:${pi}`) } : undefined}
-                        className={`${anchored ? 'has-note' : ''}${isFocus ? ' note-focus' : ''}${lk ? ' para-locked' : ''}`}
-                        title={lk ? `settled — locked (${lk.id}); right-click to unlock` : undefined}
+                        className={`${anchored ? 'has-note' : ''}${isFocus ? ' note-focus' : ''}${lk ? ' para-locked' : ''}${!lk && widerLock ? ' para-settled' : ''}`}
+                        title={lk ? `settled — locked (${lk.id}); right-click to unlock`
+                         : widerLock ? `settled — this ${widerLock.anchor.chapter ? 'chapter' : 'section'} is locked (${widerLock.id}); unlock it from the header above`
+                         : undefined}
                         onContextMenu={ev => {
                           ev.preventDefault()
                           openLockMenu(s.scene, s.body, pi, ev)
@@ -2644,6 +2694,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
            geometry to another's. Keying on the route remounts the cards. */
         key={readingAlt?.id ?? 'scene'}
         cards={cards} tops={tops} cardRef={setCard} railRef={railRef}
+        notice={noteRefusal}
         active={active} busy={noteBusy} onStatus={noteStatus}
         editing={editing}
         onEdit={n => { setEditing({ id: n.id, text: n.body }); setActive(n.id) }}
@@ -2701,7 +2752,35 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       </div>
       </div>
 
-      {selMenu && (
+      {selMenu && (() => {
+        // The editor obeys the same rule as the margin: settled prose reads
+        // and copies, and offers nothing that would change it. A paragraph
+        // lock under an unlocked scene can still be released here, because
+        // this and the Notes menu are its only unlock in the product; a scene
+        // or chapter is unlocked at its own header instead.
+        const scEdit = scenes.find(x => x.scene === selMenu.scene)
+        const widerEdit = scEdit ? heldLockOf(scEdit, overrides[scEdit.file] ?? scEdit.body) : null
+        const paraEdit = lockedAt.get(`${selMenu.scene}:${paragraphAtOffset(selMenu.body, selMenu.start)}`) ?? null
+        if (widerEdit || paraEdit) return (
+          <div className="sel-menu" style={{ left: selMenu.x, top: selMenu.y }}>
+            {selMenu.end > selMenu.start && (
+              <button title="Copy the selected text"
+                onClick={() => {
+                  void navigator.clipboard.writeText(selMenu.body.slice(selMenu.start, selMenu.end))
+                  setSelMenu(null)
+                }}>
+                Copy
+              </button>
+            )}
+            {!widerEdit && paraEdit && (
+              <button onClick={() => void unlockHere([paraEdit.id])}>Unlock paragraph</button>
+            )}
+            <p className="sel-note">{widerEdit
+              ? `Settled — this ${widerEdit.anchor.chapter ? 'chapter' : 'section'} is locked (${widerEdit.id}). Unlock it at the top of the ${widerEdit.anchor.chapter ? 'chapter' : 'scene'}.`
+              : `Settled — locked (${paraEdit!.id}). Nothing here may change it until it is unlocked.`}</p>
+          </div>
+        )
+        return (
         <div className="sel-menu" style={{ left: selMenu.x, top: selMenu.y }}>
           {/* Copy is the one verb that is only ever about the selection, so it
               is the one item that is absent rather than unavailable without
@@ -2717,7 +2796,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               Copy
             </button>
           )}
-          <button onClick={noteFromMenu}>Add note</button>
+          {!noteLockOn(selMenu.scene, paragraphAtOffset(selMenu.body, selMenu.start))
+            && <button onClick={noteFromMenu}>Add note</button>}
           {(() => {
             /* Lock/Unlock from the editor's own menu (A29): every paragraph
                the selection covers, not only the one it starts in. Editor
@@ -2812,7 +2892,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
             </button>
           )}
         </div>
-      )}
+        )
+      })()}
       {/* The lock menu (A29): right-click on rendered prose. Two verbs, one
           paragraph, and the durable anchor is the paragraph's own text. */}
       {lockMenu && (() => {
@@ -2826,6 +2907,33 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         // A key point marks one passage; with a run selected, the first is
         // the one the statement is about.
         const first = lockMenu.targets[0]
+        const scOf = scenes.find(x => x.scene === lockMenu.scene)
+        const wider = scOf ? heldLockOf(scOf, overrides[scOf.file] ?? scOf.body) : null
+        // Settled prose can be read and copied — ⌘C always copies, and a
+        // settled passage is read more than any other. What narrows is the
+        // MENU: nothing in it may change the prose. The one exception is a
+        // PARAGRAPH lock under an unlocked scene, whose only unlock in the
+        // product is this menu; a scene or chapter is unlocked at its own
+        // header, so under one of those even that is absent.
+        if (wider || (locked.length > 0 && unlocked.length === 0)) return (
+          <div className="sel-menu" style={{ left: lockMenu.x, top: lockMenu.y }}>
+            {lockMenu.quote && (
+              <button title="Copy the selected text"
+                onClick={() => {
+                  void navigator.clipboard.writeText(lockMenu.quote)
+                  setLockMenu(null)
+                }}>
+                Copy
+              </button>
+            )}
+            {!wider && locked.length > 0 && (
+              <button onClick={() => void unlockHere(locked.map(t => t.lockId!))}>Unlock{many}</button>
+            )}
+            {wider && (
+              <p className="sel-note">Settled — this {wider.anchor.chapter ? 'chapter' : 'section'} is locked ({wider.id}). Unlock it at the top of the {wider.anchor.chapter ? 'chapter' : 'scene'}.</p>
+            )}
+          </div>
+        )
         return (
         <div className="sel-menu" style={{ left: lockMenu.x, top: lockMenu.y }}>
           <button title="A structural marker on the margin timeline: what this passage must get across"
