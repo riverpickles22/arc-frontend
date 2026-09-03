@@ -14,7 +14,7 @@ import type {
   WorkDecisionRequest, WorkDecisionResponse, WorkNoteRequest, WorkResponse,
   ProseAcceptRequest, ProseAcceptResponse, ProseCheckHit, ProseChecksResponse, ProseDiscardRequest, ProseParagraphRequest, ProseResponse, ProseSentenceRequest, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
 } from 'arc-canon-graph'
-import type { AdoptRouteRequest, AdoptRouteResponse, DropRouteRequest, AddRouteNoteRequest, DeleteRouteNoteRequest, RouteAlternative, RerouteRequest, ReviseRouteRequest, RerouteResponse, RouteListResponse } from 'arc-canon-graph/api-types.ts'
+import type { AdoptRouteRequest, AdoptRouteResponse, BriefingResponse, DropRouteRequest, AddRouteNoteRequest, DeleteRouteNoteRequest, RouteAlternative, RerouteRequest, ReviseRouteRequest, RerouteResponse, RouteListResponse } from 'arc-canon-graph/api-types.ts'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SuggestRequest, SuggestResponse } from './canon'
 import type { View } from './presentation'
 import type { GeoJSON } from './map-geometry'
@@ -201,6 +201,11 @@ export const NO_DRAFT: ProseDraft = { git: false, changes: [], history: [] }
 
 export const loadDraft = (signal?: AbortSignal): Promise<ProseDraft> =>
   getJson<ProseDraft>('/api/prose/draft', { signal })
+
+/** The re-entry briefing (A56): where the author left off, what is in
+ *  flight, what is due — read from the record, never generated. */
+export const loadBriefing = (signal?: AbortSignal): Promise<BriefingResponse> =>
+  getJson<BriefingResponse>('/api/briefing', { signal })
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(path, {

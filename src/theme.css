@@ -570,6 +570,39 @@ svg text { font-family: inherit; }
 .draftbar .db-sum { flex: 1; min-width: 0; }
 .ins-ct { color: var(--c2); font-weight: 600; }
 .del-ct { color: var(--c8); font-weight: 600; }
+/* The re-entry briefing (A56): three sections, then the prose. Page
+   furniture in the draft drawer's register — not an alert, not a dashboard. */
+.briefing {
+  max-width: 74ch; margin: 0 0 22px; padding: 14px 18px 12px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1); font-size: 13.5px;
+}
+.briefing .bf-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+.briefing .bf-head b { font-weight: 650; }
+.briefing .bf-close { font-size: 12px; color: var(--ink-act); }
+.briefing .bf-close:hover { color: var(--text-primary); text-decoration: none; }
+.briefing h3 {
+  margin: 12px 0 4px; font-size: 11px; font-weight: 650;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
+}
+.briefing section:first-of-type h3 { margin-top: 0; }
+.briefing p { margin: 0; }
+.briefing .bf-where { color: var(--text-secondary); font-size: 12.5px; margin-bottom: 6px; }
+.briefing .bf-where code { font-size: 12px; color: var(--ink-ref); }
+.briefing .bf-para {
+  margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--border);
+  font-size: 15px; line-height: 1.6; color: var(--text-primary);
+}
+.briefing .bf-due { margin: 0; padding-left: 18px; }
+.briefing .bf-due li { margin: 2px 0; }
+.briefing .bf-state { color: var(--ink-wait); font-size: 12px; margin-left: 8px; }
+.briefing .bf-quiet { color: var(--muted); }
+.briefing details { margin-top: 10px; font-size: 12.5px; color: var(--text-secondary); }
+.briefing details summary { cursor: pointer; color: var(--ink-act); }
+.briefing details summary:hover { color: var(--text-primary); }
+.briefing details ul { margin: 4px 0 0; padding-left: 18px; }
+.briefing details code { font-size: 11.5px; }
+.ms-meta .brief-act { color: var(--ink-act); }
+.ms-meta .brief-act:hover { color: var(--text-primary); }
 .draftdrawer {
   max-width: 74ch; margin: 0 0 18px; padding: 12px 14px;
   border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1);

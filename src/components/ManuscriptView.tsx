@@ -1,10 +1,12 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { AnalyzeResponse, AnnotationStatus, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
+import type { BriefingResponse } from 'arc-canon-graph/api-types.ts'
+import { DUE_SHOWN, SECTIONS, awayLabel, briefingVisible, chapterLabel, dueRows, readBriefingDismissed, readyLinks, writeBriefingDismissed, type BriefingChoice, type BriefingLink } from '../briefing-view'
 import type { ProseCheckHit } from 'arc-canon-graph/api-types.ts'
 import { dateOf } from '../canon'
 import { dotsFor } from '../keypoints'
-import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, loadRouteCounts, rerouteScene, reviseRoute, addRouteNote, deleteRouteNote, adoptRoute, dropRoute } from '../api'
+import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, loadBriefing, loadRouteCounts, rerouteScene, reviseRoute, addRouteNote, deleteRouteNote, adoptRoute, dropRoute } from '../api'
 import type { RouteAlternative, RouteLockNotice } from 'arc-canon-graph/api-types.ts'
 import { byNewest, chainsOf, isRouteKey, lockNotice, quoteOf, railCards, railMeta, routeKey, routeParagraphOf, seedLabel, standDownCount } from '../routes-view'
 import type { RailCard } from '../routes-view'
@@ -636,6 +638,79 @@ function NotesRail({ cards, tops, cardRef, railRef, head, empty, notice, active,
         )
       })}
     </div>
+  )
+}
+
+/** The re-entry briefing (A56): three sections, then the prose. Where you
+ *  left off is your own last accepted paragraph, verbatim; what is in flight
+ *  is a count per store, each a link to its surface; what is due is the
+ *  obligations whose window touches the chapter you are in. The last
+ *  session's accepts sit folded shut. Nothing here is generated. */
+function Briefing({ b, chapters, now, onGo, onDismiss }: {
+  b: BriefingResponse
+  chapters: Chapter[]
+  now: number
+  onGo: (link: BriefingLink) => void
+  onDismiss: () => void
+}) {
+  const left = b.lastAccepted!
+  const links = readyLinks(b)
+  const due = dueRows(b.due)
+  // One keystroke closes it for the sitting. Only while it is on screen, so
+  // Escape keeps meaning whatever it meant before the briefing existed.
+  useEffect(() => {
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape' && !ev.defaultPrevented) onDismiss() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onDismiss])
+  const body = (key: (typeof SECTIONS)[number]['key']) => {
+    if (key === 'left-off') return (
+      <>
+        <p className="bf-where">
+          <code>{left.scene}</code> · {chapterLabel(left.chapter, chapters)} · accepted {awayLabel(left.acceptedAt, now)}
+        </p>
+        <blockquote className="bf-para">{left.paragraph}</blockquote>
+      </>
+    )
+    if (key === 'in-flight') return links.length ? (
+      <p className="bf-ready">Ready for you:{' '}
+        {links.map((l, i) => (
+          <Fragment key={l.kind}>{i > 0 && ' · '}
+            <a className="linklike" onClick={() => onGo(l)}
+              title={l.scene ? `Open ${l.scene}` : 'Open the Thoughts page'}>{l.label}</a>
+          </Fragment>
+        ))}
+      </p>
+    ) : <p className="bf-quiet">Nothing waiting — the manuscript matches main.</p>
+    if (b.due === null) return <p className="bf-quiet">The canon could not be read, so what is due is unknown.</p>
+    return due.length ? (
+      <ul className="bf-due">
+        {due.slice(0, DUE_SHOWN).map(d => (
+          <li key={d.id}>{d.body}<span className="bf-state">{d.state}</span></li>
+        ))}
+        {due.length > DUE_SHOWN && <li className="bf-quiet">and {due.length - DUE_SHOWN} more</li>}
+      </ul>
+    ) : <p className="bf-quiet">Nothing due in this chapter.</p>
+  }
+  return (
+    <aside className="briefing" role="region" aria-label="Where you left off">
+      <div className="bf-head">
+        <b>Picking up</b>
+        <a className="linklike bf-close" onClick={onDismiss} title="Close for this sitting (Esc). 'where was I?' below brings it back.">close</a>
+      </div>
+      {SECTIONS.map(sec => (
+        <section key={sec.key} data-section={sec.key}>
+          <h3>{sec.title}</h3>
+          {body(sec.key)}
+        </section>
+      ))}
+      {b.lastSession.length > 0 && (
+        <details>
+          <summary>What the last session did · {b.lastSession.length} accept{b.lastSession.length === 1 ? '' : 's'}</summary>
+          <ul>{b.lastSession.map(c => <li key={c.hash}><code>{c.hash}</code> {c.subject}</li>)}</ul>
+        </details>
+      )}
+    </aside>
   )
 }
 
@@ -1476,6 +1551,24 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     return () => ctrl.abort()
   }, [countsTick])
 
+  // The re-entry briefing (A56): read from the record whenever the record
+  // moves — an accept, a note, a route adopted — and never generated.
+  const [briefing, setBriefing] = useState<BriefingResponse | null>(null)
+  const [briefChoice, setBriefChoice] = useState<BriefingChoice>(() => (readBriefingDismissed() ? 'dismissed' : null))
+  useEffect(() => {
+    const ctrl = new AbortController()
+    loadBriefing(ctrl.signal)
+      .then(setBriefing)
+      .catch(() => { /* a down backend is the page banner's news, not the briefing's */ })
+    return () => ctrl.abort()
+  }, [countsTick, draft, anns])
+  const dismissBriefing = useCallback(() => { setBriefChoice('dismissed'); writeBriefingDismissed() }, [])
+
+  // Landing on a scene in another chapter takes two renders: the chapter
+  // first, then the scene once its rows exist. The intent waits here.
+  const landOn = useRef<BriefingLink | null>(null)
+  const [landTick, setLandTick] = useState(0)
+
   // A chapter of one scene opens its routes by itself, as it always did;
   // any other scene is opened from its marker.
   const soleScene = curScenes.length === 1 ? curScenes[0].scene : null
@@ -1746,6 +1839,30 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     const top = target.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop
     box.scrollTop = top - cover - 8
   }, [])
+
+  useEffect(() => {
+    const want = landOn.current
+    if (!want?.scene || !curScenes.some(s => s.scene === want.scene)) return
+    landOn.current = null
+    if (want.kind === 'routes') setRoutesFor(want.scene)
+    if (want.kind === 'notes') { switchMode('notes'); if (want.note) setActive(want.note) }
+    if (want.kind === 'draft') setView(v => (v === 'before' ? 'changes' : v))
+    // After the rows paint, not before: the scene must exist to be measured.
+    const id = requestAnimationFrame(() => jumpToScene(want.scene!))
+    return () => cancelAnimationFrame(id)
+  }, [curScenes, landTick, jumpToScene, switchMode])
+
+  /** Follow a briefing link: the briefing closes for the sitting, and the
+   *  author lands on the surface the count named. */
+  const followBriefing = (link: BriefingLink) => {
+    dismissBriefing()
+    if (!link.scene) { location.hash = '#/thoughts'; return }
+    const chapterId = scenes.find(s => s.scene === link.scene)?.chapter
+    const ix = chapters.findIndex(c => c.id === chapterId)
+    landOn.current = link
+    if (ix >= 0 && ix !== chapterIx) gotoChapter(ix)
+    else setLandTick(t => t + 1)
+  }
 
   if (!chapters.length || !cur) return <div className="empty">No chapters in canon yet.</div>
   const curDeleted = draft.changes.filter(c => c.status === 'deleted' && c.main?.chapter === cur.id)
@@ -2141,6 +2258,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           </div>
         )}
       <article className="ms-main">
+        {briefing && mode !== 'read' && briefingVisible(briefing, Date.now(), briefChoice) && (
+          <Briefing b={briefing} chapters={chapters} now={Date.now()} onGo={followBriefing} onDismiss={dismissBriefing} />
+        )}
         {draft.git && mode !== 'read' && (
           <div ref={draftbarRef} className={n ? 'draftbar' : 'draftbar clean'}>
             {n ? (
@@ -2328,7 +2448,21 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
             {curScenes.length > 0 && mode !== 'read' && (
               <>{' · '}<a className="linklike pass-act" onClick={() => setShowGen(o => !o)}>
                 {showGen ? 'hide drafting' : 'draft next scene'}</a></>
-            )}</p>
+            )}
+            {briefing?.lastAccepted && mode !== 'read' && (() => {
+              const open = briefingVisible(briefing, Date.now(), briefChoice)
+              return (
+                <>{' · '}<a className="linklike brief-act"
+                  title={open ? 'Close the briefing for this sitting.' : 'Where you left off, what is in flight, what is due — whenever you want it.'}
+                  onClick={() => {
+                    if (open) { dismissBriefing(); return }
+                    setBriefChoice('open')
+                    // Asking where you were means wanting to see it: it sits at the top.
+                    requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }))
+                  }}>
+                  {open ? 'hide briefing' : 'where was I?'}</a></>
+              )
+            })()}</p>
         </header>
 
         {(mode !== 'read' || !curScenes.length) && (
