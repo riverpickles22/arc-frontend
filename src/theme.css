@@ -460,20 +460,21 @@ svg text { font-family: inherit; }
   color: var(--text-secondary); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 12px; }
 
 .scene-head code { font-size: 12px; color: var(--ink-ref); }
-.scene-head .rests { color: var(--muted); flex-basis: 100%; }
-.scene-head .rests .wikilink { color: var(--ink-ref); cursor: pointer; margin-left: 6px; }
+/* The header's own gap spaces the route controls; their standalone margin
+   would double it and spend width the one line cannot spare. */
+.scene-head .scene-routes, .scene-head .scene-routes-ask { margin-left: 0; }
 
 /* The actions: always present, pushed to the end of the first line, and set
    in one muted weight so they sit behind the id and the prose in the reading
    order of the eye. Quiet is what stops them competing — not hiding them,
    which only moves the cost to the moment you need one. */
 .scene-acts {
-  display: inline-flex; align-items: baseline; gap: 8px; margin-left: auto;
-  /* The cluster wraps as ONE unit: when the facts grow (a settled chip
-     arriving), the whole verb row moves down together instead of tearing
-     mid-list — a row that breaks between two verbs reads as run-off, not
-     as wrapping. */
-  flex-wrap: nowrap; white-space: nowrap;
+  display: inline-flex; align-items: baseline; gap: 6px; margin-left: auto;
+  /* Set at the pills' size so the widest header state — four routes
+     waiting, and full — still fits the 74ch measure on one line (A59-9,
+     measured: 689px available, ~36px to spare). The cluster never tears
+     mid-list: if it ever has to move, it moves as one unit. */
+  font-size: 11px; flex-wrap: nowrap; white-space: nowrap;
 }
 .scene-acts .linklike, .scene-acts .copyref { color: var(--muted); }
 .scene-acts .linklike:hover, .scene-acts .copyref:hover { color: var(--text-primary); }
@@ -518,6 +519,10 @@ svg text { font-family: inherit; }
   letter-spacing: .07em; color: var(--muted); padding-top: 2px;
 }
 .ct-row ul { margin: 0; padding-left: 18px; }
+/* Canon ids inside the fold — the wants, and what the scene rests on — wear
+   the ref ink, the same as the scene id above them. */
+.contract .wikilink { color: var(--ink-ref); cursor: pointer; text-decoration: none; }
+.contract .wikilink:hover { text-decoration: underline; }
 .ct-row li { margin-bottom: 2px; }
 .ct-motif {
   display: inline-block; border: 1px solid var(--border); border-radius: 999px;
@@ -854,6 +859,18 @@ svg text { font-family: inherit; }
 .note-head { display: flex; align-items: baseline; gap: 8px; font-size: 11px; color: var(--muted); }
 .note-state { color: var(--c4); text-transform: uppercase; letter-spacing: .06em; font-size: 10px; }
 .note-orphaned .note-state, .note-no-scene .note-state { color: var(--c8); }
+/* The draft's word about a note: proposal ink, because the draft is one. */
+.note-state.note-answered { color: var(--ink-pass); }
+/* "Work through these notes", in the rail's head: one link per scene with
+   open notes, asking before it writes in the same shape as the route control. */
+/* Sits inside the rail's uppercase heading, so it takes its own case back:
+   a question to the author is a sentence, not a label. */
+.rail-work { margin-left: auto; padding-left: 12px; display: inline-flex; align-items: baseline; gap: 10px;
+  text-transform: none; letter-spacing: 0; font-weight: 400; }
+.rail-work .rr-link { margin-left: 0; }
+.rail-work .rr-link.is-off { color: var(--muted); cursor: default; }
+.rail-ask { display: inline-flex; align-items: baseline; gap: 8px; }
+.rail-ask .ask-q { font-size: 11px; color: var(--ink-pass); }
 .note-quote { margin: 6px 0; padding-left: 9px; border-left: 2px solid var(--baseline); color: var(--text-secondary); font-size: 12.5px; font-style: italic; }
 
 /* A note about the whole scene stands where a quote would, and must not read

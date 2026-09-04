@@ -14,7 +14,7 @@ import type {
   WorkDecisionRequest, WorkDecisionResponse, WorkNoteRequest, WorkResponse,
   ProseAcceptRequest, ProseAcceptResponse, ProseCheckHit, ProseChecksResponse, ProseDiscardRequest, ProseParagraphRequest, ProseResponse, ProseSentenceRequest, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
 } from 'arc-canon-graph'
-import type { AdoptRouteRequest, AdoptRouteResponse, BriefingResponse, DropRouteRequest, AddRouteNoteRequest, DeleteRouteNoteRequest, RouteAlternative, RerouteRequest, ReviseRouteRequest, RerouteResponse, RouteListResponse } from 'arc-canon-graph/api-types.ts'
+import type { AdoptRouteRequest, AdoptRouteResponse, BriefingResponse, DropRouteRequest, AddRouteNoteRequest, DeleteRouteNoteRequest, RouteAlternative, RerouteRequest, ReviseRouteRequest, RerouteResponse, RouteListResponse, WorkNotesRequest, WorkNotesResponse } from 'arc-canon-graph/api-types.ts'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SuggestRequest, SuggestResponse } from './canon'
 import type { View } from './presentation'
 import type { GeoJSON } from './map-geometry'
@@ -241,6 +241,12 @@ export const loadChecks = (signal?: AbortSignal): Promise<ProseCheckHit[]> =>
 
 export const redraftScene = (req: RedraftRequest): Promise<DraftSceneResponse> =>
   post('/api/prose/redraft', req)
+
+/** "Work through my notes on this scene": the scene's open notes are the
+ *  brief. The draft lands beside the scene; the reply is one paragraph and
+ *  never the prose. A scene with no open notes is refused (409). */
+export const workNotes = (req: WorkNotesRequest): Promise<WorkNotesResponse> =>
+  post('/api/prose/work-notes', req)
 
 /** The reroute pass: another way to the same destination. The alternatives
  *  land BESIDE the manuscript — listing is free, running is a full pass per

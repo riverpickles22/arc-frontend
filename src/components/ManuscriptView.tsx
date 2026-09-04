@@ -6,10 +6,11 @@ import { DUE_SHOWN, SECTIONS, awayLabel, briefingVisible, chapterLabel, dueRows,
 import type { ProseCheckHit } from 'arc-canon-graph/api-types.ts'
 import { dateOf } from '../canon'
 import { dotsFor } from '../keypoints'
-import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, loadBriefing, loadRouteCounts, rerouteScene, reviseRoute, addRouteNote, deleteRouteNote, adoptRoute, dropRoute } from '../api'
+import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, loadBriefing, loadRouteCounts, rerouteScene, reviseRoute, addRouteNote, deleteRouteNote, adoptRoute, dropRoute, workNotes } from '../api'
 import type { RouteAlternative, RouteLockNotice } from 'arc-canon-graph/api-types.ts'
 import { byNewest, chainsOf, isRouteKey, lockNotice, quoteOf, railCards, railMeta, routeKey, routeParagraphOf, seedLabel, standDownCount } from '../routes-view'
 import type { RailCard } from '../routes-view'
+import { answeredInDraft, draftPillTitle, workLabel, workableScenes } from '../notes-work'
 
 /** A scene holds this many other ways through at a time; the backend is
  *  where the rule lives (arc-backend/src/reroute.ts MAX_ROUTES). */
@@ -31,13 +32,32 @@ import { Working } from './Working'
 
 /** The scene's stated intent (conventions §10), collapsed by default —
  *  the contract the prose must satisfy, not an outline of what happens. */
-function ContractPanel({ c, onOpenWorld }: { c: SceneContract; onOpenWorld: (id: string) => void }) {
+/** The fold beneath the header that says what the scene is bound to: its
+ *  contract, and the canon it rests on. The bindings used to sit on the
+ *  header as a third row; they belong here, beside the contract's own
+ *  wants, so the header can state what the scene IS on one line and the
+ *  fold can carry everything it answers to (A59-9). */
+function ContractPanel({ c, rests, onOpenWorld }: {
+  c?: SceneContract
+  /** Facts and events the scene rests on, in record order. */
+  rests: string[]
+  onOpenWorld: (id: string) => void
+}) {
   const list = (items?: string[]) => items?.length
     ? <ul>{items.map((t, i) => <li key={i}>{t}</li>)}</ul> : null
+  if (!c && !rests.length) return null
+  const ids = (xs: string[]) => xs.map((id, i) => (
+    <span key={id}>{i > 0 && ' · '}
+      <a className="wikilink" onClick={() => onOpenWorld(id)}>{id}</a>
+    </span>
+  ))
   return (
     <details className="contract">
-      <summary>Scene contract{c.purpose ? ` — ${c.purpose.replace(/\s+/g, ' ').trim()}` : ''}</summary>
+      <summary>{c
+        ? <>Scene contract{c.purpose ? ` — ${c.purpose.replace(/\s+/g, ' ').trim()}` : ''}</>
+        : <>What this scene rests on</>}</summary>
       <div className="ct-body">
+        {c && <>
         {(c.reader_before || c.reader_after) && (
           <div className="ct-row"><span className="ct-k">reader</span>
             <span>{c.reader_before && <>{c.reader_before.trim()} </>}
@@ -61,6 +81,10 @@ function ContractPanel({ c, onOpenWorld }: { c: SceneContract; onOpenWorld: (id:
           </div>
         ) : null}
         {c.constraints && <div className="ct-row"><span className="ct-k">constraints</span><span>{c.constraints.trim()}</span></div>}
+        </>}
+        {rests.length > 0 && (
+          <div className="ct-row"><span className="ct-k">rests on</span><span>{ids(rests)}</span></div>
+        )}
       </div>
     </details>
   )
@@ -512,7 +536,7 @@ function writePosition(chapter: string, a: Anchor): void {
  *  It renders `cards` and nothing else, in that order. The measuring pass
  *  walks the SAME array — measuring one list and rendering another is what
  *  slid every card off its paragraph. */
-function NotesRail({ cards, tops, cardRef, railRef, head, empty, notice, active, busy, onStatus, onFocus, editing, onEdit, onEditCancel, onEditSave, composer, route }: {
+function NotesRail({ cards, tops, cardRef, railRef, head, empty, notice, active, busy, onStatus, onFocus, editing, onEdit, onEditCancel, onEditSave, composer, route, answered }: {
   /** the one ordered list; index i is tops[i] and cardRef(i) */
   cards: RailCard[]
   /** Final y for each card, aligned to the passage it annotates. */
@@ -539,6 +563,9 @@ function NotesRail({ cards, tops, cardRef, railRef, head, empty, notice, active,
   composer: ReactNode
   /** the open route, for a route card's quote and its one action */
   route: { body: string; busy: boolean; onRemove: (note: string) => void } | null
+  /** Note ids the pending draft was written to answer — the ledger's word,
+   *  not a model's; the author still decides whether the note is met. */
+  answered: Set<string>
 }) {
   return (
     <div className="notes-rail" ref={railRef}>
@@ -587,6 +614,12 @@ function NotesRail({ cards, tops, cardRef, railRef, head, empty, notice, active,
           <div className="note-head">
             <code>{n.id.replace('note.', '#')}</code>
             {STATE_LABEL[n.resolution.state] && <span className="note-state">{STATE_LABEL[n.resolution.state]}</span>}
+            {answered.has(n.id) && (
+              <span className="note-state note-answered"
+                title="The pending draft was written with this note as its brief. Read the draft; if it met the note, resolve the note — arc never closes a thought for you.">
+                answered in the draft
+              </span>
+            )}
           </div>
           {n.anchor.quote
             ? <blockquote className="note-quote">{n.anchor.quote}</blockquote>
@@ -765,6 +798,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const [err, setErr] = useState<string | null>(null)
   /** why the last note was refused, shown in the rail until the next gesture */
   const [noteRefusal, setNoteRefusal] = useState<string | null>(null)
+  /** "Work through these notes": which scene is armed, whether a pass is
+   *  running, and the one-paragraph reply — shown in the rail, where the
+   *  notes are, never as prose in the manuscript. */
+  const [workArmed, setWorkArmed] = useState<string | null>(null)
+  const [workBusy, setWorkBusy] = useState(false)
+  const [workNotice, setWorkNotice] = useState<string | null>(null)
   /** Why judging ONE paragraph failed, and which one. The draft banner's own
    *  error line sits at the top of the page, which for a control a thousand
    *  pixels down reads as nothing happening at all. */
@@ -1736,6 +1775,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     notes: openNotes, routedScene: routesFor, route: readingAlt, composer: composerAnchor,
   }), [openNotes, routesFor, readingAlt, composerAnchor])
 
+  // What the draft's own provenance proves about the notes, and which scenes
+  // of this chapter have notes to work — pure functions, tested in
+  // notes-work.test.ts.
+  const answered = useMemo(() => answeredInDraft(draft.changes), [draft.changes])
+  const workable = useMemo(() => workableScenes(openNotes, curScenes), [openNotes, curScenes])
+
   /** Open the rail's composer against a route paragraph (null = the route as
    *  a whole). The manuscript's composer and this one are ONE state, so only
    *  one can be open and Escape means the same thing in both. */
@@ -2066,6 +2111,24 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       setGenErr((e as Error).message ?? String(e))
     } finally {
       setGenBusy(false)
+    }
+  }
+
+  /** "Work through my notes on this scene" (A63): the scene's open notes are
+   *  the brief, the pass is the minimal revision, and the draft lands beside
+   *  the scene for the gate — the same operation the terminal runs. Asks
+   *  before it writes; the reply goes to the rail. */
+  const workSceneNotes = async (scene: string, file: string) => {
+    setWorkArmed(null); setWorkBusy(true); setWorkNotice(null)
+    try {
+      await flushFile(file)
+      const out = await workNotes({ scene, mode: 'revise' })
+      setWorkNotice(out.reply)
+      onRefresh()
+    } catch (e) {
+      setWorkNotice((e as Error).message ?? String(e))
+    } finally {
+      setWorkBusy(false)
     }
   }
 
@@ -2482,11 +2545,11 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
           return (
             <Fragment key={s.scene}>
             <section className="scene" data-scene={s.scene}>
-              {/* The header states what the scene IS — its id, its state, what
-                  it rests on. What you can DO to it arrives on hover, because
-                  four actions at the same weight as the facts made a row that
-                  competed with the prose underneath it. Focus reveals them
-                  too, so the keyboard never loses what the pointer gains. */}
+              {/* The header states what the scene IS — its id, its state, its
+                  routes — on ONE line, with what you can DO to it at the end
+                  of the same line. What it rests on lives in the contract
+                  fold below (A59-9); a third row of canon ids under the
+                  actions competed with the prose beneath it. */}
               {mode !== 'read' && <div className="scene-head">
                 <code>{s.scene}</code>
                 {routeCounts[s.scene] > 0 && (
@@ -2564,10 +2627,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                     </span>
                   ) : null
                 })()}
-                {change && <span className={`stpill ${change.status}`}
-                  title={change.status === 'added' ? 'This scene exists only in the draft layer — accept or discard it whole.'
-                    : change.status === 'deleted' ? 'The draft deletes this scene — accept or discard the deletion.'
-                      : 'Unaccepted edits — review them in the prose below, or through the draft bar.'}>
+                {change && <span className={`stpill ${change.status}`} title={draftPillTitle(change)}>
                   draft</span>}
                 {mode === 'edit' && view === 'proposed' && editStatus[s.file]?.state === 'saving' && (
                   <span className="fsummary">saving…</span>
@@ -2640,11 +2700,6 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                     )
                   })()}
                 </span>
-                <span className="rests">rests on{' '}
-                  {[...s.facts, ...s.events].map(id => (
-                    <a key={id} className="wikilink" onClick={() => onOpenWorld(id)}>{id}</a>
-                  ))}
-                </span>
               </div>}
               {mode !== 'read' && (() => {
                 const mine = checks.filter(c => c.scene === s.scene)
@@ -2662,7 +2717,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   </div>
                 )
               })()}
-              {mode !== 'read' && s.contract && <ContractPanel c={s.contract} onOpenWorld={onOpenWorld} />}
+              {mode !== 'read' && <ContractPanel c={s.contract ?? undefined} rests={[...s.facts, ...s.events]} onOpenWorld={onOpenWorld} />}
               {/* The routes fold INTO the scene: one reading area, and a tab
                   strip that swaps what is in it. */}
               {routesFor === s.scene && routes.length > 0 && mode !== 'read' && (
@@ -2861,7 +2916,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
            geometry to another's. Keying on the route remounts the cards. */
         key={readingAlt?.id ?? 'scene'}
         cards={cards} tops={tops} cardRef={setCard} railRef={railRef}
-        notice={noteRefusal}
+        notice={noteRefusal ?? workNotice}
+        answered={answered}
         active={active} busy={noteBusy} onStatus={noteStatus}
         editing={editing}
         onEdit={n => { setEditing({ id: n.id, text: n.body }); setActive(n.id) }}
@@ -2874,11 +2930,43 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
             open: cards.filter(c => c.kind === 'note').length,
             standDown: standDownCount(openNotes, routesFor, readingAlt),
           }),
-          extra: readingAlt && (
+          extra: readingAlt ? (
             /* The ONLY way to file a note about the whole route — it moved
                with the rail, so it stays where the route's notes are. */
             <button className="rr-link" disabled={noteBusy}
               onClick={() => composeRoute(readingAlt.id, null, '')}>whole route</button>
+          ) : workable.length > 0 && (
+            /* "Work through these notes": offered where the notes are, for
+               each scene of the chapter that has open ones. Asks before it
+               writes, like the route control; a settled scene says why
+               instead of offering a run the backend would refuse. */
+            <span className="rail-work" role="group" aria-label="Work the open notes">
+              {workable.map(w => {
+                const s = curScenes.find(x => x.scene === w.scene)
+                const settled = s ? heldLockOf(s, overrides[s.file] ?? s.body) : null
+                if (settled) return (
+                  <span key={w.scene} className="rr-link is-off"
+                    title={`${w.scene} is settled — locked (${settled.id}). Unlock it from its header to work the notes.`}>
+                    {w.scene} settled</span>
+                )
+                if (workBusy) return <span key={w.scene} className="rr-link is-off">working the notes…</span>
+                if (workArmed === w.scene) return (
+                  <span key={w.scene} className="rail-ask">
+                    <span className="ask-q">{`${w.count} note${w.count === 1 ? '' : 's'} into ${w.scene}?`}</span>
+                    <button className="rr-link" disabled={!s}
+                      title="Run the pass now: your notes are the instructions, the prose changes as little as they require, and the draft lands beside the scene for you to read."
+                      onClick={() => s && void workSceneNotes(w.scene, s.file)}>go</button>
+                    <button className="rr-link" onClick={() => setWorkArmed(null)}
+                      title="Leave the notes as they are — nothing is sent.">no</button>
+                  </span>
+                )
+                return (
+                  <button key={w.scene} className="rr-link" disabled={noteBusy}
+                    title={`Work the open notes on ${w.scene} into a draft beside the scene. Asks before it writes — nothing is sent on this click.`}
+                    onClick={() => setWorkArmed(w.scene)}>{workLabel(w, workable.length === 1)}</button>
+                )
+              })}
+            </span>
           ),
         }}
         empty={readingAlt
