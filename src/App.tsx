@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadGraph } from 'arc-canon-graph'
 import { yearRange } from './canon'
 import type { Canon } from './canon'
@@ -20,6 +20,7 @@ import { StyleView, type StyleTab } from './components/StyleView'
 import { CaptureBar } from './components/CaptureBar'
 import { ThoughtsView } from './components/ThoughtsView'
 import { AgentsChip } from './components/AgentsChip'
+import { DraftChip } from './components/DraftChip'
 import { useRunStream } from './hooks/useRunStream'
 
 type Page = 'world' | 'manuscript' | 'wiki' | 'style' | 'thoughts'
@@ -190,6 +191,42 @@ function Shell({ canon, data, dark, onToggleDark }: {
   // Page switch. Leaving the manuscript for the world view snaps time to
   // book mode at the manuscript's chapter — the two pages describe the same
   // moment of the same world.
+  // The review drawer's open state lives here because its chip does: the
+  // chip is book-wide furniture in the app header, the drawer is manuscript
+  // furniture, and one state keeps the two from disagreeing (A64-2).
+  /** The header's panels — a thought, the agents, the waiting draft, the
+   *  material, the attention inbox — are ONE at a time, and they all hang
+   *  from the same corner, so two open at once would sit on top of each
+   *  other. Which is open is the header's business rather than each chip's,
+   *  and a click anywhere outside the header, or Escape, closes it (A64-7). */
+  const [panel, setPanel] = useState<'capture' | 'agents' | 'draft' | 'material' | 'attention' | null>(null)
+  const togglePanel = useCallback((p: NonNullable<typeof panel>) =>
+    setPanel(cur => (cur === p ? null : p)), [])
+  /** The waiting index has nothing to show once the draft is empty, so it
+   *  reads as shut — derived rather than synced, because the same fact
+   *  stored twice is the bug that effect would be. */
+  const openPanel = panel === 'draft' && !data.draft.changes.length ? null : panel
+  const topbarRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!openPanel) return
+    const down = (ev: MouseEvent) => {
+      if (!topbarRef.current?.contains(ev.target as Node)) setPanel(null)
+    }
+    const key = (ev: KeyboardEvent) => { if (ev.key === 'Escape') setPanel(null) }
+    // mousedown, not click: the panel must be gone before whatever the
+    // author is reaching for underneath it takes the press.
+    window.addEventListener('mousedown', down)
+    window.addEventListener('keydown', key)
+    return () => {
+      window.removeEventListener('mousedown', down)
+      window.removeEventListener('keydown', key)
+    }
+  }, [openPanel])
+
+  /** A scene the author asked to go and read, from the header's index. The
+   *  manuscript lands on it and clears it (A64-6). */
+  const [landScene, setLandScene] = useState<string | null>(null)
+
   const goto = (p: Page) => {
     if (p === 'world' && page === 'manuscript') time.setTimeMode('book')
     setPage(p)
@@ -258,7 +295,7 @@ function Shell({ canon, data, dark, onToggleDark }: {
 
   return (
     <div className="app">
-      <header className="topbar">
+      <header className="topbar" ref={topbarRef}>
         <div className="toprow">
           <h1>arc</h1>
           <span className="logline">
@@ -266,10 +303,25 @@ function Shell({ canon, data, dark, onToggleDark }: {
           </span>
           {/* Every page, not only the manuscript: an idea arrives while you
               are in the world map as readily as mid-scene. */}
-          <CaptureBar onFiled={data.refreshNotes} />
-          <AgentsChip stream={stream} openRun={openRun} onOpened={() => setOpenRun(null)} />
-          <MaterialDrawer items={data.material} canon={canon} onOpen={openWorld} />
-          <AttentionInbox attention={data.attention} canon={canon} onOpen={openWorld} />
+          <CaptureBar onFiled={data.refreshNotes} open={openPanel === 'capture'} onToggle={() => togglePanel('capture')} />
+          <AgentsChip stream={stream} openRun={openRun} onOpened={() => setOpenRun(null)}
+            open={openPanel === 'agents'} onToggle={() => togglePanel('agents')} />
+          {/* Book-wide, so it lives with the book-wide things. Pressing it
+              from another page goes to the manuscript first: reviewing a
+              draft means reading prose (A64-2). */}
+          <DraftChip draft={data.draft} scenes={data.prose} chapters={chapters} open={openPanel === 'draft'}
+            onToggle={() => togglePanel('draft')}
+            onGo={scene => {
+              setPanel(null)
+              const ix = chapters.findIndex(c => c.id === data.prose.find(s => s.scene === scene)?.chapter)
+              if (ix >= 0) time.setChapterIx(ix)
+              setPage('manuscript')
+              setLandScene(scene)
+            }} />
+          <MaterialDrawer items={data.material} canon={canon} onOpen={openWorld}
+            open={openPanel === 'material'} onToggle={() => togglePanel('material')} />
+          <AttentionInbox attention={data.attention} canon={canon} onOpen={openWorld}
+            open={openPanel === 'attention'} onToggle={() => togglePanel('attention')} />
           <button className="themeToggle" onClick={data.retry}
             title="Reload canon, docs, and prose — picks up edits made from Claude sessions">
             Refresh
@@ -288,13 +340,11 @@ function Shell({ canon, data, dark, onToggleDark }: {
         {degraded.length > 0 && (
           <div className="degraded">
             {degraded.join(', ')} unavailable — is arc-backend running?{' '}
-            {/* Every page, not only the manuscript: an idea arrives while you
-              are in the world map as readily as mid-scene. */}
-          <CaptureBar onFiled={data.refreshNotes} />
-          <AgentsChip stream={stream} openRun={openRun} onOpened={() => setOpenRun(null)} />
-          <MaterialDrawer items={data.material} canon={canon} onOpen={openWorld} />
-          <AttentionInbox attention={data.attention} canon={canon} onOpen={openWorld} />
-          <button className="themeToggle" onClick={data.retry}>Retry</button>
+            {/* The chips are already in the row above. A second copy here
+                rendered them twice, and once the header owns which panel is
+                open, two copies of one chip would open two of one panel
+                (A64-7). The notice says what is wrong and offers the retry. */}
+            <button className="themeToggle" onClick={data.retry}>Retry</button>
           </div>
         )}
       </header>
@@ -303,7 +353,8 @@ function Shell({ canon, data, dark, onToggleDark }: {
         <ManuscriptView scenes={data.prose} chapters={chapters}
           chapterIx={time.chapterIx} onChapter={time.setChapterIx} onOpenWorld={openWorld}
           draft={data.draft} notes={data.notes} onRefresh={data.refreshProse}
-          onRefreshNotes={data.refreshNotes} onCanonChanged={data.refreshCanon} />
+          onRefreshNotes={data.refreshNotes} onCanonChanged={data.refreshCanon}
+          landScene={landScene} onLanded={() => setLandScene(null)} />
       )}
       {page === 'thoughts' && (
         <ThoughtsView notes={data.thoughts} items={data.material}

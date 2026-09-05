@@ -12,26 +12,19 @@ import { addNote } from '../api'
  *  Turning a note into story material is a separate act, asked for on the
  *  Thoughts page or from a Claude Code session.
  */
-export function CaptureBar({ onFiled }: { onFiled: () => void }) {
-  const [open, setOpen] = useState(false)
+export function CaptureBar({ onFiled, open, onToggle }: {
+  onFiled: () => void
+  /** The header opens one panel at a time, and closes them all on a click
+   *  outside or Escape — one rule in one place (A64-7). The typed thought
+   *  survives closing: it is cleared only once it is safely on disk. */
+  open: boolean
+  onToggle: () => void
+}) {
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const box = useRef<HTMLTextAreaElement>(null)
-  const root = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const key = (ev: KeyboardEvent) => { if (ev.key === 'Escape') setOpen(false) }
-    const down = (ev: MouseEvent) => { if (!root.current?.contains(ev.target as Node)) setOpen(false) }
-    window.addEventListener('keydown', key)
-    window.addEventListener('mousedown', down)
-    return () => {
-      window.removeEventListener('keydown', key)
-      window.removeEventListener('mousedown', down)
-    }
-  }, [open])
 
   useEffect(() => { if (open) box.current?.focus({ preventScroll: true }) }, [open])
 
@@ -54,10 +47,10 @@ export function CaptureBar({ onFiled }: { onFiled: () => void }) {
   }
 
   return (
-    <div className="capture" ref={root}>
+    <div className="capture">
       <button className={open ? 'cap-trigger on' : 'cap-trigger'}
         aria-expanded={open}
-        onClick={() => setOpen(o => !o)}
+        onClick={onToggle}
         title="Write down whatever is on your mind — arc keeps it until you want to do something with it">
         Add a thought{text.trim() && !open ? ' ·' : ''}
       </button>

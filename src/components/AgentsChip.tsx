@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import type { Agent, RunSummary } from '../canon'
 import type { StreamState } from '../hooks/useRunStream'
 
@@ -14,15 +13,18 @@ import type { StreamState } from '../hooks/useRunStream'
  *  it — the author's own editor, a git checkout, a shell script — it says so
  *  plainly rather than being dressed up as governed work.
  */
-export function AgentsChip({ stream, onOpenRun, openRun, onOpened }: {
+export function AgentsChip({ stream, onOpenRun, openRun, onOpened, open, onToggle }: {
   stream: StreamState
   onOpenRun?: (id: string) => void
   /** Set when something elsewhere — a presence marker on the graph or map —
    *  wants the run explained. Opening here is the explanation. */
   openRun?: string | null
   onOpened?: () => void
+  /** The header opens one panel at a time, so which one is open is the
+   *  header's business, not each chip's (A64-7). */
+  open: boolean
+  onToggle: () => void
 }) {
-  const [open, setOpen] = useState(false)
 
   // DERIVED, not synced. A presence marker asking for a run to be explained
   // opens the drawer by making `openRun` truthy — writing that into state
@@ -30,7 +32,8 @@ export function AgentsChip({ stream, onOpenRun, openRun, onOpened }: {
   // right to refuse it.
   const shown = open || !!openRun
   const toggle = () => {
-    if (shown) { setOpen(false); onOpened?.() } else setOpen(true)
+    if (shown) onOpened?.()
+    onToggle()
   }
 
   const { agents, runs, external, connected } = stream

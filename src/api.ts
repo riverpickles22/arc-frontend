@@ -6,7 +6,7 @@
 // banner) belongs to the caller — useServerData — not here, so a down
 // backend can no longer masquerade as an empty story.
 import type {
-  AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneRequest, DraftSceneResponse, LocksResponse, MaterialResponse, RedraftRequest,
+  AnalyzeRequest, AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneRequest, DraftSceneResponse, LocksResponse, MaterialResponse, RedraftRequest,
   AddNoteRequest, AgentsResponse, DeleteNoteRequest, HealthResponse, NoteResponse, NotesResponse, OkResponse,
   CreateAnnotationRequest, DeleteAnnotationRequest, UpdateAnnotationRequest, CreateLockRequest, DeleteLockRequest,
   RunsResponse, RunDetailResponse,
@@ -216,17 +216,20 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return out as T
 }
 
-export const acceptDraft = (message?: string): Promise<ProseAcceptResponse> =>
+/** Ratify the draft. `files` takes one scene alone — the decision made where
+ *  the change is, with its diff on screen (A64-3); without it, everything
+ *  pending is ratified together. */
+export const acceptDraft = (message?: string, files?: string[]): Promise<ProseAcceptResponse> =>
   // capture runs when the backend has credentials
-  post('/api/prose/accept', { message, capture: true } satisfies ProseAcceptRequest)
+  post('/api/prose/accept', { message, capture: true, ...(files ? { files } : {}) } satisfies ProseAcceptRequest)
 
 export const discardDraft = (file: string): Promise<void> =>
   post('/api/prose/discard', { file } satisfies ProseDiscardRequest)
 
 /** The analysis pass: what would the pending draft do to the story? Slow
  *  (a full model read) and read-only — findings are argued, never proven. */
-export const analyzeDraft = (): Promise<AnalyzeResponse> =>
-  post('/api/prose/analyze', {})
+export const analyzeDraft = (files?: string[]): Promise<AnalyzeResponse> =>
+  post('/api/prose/analyze', (files ? { files } : {}) satisfies AnalyzeRequest)
 
 /** The drafting pass: generate one scene into the working tree. Slow (a
  *  full model pass); the result arrives as an ordinary draft change. */

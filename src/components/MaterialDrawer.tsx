@@ -1,6 +1,5 @@
 // Story material (conventions §12): the unplaced layer's drawer — what the
 // author is considering, before it has a home. Inventory, never guilt.
-import { useState } from 'react'
 import type { Canon, MaterialItem } from '../canon'
 import { nameOf } from '../canon'
 
@@ -13,12 +12,14 @@ const TYPE_LABEL: Record<MaterialItem['type'], string> = {
   gap: 'gaps',
 }
 
-export function MaterialDrawer({ items, canon, onOpen }: {
+export function MaterialDrawer({ items, canon, onOpen, open, onToggle }: {
   items: MaterialItem[]
   canon: Canon
   onOpen: (id: string) => void
+  /** The header opens one panel at a time (A64-7). */
+  open: boolean
+  onToggle: () => void
 }) {
-  const [open, setOpen] = useState(false)
   const active = items.filter(i => i.status === 'unplaced')
   if (!items.length) return null
 
@@ -31,7 +32,7 @@ export function MaterialDrawer({ items, canon, onOpen }: {
 
   return (
     <>
-      <button className="attn-chip" onClick={() => setOpen(o => !o)}
+      <button className={open ? 'attn-chip on' : 'attn-chip'} aria-pressed={open} onClick={onToggle}
         title="Story material — creative material that has not found its place yet (conventions §12)">
         ✎ Material {active.length}
       </button>
@@ -56,7 +57,7 @@ export function MaterialDrawer({ items, canon, onOpen }: {
                         ? item.window.from : `${item.window.from} → ${item.window.to ?? '…'}`}</span>
                     )}
                     {item.related?.map(id => (
-                      <a key={id} className="linklike" onClick={() => { onOpen(id); setOpen(false) }}>
+                      <a key={id} className="linklike" onClick={() => { onOpen(id); onToggle() }}>
                         {nameOf(canon, id)}
                       </a>
                     ))}

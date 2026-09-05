@@ -418,7 +418,7 @@ svg text { font-family: inherit; }
    property is absent and the fallback pins the header at the very top, which
    is exactly the behaviour this had before the bar was pinned. */
 .ms-head {
-  position: sticky; top: var(--draftbar-h, 0px); z-index: 6;
+  position: sticky; top: 0; z-index: 6;
   margin: 0 -32px 18px; padding: 14px 32px 10px;
   background: var(--page);
 }
@@ -456,8 +456,22 @@ svg text { font-family: inherit; }
    bindings — in four colours, so nothing led and all of it competed with the
    prose two lines below. Now the id carries the only accent, state is quiet
    text, and the actions are not drawn until wanted. */
+/* The scene's header follows the scene (A64-5). Its decision — accept, the
+   reading, discard — is about the prose below it, so it has to be reachable
+   from inside that prose, not only from the top of it. It pins under the
+   chapter header, whose measured height --mshead-h carries: a fixed number
+   would be wrong the moment the title wraps. The negative margins and the
+   page background are the same treatment .ms-head uses, so prose passes
+   BEHIND it rather than showing through it. */
 .scene-head { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; font-size: 12.5px;
-  color: var(--text-secondary); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 12px; }
+  position: sticky; top: var(--mshead-h, 0px); z-index: 5;
+  color: var(--text-secondary); border-bottom: 1px solid var(--border);
+  margin: 0 -32px 12px; padding: 8px 32px 6px; background: var(--page); }
+/* A soft edge under it, the courtesy the chapter header already extends. */
+.scene-head::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 8px;
+  background: linear-gradient(var(--page), transparent); pointer-events: none;
+}
 
 .scene-head code { font-size: 12px; color: var(--ink-ref); }
 /* The header's own gap spaces the route controls; their standalone margin
@@ -573,6 +587,25 @@ svg text { font-family: inherit; }
 }
 .draftbar.clean::after { background: linear-gradient(var(--page), transparent); }
 .draftbar .db-sum { flex: 1; min-width: 0; }
+/* Letting go of a change, on the scene it is about. It asks first: the
+   gestures that change what the book says never fire on one click. Taking a
+   change IN is answered in the diff, paragraph by paragraph (A64-6). */
+.scene-decide { display: inline-flex; align-items: baseline; gap: 10px; }
+.scene-decide .linklike { font-size: 11.5px; }
+/* The waiting index, hanging from the header chip so it is reachable from
+   any page at any scroll position (A64-6). An index: what is waiting, where,
+   and a way in. No decision is taken here. */
+.dd-index .dd-sum { margin: 0 0 10px; padding-bottom: 8px; font-size: 13px;
+  border-bottom: 1px solid var(--border); color: var(--text-secondary); }
+.dd-index .attn-row { gap: 10px; }
+.dd-index .dd-counts { margin-left: auto; white-space: nowrap; }
+/* On the chapter's meta line, where this chapter's own facts are. Leading
+   the line rather than trailing it: the question "which version am I reading"
+   comes before the word count that answers it. A segmented control never
+   shrinks — .db-views clips its overflow to keep its rounded ends, so a
+   squeezed one loses a whole button. */
+.ms-views { margin-right: 10px; vertical-align: middle; flex: 0 0 auto; }
+.ms-views button { font-size: 11.5px; padding: 1px 9px; }
 .ins-ct { color: var(--c2); font-weight: 600; }
 .del-ct { color: var(--c8); font-weight: 600; }
 /* The re-entry briefing (A56): three sections, then the prose. Page
@@ -694,6 +727,12 @@ svg text { font-family: inherit; }
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
 }
 .attn-group h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 12px 0 6px; }
+/* Waiting, not wrong: the shape of an unfinished book, reachable but never
+   competing with the count of what is actually broken (A65). */
+.attn-waiting { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
+.attn-waiting > summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.attn-waiting > summary:hover { color: var(--text-secondary); }
+.attn-waiting[open] > summary { margin-bottom: 4px; }
 .attn-group:first-child h3 { margin-top: 0; }
 .attn-row { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; margin-bottom: 5px; line-height: 1.45; }
 .attn-row .attn-msg { flex: 1; color: var(--text-secondary); }
@@ -871,6 +910,19 @@ svg text { font-family: inherit; }
 .rail-work .rr-link.is-off { color: var(--muted); cursor: default; }
 .rail-ask { display: inline-flex; align-items: baseline; gap: 8px; }
 .rail-ask .ask-q { font-size: 11px; color: var(--ink-pass); }
+
+/* A pending change names its scene and chapter, and goes there. It reads as
+   the row's subject, so it carries the row's own weight — not a button's
+   box, which would make four objects of one line. */
+.db-where { font: inherit; font-size: 12px; color: var(--ink-ref); background: none; border: 0;
+  padding: 0; text-align: left; cursor: pointer; }
+.db-where:hover { text-decoration: underline; }
+.db-where.is-off { color: var(--muted); cursor: default; }
+/* Stands where the three-way view control stands when that control has
+   nothing to switch: same slot, same weight, one act. */
+.db-goto { font: inherit; font-size: 11.5px; color: var(--ink-ref); background: transparent;
+  border: 1px solid var(--border); border-radius: 7px; padding: 2px 10px; cursor: pointer; }
+.db-goto:hover { border-color: var(--ink-ref); }
 .note-quote { margin: 6px 0; padding-left: 9px; border-left: 2px solid var(--baseline); color: var(--text-secondary); font-size: 12.5px; font-style: italic; }
 
 /* A note about the whole scene stands where a quote would, and must not read

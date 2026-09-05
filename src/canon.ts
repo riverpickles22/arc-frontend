@@ -7,7 +7,7 @@
 
 import type { TimeRef, DateLike } from 'arc-canon-graph'
 export type {
-  TimeRef, DocArticle, SceneContract, ProseScene, ProseDraft,
+  TimeRef, DocArticle, SceneContract, ProseScene, ProseDraft, ProseChange,
   ChatResponse, DraftSceneResponse, AnalyzeResponse, StyleResponse, ResolvedAnnotation, AnnotationStatus, ResolvedLock, LocksResponse, ApiErrorResponse, AttentionResponse, MaterialItem, SuggestRequest, SuggestResponse, ProposedRule, RatifyRuleRequest, RatifyRuleResponse, HealthResponse, Note, Agent, AgentsResponse, RunSummary, RunsResponse, RunDetailResponse, StreamMessage, NotesResponse, AddNoteRequest, UpdateNoteRequest, NoteResponse, DeleteNoteRequest, WorkNoteRequest, WorkResponse, WorkDecisionRequest, WorkDecisionResponse, UpdateMaterialRequest, UpdateMaterialResponse,
 } from 'arc-canon-graph'
 

@@ -1,16 +1,17 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { AnalyzeResponse, AnnotationStatus, Chapter, ChatResponse, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
+import type { AnnotationStatus, Chapter, DraftSceneResponse, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SceneContract } from '../canon'
 import type { BriefingResponse } from 'arc-canon-graph/api-types.ts'
 import { DUE_SHOWN, SECTIONS, awayLabel, briefingVisible, chapterLabel, dueRows, readBriefingDismissed, readyLinks, writeBriefingDismissed, type BriefingChoice, type BriefingLink } from '../briefing-view'
 import type { ProseCheckHit } from 'arc-canon-graph/api-types.ts'
 import { dateOf } from '../canon'
 import { dotsFor } from '../keypoints'
-import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, analyzeDraft, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, loadBriefing, loadRouteCounts, rerouteScene, reviseRoute, addRouteNote, deleteRouteNote, adoptRoute, dropRoute, workNotes } from '../api'
+import { acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, loadBriefing, loadRouteCounts, rerouteScene, reviseRoute, addRouteNote, deleteRouteNote, adoptRoute, dropRoute, workNotes } from '../api'
 import type { RouteAlternative, RouteLockNotice } from 'arc-canon-graph/api-types.ts'
 import { byNewest, chainsOf, isRouteKey, lockNotice, quoteOf, railCards, railMeta, routeKey, routeParagraphOf, seedLabel, standDownCount } from '../routes-view'
 import type { RailCard } from '../routes-view'
 import { answeredInDraft, draftPillTitle, workLabel, workableScenes } from '../notes-work'
+import { changesHere, placeChanges } from '../draft-map'
 
 /** A scene holds this many other ways through at a time; the backend is
  *  where the rule lives (arc-backend/src/reroute.ts MAX_ROUTES). */
@@ -18,7 +19,7 @@ const MAX_ROUTES = 4
 import { RouteReader, RouteTabs } from './RouteReader'
 import { wikilinkClickHandler } from '../wikilinks'
 import { mdToHtml } from '../md'
-import { diffProse, diffStats, type ParaDiff } from '../diff'
+import { diffProse, type ParaDiff } from '../diff'
 import {
   formatReadingTime, formatWords, nextRegister, pageCount, progressLabel, totalWords, wordsByChapter,
   type ProgressRegister,
@@ -756,7 +757,7 @@ function Briefing({ b, chapters, now, onGo, onDismiss }: {
  *  the working tree. Changed scenes render with word-level highlights, the
  *  drawer carries the running change summary, and Accept ratifies the draft
  *  into main — the proposed → canon gate applied to prose, commit = ratify. */
-export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenWorld, draft, notes: anns, onRefresh, onRefreshNotes, onCanonChanged }: {
+export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenWorld, draft, notes: anns, onRefresh, onRefreshNotes, landScene, onLanded }: {
   scenes: ProseScene[]
   chapters: Chapter[]          // sorted by order
   chapterIx: number
@@ -767,6 +768,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   onRefresh: () => void
   onRefreshNotes: () => void
   onCanonChanged?: () => void
+  /** A scene the header's waiting index asked to open, or null (A64-6). */
+  landScene: string | null
+  onLanded: () => void
 }) {
   /** Which reading of the draft the author is on. A pending change is a
    *  question — keep this, or keep what I had — and answering it means being
@@ -785,15 +789,6 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // rendered prose because `view` booted to its reading default.
   const [view, setView] = useState<'before' | 'changes' | 'proposed'>(() => readMode() === 'edit' ? 'proposed' : 'changes')
   const showChanges = view === 'changes'
-  const [drawer, setDrawer] = useState(false)
-  /** The drawer is the review of what is pending, so it goes when the pending
-   *  work does — discarding the last change while it is open would otherwise
-   *  leave the author inside an empty panel whose only exit button has just
-   *  been hidden along with everything it was reviewing. */
-  useEffect(() => {
-    if (!draft.changes.length) setDrawer(false)
-  }, [draft.changes.length])
-  const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   /** why the last note was refused, shown in the rail until the next gesture */
@@ -814,7 +809,6 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     return () => clearTimeout(timer)
   }, [flash])
   const [armed, setArmed] = useState<string | null>(null)   // discard needs a second click
-  const [capture, setCapture] = useState<ChatResponse | null>(null)   // the capture pass's briefing, post-accept
 
   // The drafting pass: generation into the working tree. Its own busy flag —
   // a pass runs for a minute or more and must not lock accept/discard.
@@ -890,17 +884,23 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  own comment: the bar is conditional (no git story, or read mode, and it
    *  does not render at all) and it wraps to two lines on a narrow window, so
    *  any fixed number is wrong in situations the author will actually hit.
-   *  Absent bar means absent property, and the header pins at 0 as before. */
-  const draftbarRef = useRef<HTMLDivElement>(null)
+   *  Absent header means absent property, and the scene heads pin at 0.
+   *
+   *  It measures the CHAPTER header, because that is what the scene headers
+   *  pin under (A64-5). It used to measure the draft bar, which was above
+   *  the chapter header — and briefly, wrongly, the review drawer, which is
+   *  not sticky at all, so opening it shoved the chapter header down its
+   *  whole height. A sticky offset may only ever measure something sticky. */
+  const headRef = useRef<HTMLElement>(null)
   useLayoutEffect(() => {
     const scroll = scrollRef.current
     if (!scroll) return
-    const bar = draftbarRef.current
+    const bar = headRef.current
     if (!bar) {
-      scroll.style.removeProperty('--draftbar-h')
+      scroll.style.removeProperty('--mshead-h')
       return
     }
-    const publish = () => scroll.style.setProperty('--draftbar-h', `${Math.round(bar.getBoundingClientRect().height)}px`)
+    const publish = () => scroll.style.setProperty('--mshead-h', `${Math.round(bar.getBoundingClientRect().height)}px`)
     publish()
     // Two triggers, deliberately. ResizeObserver is the precise one — it sees
     // the bar change height for any reason. The window listener is the
@@ -914,7 +914,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     return () => {
       ro.disconnect()
       window.removeEventListener('resize', publish)
-      scroll.style.removeProperty('--draftbar-h')
+      scroll.style.removeProperty('--mshead-h')
     }
   })
 
@@ -1533,13 +1533,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
   // The analysis pass: what would this draft do to the story? Read-only, and
   // never a gate on accepting — the author may ignore it entirely.
-  const [analysis, setAnalysis] = useState<{ res: AnalyzeResponse; key: string } | null>(null)
-  const [anBusy, setAnBusy] = useState(false)
-  const [anErr, setAnErr] = useState<string | null>(null)
 
-  // A half-armed discard must not survive closing the drawer or moving to
-  // another chapter; a stale briefing must not survive the move either.
-  const toggleDrawer = () => { setArmed(null); setDrawer(o => !o) }
+  // A half-armed discard must not survive moving to another chapter; a stale
+  // briefing must not survive the move either.
   const gotoChapter = (i: number) => {
     // Leaving a chapter is leaving off somewhere in it.
     const here = anchorNow()
@@ -1556,14 +1552,6 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // An analysis describes a specific set of files; when the draft set moves
   // under it the analysis is stale, so it is shown only while its key still
   // matches — derived rather than cleared, so no effect writes state.
-  const draftKey = draft.changes.map(c => `${c.status}:${c.file}`).join('|')
-  const shownAnalysis = analysis?.key === draftKey ? analysis.res : null
-
-  const totals = useMemo(() => {
-    let ins = 0, del = 0
-    for (const d of diffs.values()) { const s = diffStats(d); ins += s.ins; del += s.del }
-    return { ins, del }
-  }, [diffs])
 
   const cur = chapters.length ? chapters[Math.min(chapterIx, chapters.length - 1)] : undefined
 
@@ -1779,6 +1767,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // of this chapter have notes to work — pure functions, tested in
   // notes-work.test.ts.
   const answered = useMemo(() => answeredInDraft(draft.changes), [draft.changes])
+  // Where every pending change is, relative to the chapter on screen. The
+  // bar counts the whole book, so without this it reads as a claim about
+  // the chapter it happens to be pinned above (A64).
+  const placed = useMemo(
+    () => placeChanges(draft.changes, scenes, chapters, cur?.id ?? null),
+    [draft.changes, scenes, chapters, cur?.id])
   const workable = useMemo(() => workableScenes(openNotes, curScenes), [openNotes, curScenes])
 
   /** Open the rail's composer against a route paragraph (null = the route as
@@ -1879,11 +1873,28 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     const box = scrollRef.current
     const target = box?.querySelector<HTMLElement>(`[data-scene="${CSS.escape(scene)}"]`)
     if (!box || !target) return
-    const cover = (box.querySelector<HTMLElement>('.draftbar')?.offsetHeight ?? 0)
-      + (box.querySelector<HTMLElement>('.ms-head')?.offsetHeight ?? 0)
+    // Both sticky layers, or the scene lands under them (A64-5).
+    const cover = (box.querySelector<HTMLElement>('.ms-head')?.offsetHeight ?? 0)
+      + (target.querySelector<HTMLElement>('.scene-head')?.offsetHeight ?? 0)
     const top = target.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop
     box.scrollTop = top - cover - 8
   }, [])
+
+  // The header's waiting index asked for a scene. It may be in another
+  // chapter, which App has already switched to; this fires when the scene
+  // has actually rendered (A64-6).
+  useEffect(() => {
+    if (!landScene) return
+    // The chapter's saved reading position is restored on arrival, and it
+    // would scroll straight back over any jump made beside it. So the
+    // landing goes through the SAME channel the position restore reads —
+    // `pendingRef` — which is what "start reading at this scene" already
+    // uses. One mechanism decides where the reader lands (A64-6).
+    pendingRef.current = { key: `${landScene}:0`, frac: 0 }
+    landOn.current = { kind: 'draft', label: landScene, scene: landScene }
+    setLandTick(t => t + 1)
+    onLanded()
+  }, [landScene, onLanded])
 
   useEffect(() => {
     const want = landOn.current
@@ -1893,14 +1904,21 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     if (want.kind === 'notes') { switchMode('notes'); if (want.note) setActive(want.note) }
     if (want.kind === 'draft') setView(v => (v === 'before' ? 'changes' : v))
     // After the rows paint, not before: the scene must exist to be measured.
-    const id = requestAnimationFrame(() => jumpToScene(want.scene!))
-    return () => cancelAnimationFrame(id)
+    // Two frames, not one — arriving from another page mounts the chapter,
+    // the briefing and the rail in the same tick, and a measurement taken
+    // before that settles reads a position the scene no longer has (A64-6).
+    let inner = 0
+    const id = requestAnimationFrame(() => { inner = requestAnimationFrame(() => jumpToScene(want.scene!)) })
+    return () => { cancelAnimationFrame(id); cancelAnimationFrame(inner) }
   }, [curScenes, landTick, jumpToScene, switchMode])
 
   /** Follow a briefing link: the briefing closes for the sitting, and the
    *  author lands on the surface the count named. */
-  const followBriefing = (link: BriefingLink) => {
-    dismissBriefing()
+  /** Land on a scene, opening its chapter first when the scene is not in the
+   *  one on screen. The briefing's own mechanism (landOn + the effect above),
+   *  factored out so the draft bar can send the author to a change without
+   *  also dismissing the briefing — two different requests. */
+  const landOnScene = (link: BriefingLink) => {
     if (!link.scene) { location.hash = '#/thoughts'; return }
     const chapterId = scenes.find(s => s.scene === link.scene)?.chapter
     const ix = chapters.findIndex(c => c.id === chapterId)
@@ -1909,11 +1927,15 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     else setLandTick(t => t + 1)
   }
 
+  const followBriefing = (link: BriefingLink) => {
+    dismissBriefing()
+    landOnScene(link)
+  }
+
   if (!chapters.length || !cur) return <div className="empty">No chapters in canon yet.</div>
   const curDeleted = draft.changes.filter(c => c.status === 'deleted' && c.main?.chapter === cur.id)
   const scenesOf = (id: string) => scenes.filter(s => s.chapter === id).length
   const spanText = [dateOf(cur.span.start), dateOf(cur.span.end)].filter(Boolean).join(' → ')
-  const n = draft.changes.length
 
   // Kindle-style estimate over the chapter's drafted prose: ~250 words to a
   // page, ~230 words a minute; hidden while a chapter is outline-only. The
@@ -1959,18 +1981,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     void run(op).catch((e: Error) => setFlash({ at, text: e.message ?? String(e) }))
   }
 
-  const accept = () => run(async () => {
-    const res = await acceptDraft(msg || undefined)
-    setMsg('')
-    setCapture(res.capture ?? null)
-    if (res.capture?.canonChanged) onCanonChanged?.()
-  })
-  const analyze = async () => {
-    setAnBusy(true); setAnErr(null)
-    try { setAnalysis({ res: await analyzeDraft(), key: draftKey }) }
-    catch (e) { setAnErr((e as Error).message ?? String(e)) }
-    finally { setAnBusy(false) }
-  }
+
   /** Capture the selection as an anchor: which scene, which paragraph, and
    *  the exact words.
    *
@@ -2078,7 +2089,6 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     void run(() => discardDraft(file))
   }
 
-  const defaultMsg = `prose: accept draft (${n} scene${n === 1 ? '' : 's'})`
 
 
 
@@ -2235,6 +2245,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       </div>
       {genBusy && <p className="gen-note">arc is drafting from the chapter's context pack — style contract, cast state, payoff fence. This takes a minute or two.</p>}
       {genErr && <p className="db-err">{genErr}</p>}
+      {/* A refused accept or discard — a lock, a stale draft — said beside
+          the prose it refused, now that no drawer carries a banner. */}
+      {err && <p className="db-err">{err}</p>}
       {curScenes.length === 1 && notice.blocked && <p className="db-err">{notice.blocked}</p>}
       {curScenes.length === 1 && notice.constrain && <p className="gen-note">{notice.constrain}</p>}
       {routeBusy && <p className="gen-note">arc is taking another way through — the destination and the known route go in, the prose stays out. One alternative, a minute or two.</p>}
@@ -2324,115 +2337,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         {briefing && mode !== 'read' && briefingVisible(briefing, Date.now(), briefChoice) && (
           <Briefing b={briefing} chapters={chapters} now={Date.now()} onGo={followBriefing} onDismiss={dismissBriefing} />
         )}
-        {draft.git && mode !== 'read' && (
-          <div ref={draftbarRef} className={n ? 'draftbar' : 'draftbar clean'}>
-            {n ? (
-              <>
-                <span className="db-sum"><b>Draft</b> — {n} scene{n === 1 ? '' : 's'} changed ·{' '}
-                  <span className="ins-ct">+{totals.ins}</span> <span className="del-ct">−{totals.del}</span> words vs main</span>
-                <div className="db-views" role="group" aria-label="Which version to read">
-                  {([['before', 'Before'], ['changes', 'Changes'], ['proposed', 'Proposed']] as const).map(([k, label]) => (
-                    <button key={k} className={view === k ? 'on' : ''}
-                      aria-pressed={view === k} onClick={() => {
-                        setView(k)
-                        // The switchMode inverse. Edit means edit the PROPOSED
-                        // text, and Before/Changes are exactly the two views
-                        // the prose is not editable in — so choosing one while
-                        // editing is a request to READ the diff, and the page
-                        // follows into Notes honestly rather than leaving the
-                        // Edit tab lit over prose that stopped being editable.
-                        if (mode === 'edit' && k !== 'proposed') switchMode('notes')
-                      }}>{label}</button>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <span className="db-sum">Manuscript matches main — no draft changes.</span>
-            )}
-            {/* Nothing pending is nothing to review: with a clean draft the
-                drawer holds no files, no analysis and no accept, so the
-                button would only invite a click that leads nowhere. */}
-            {n > 0 && (
-              <button className="themeToggle" onClick={toggleDrawer}>{drawer ? 'Close' : 'Review'}</button>
-            )}
-          </div>
-        )}
-
-        {draft.git && drawer && mode !== 'read' && (
-          <div className="draftdrawer">
-            {draft.changes.map(c => {
-              const st = diffStats(diffs.get(c.file) ?? [])
-              return (
-                <div key={c.file} className="db-row">
-                  <span className={`stpill ${c.status}`}>{c.status}</span>
-                  <code>{c.file}</code>
-                  <span><span className="ins-ct">+{st.ins}</span> <span className="del-ct">−{st.del}</span></span>
-                  <button className="db-discard" disabled={busy} onClick={() => discard(c.file)}>
-                    {armed === c.file ? 'discard — sure?' : 'discard'}
-                  </button>
-                </div>
-              )
-            })}
-            {n > 0 && (
-              <div className="db-analyze">
-                <button disabled={anBusy} onClick={analyze}>
-                  {anBusy ? 'Reading the draft…' : 'What did this scene change?'}
-                </button>
-                <span className="gen-note">
-                  {anBusy
-                    ? 'Reading the pending scenes against canon, the contract, and the style guide. Nothing is written.'
-                    : 'A read-only pass before you decide — claims to weigh, not errors.'}
-                </span>
-              </div>
-            )}
-            {anErr && <p className="db-err">{anErr}</p>}
-            {shownAnalysis && (
-              <div className="db-analysis">
-                <div className="an-head">
-                  <h3>What this draft would change</h3>
-                  <span className="an-register" title="Model-read claims with citations — never presented as proven (conventions §11)">
-                    argued — claims to review
-                  </span>
-                </div>
-                <div className="db-capture-reply">{shownAnalysis.briefing}</div>
-                <p className="an-foot">{shownAnalysis.files.length} scene{shownAnalysis.files.length === 1 ? '' : 's'} read · {shownAnalysis.engine === 'claude-cli' ? 'claude CLI' : 'API'} · nothing was written</p>
-              </div>
-            )}
-            {n > 0 && (
-              <div className="db-accept">
-                <input value={msg} placeholder={defaultMsg} onChange={ev => setMsg(ev.target.value)} />
-                <button disabled={busy} onClick={accept}>Accept into main</button>
-              </div>
-            )}
-            {err && <p className="db-err">{err}</p>}
-            {capture && (
-              <div className="db-capture">
-                <h3>What this scene changed — capture pass</h3>
-                <div className="db-capture-reply">{capture.reply}</div>
-                {capture.actions.length > 0 && (
-                  <div className="db-capture-actions">
-                    {capture.actions.map((a, i) => (
-                      <span key={i} className={`cap-action${a.ok ? '' : ' failed'}`}>
-                        ✎ {a.path}{a.ok ? '' : ` — ${a.detail}`}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            <div className="db-history">
-              <h3>Ratified versions</h3>
-              {draft.history.map(h => (
-                <div key={h.hash} className="db-hrow">
-                  <code>{h.hash}</code><span>{h.date}</span><span className="db-hsub">{h.subject}</span>
-                </div>
-              ))}
-              {!draft.history.length && <p className="fsummary">No ratified prose yet — the first accept starts the history.</p>}
-            </div>
-          </div>
-        )}
-
-        <header className="ms-head">
+        <header className="ms-head" ref={headRef}>
           <div className="ms-headrow">
             <h1>{cur.order === 0 ? 'Prologue' : `Chapter ${cur.order}`} — {cur.title}
               <CopyProse get={() => chapterText(copyableScenes(curScenes, draft.changes))} label="copy chapter"
@@ -2505,7 +2410,31 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               </button>
             </div>
           </div>
-          <p className="ms-meta">{spanText}{cur.part ? ` · ${cur.part}` : ''}
+          {/* Three readings of THIS chapter's pending prose — a control over
+              the chapter on screen, so it sits with the chapter's own facts
+              rather than in the app header where the book-wide count went
+              (A64-2). It renders only when this chapter has something to
+              switch between, so it can never promise a diff that lives
+              somewhere else. */}
+          <p className="ms-meta">
+            {mode !== 'read' && changesHere(placed).length > 0 && (
+              <span className="db-views ms-views" role="group" aria-label="Which version of this chapter to read">
+                {([['before', 'Before'], ['changes', 'Changes'], ['proposed', 'Proposed']] as const).map(([k, label]) => (
+                  <button key={k} className={view === k ? 'on' : ''}
+                    aria-pressed={view === k} onClick={() => {
+                      setView(k)
+                      // The switchMode inverse. Edit means edit the PROPOSED
+                      // text, and Before/Changes are exactly the two views the
+                      // prose is not editable in — so choosing one while
+                      // editing is a request to READ the diff, and the page
+                      // follows into Notes honestly rather than leaving the
+                      // Edit tab lit over prose that stopped being editable.
+                      if (mode === 'edit' && k !== 'proposed') switchMode('notes')
+                    }}>{label}</button>
+                ))}
+              </span>
+            )}
+            {spanText}{cur.part ? ` · ${cur.part}` : ''}
             {words > 0 && ` · ${formatWords(words)} words · ~${pages} page${pages === 1 ? '' : 's'} · ${formatReadingTime(words)} read`}
             {' · '}<span className={`stpill ${cur.status}`}>{cur.status}</span>
             {curScenes.length > 0 && mode !== 'read' && (
@@ -2629,6 +2558,22 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 })()}
                 {change && <span className={`stpill ${change.status}`} title={draftPillTitle(change)}>
                   draft</span>}
+                {/* Letting go of a change is the one decision that belongs on
+                    the scene: it is about this scene entire. Taking a change
+                    IN is answered paragraph by paragraph in the diff below,
+                    where the author has just read the words — a whole-scene
+                    accept beside it was a second answer to a better question
+                    (A64-6). */}
+                {change && (
+                  <span className="scene-decide">
+                    <a className="linklike" onClick={() => discard(s.file)}
+                      title={armed === s.file
+                        ? 'Press again to throw these changes away — the scene goes back to what the book says.'
+                        : 'Throw this scene\'s pending changes away and go back to what the book says.'}>
+                      {armed === s.file ? 'discard — sure?' : 'discard'}
+                    </a>
+                  </span>
+                )}
                 {mode === 'edit' && view === 'proposed' && editStatus[s.file]?.state === 'saving' && (
                   <span className="fsummary">saving…</span>
                 )}
