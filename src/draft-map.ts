@@ -17,6 +17,7 @@
 // chapter holds it is the scene's own frontmatter. Nothing is inferred.
 import type { Chapter, ProseChange, ProseScene } from './canon'
 import { chapterLabel } from './briefing-view'
+import { diffProse, diffStats } from './diff'
 
 export interface PlacedChange {
   file: string
@@ -83,8 +84,11 @@ export function draftWhere(placed: PlacedChange[], currentChapter: string | null
   // count the places when there are several.
   const labels = [...new Set(away.map(p => p.chapterLabel).filter((x): x is string => x !== null))]
   const known = currentChapter === null ? '' : 'nothing pending in this chapter · '
+  // From inside a chapter the rest of the book is "other"; from the header,
+  // which stands in no chapter, it is just the book.
+  const other = currentChapter === null ? '' : 'other '
   if (labels.length === 1) return `${known}${scenes(away.length)} changed in ${labels[0]}`
-  if (labels.length > 1) return `${known}${scenes(away.length)} changed in ${labels.length} other chapters`
+  if (labels.length > 1) return `${known}${scenes(away.length)} changed in ${labels.length} ${other}chapters`
   return `${known}${scenes(away.length)} changed`
 }
 
@@ -111,5 +115,14 @@ export function groupByChapter(placed: PlacedChange[]): ChapterGroup[] {
     else out.push({ chapter: p.chapter, label: p.chapterLabel ?? 'Not in canon yet', changes: [p] })
   }
   return out
+}
+
+/** Words added and removed by one pending change — the scene as the book
+ *  has it against the scene as the working tree has it, counted by the same
+ *  diff the Changes reading draws. The header's index and the scene's own
+ *  row both call THIS, on the same input, so the two numbers cannot drift
+ *  (A64-11). */
+export function changeCounts(change: ProseChange, byFile: Map<string, ProseScene>): { ins: number; del: number } {
+  return diffStats(diffProse(change.main?.body ?? '', byFile.get(change.file)?.body ?? ''))
 }
 

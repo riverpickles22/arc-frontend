@@ -6,12 +6,12 @@ import { DUE_SHOWN, SECTIONS, awayLabel, briefingVisible, chapterLabel, dueRows,
 import type { ProseCheckHit } from 'arc-canon-graph/api-types.ts'
 import { dateOf } from '../canon'
 import { dotsFor } from '../keypoints'
-import { acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, loadBriefing, loadRouteCounts, rerouteScene, reviseRoute, addRouteNote, deleteRouteNote, adoptRoute, dropRoute, workNotes } from '../api'
+import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, loadBriefing, loadRouteCounts, rerouteScene, reviseRoute, addRouteNote, deleteRouteNote, adoptRoute, dropRoute, workNotes } from '../api'
 import type { RouteAlternative, RouteLockNotice } from 'arc-canon-graph/api-types.ts'
 import { byNewest, chainsOf, isRouteKey, lockNotice, quoteOf, railCards, railMeta, routeKey, routeParagraphOf, seedLabel, standDownCount } from '../routes-view'
 import type { RailCard } from '../routes-view'
 import { answeredInDraft, draftPillTitle, workLabel, workableScenes } from '../notes-work'
-import { changesHere, placeChanges } from '../draft-map'
+import { changeCounts, changesHere, placeChanges } from '../draft-map'
 
 /** A scene holds this many other ways through at a time; the backend is
  *  where the rule lives (arc-backend/src/reroute.ts MAX_ROUTES). */
@@ -730,7 +730,7 @@ function Briefing({ b, chapters, now, onGo, onDismiss }: {
     <aside className="briefing" role="region" aria-label="Where you left off">
       <div className="bf-head">
         <b>Picking up</b>
-        <a className="linklike bf-close" onClick={onDismiss} title="Close for this sitting (Esc). 'where was I?' below brings it back.">close</a>
+        <a className="linklike bf-close" onClick={onDismiss} title="Close for this sitting (Esc). It opens again on its own after a day away.">close</a>
       </div>
       {SECTIONS.map(sec => (
         <section key={sec.key} data-section={sec.key}>
@@ -809,6 +809,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     return () => clearTimeout(timer)
   }, [flash])
   const [armed, setArmed] = useState<string | null>(null)   // discard needs a second click
+  /** Accept needs one too, and the two can never be armed at once: they sit
+   *  a few pixels apart and both change the book (A64-13). */
+  const [acceptArmed, setAcceptArmed] = useState<string | null>(null)
 
   // The drafting pass: generation into the working tree. Its own busy flag —
   // a pass runs for a minute or more and must not lock accept/discard.
@@ -1540,7 +1543,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     // Leaving a chapter is leaving off somewhere in it.
     const here = anchorNow()
     if (here && chapterKey) writePosition(chapterKey, here)
-    flushAllEdits(); setArmed(null); setRerouteArmed(null); setGen(null); setGenErr(null); setShowGen(false); onChapter(i)
+    flushAllEdits(); setArmed(null); setAcceptArmed(null); setRerouteArmed(null); setGen(null); setGenErr(null); setShowGen(false); onChapter(i)
   }
 
   const byFile = useMemo(() => new Map(scenes.map(s => [s.file, s])), [scenes])
@@ -1973,6 +1976,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       // on screen whose buttons can only ever fail. Re-reading is what makes
       // the page honest again.
       onRefresh()
+      // An accept can close the notes the change answered (A63-4); the
+      // rail has to hear it the same moment the diff does.
+      onRefreshNotes()
       setBusy(false)
     }
   }
@@ -2084,9 +2090,17 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   }
 
   const discard = (file: string) => {
-    if (armed !== file) { setArmed(file); return }
+    if (armed !== file) { setArmed(file); setAcceptArmed(null); return }
     setArmed(null)
     void run(() => discardDraft(file))
+  }
+  /** Accept the whole scene from its row — the scene-scoped accept the
+   *  backend carries (A64-3), taken where the prose is. Same two-step shape
+   *  as discard, and arming it disarms discard (A64-13). */
+  const acceptScene = (file: string) => {
+    if (acceptArmed !== file) { setAcceptArmed(file); setArmed(null); return }
+    setAcceptArmed(null)
+    void run(() => acceptDraft(undefined, [file]))
   }
 
 
@@ -2441,20 +2455,11 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               <>{' · '}<a className="linklike pass-act" onClick={() => setShowGen(o => !o)}>
                 {showGen ? 'hide drafting' : 'draft next scene'}</a></>
             )}
-            {briefing?.lastAccepted && mode !== 'read' && (() => {
-              const open = briefingVisible(briefing, Date.now(), briefChoice)
-              return (
-                <>{' · '}<a className="linklike brief-act"
-                  title={open ? 'Close the briefing for this sitting.' : 'Where you left off, what is in flight, what is due — whenever you want it.'}
-                  onClick={() => {
-                    if (open) { dismissBriefing(); return }
-                    setBriefChoice('open')
-                    // Asking where you were means wanting to see it: it sits at the top.
-                    requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }))
-                  }}>
-                  {open ? 'hide briefing' : 'where was I?'}</a></>
-              )
-            })()}</p>
+            {/* 'where was I?' is retired for now, on the author's word
+                (2026-09-04); the briefing still opens on its own after a day
+                away and closes from its own corner. The reopen link may come
+                back when the briefing earns it. */}
+            </p>
         </header>
 
         {(mode !== 'read' || !curScenes.length) && (
@@ -2558,6 +2563,17 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 })()}
                 {change && <span className={`stpill ${change.status}`} title={draftPillTitle(change)}>
                   draft</span>}
+                {/* How much changed, in the index's numbers — the same
+                    function on the same input, so they cannot disagree
+                    (A64-11). */}
+                {change && (() => {
+                  const st = changeCounts(change, byFile)
+                  return (
+                    <span className="scene-counts" title="Words added and removed by the pending change, against the book">
+                      <span className="ins-ct">+{st.ins}</span> <span className="del-ct">−{st.del}</span>
+                    </span>
+                  )
+                })()}
                 {/* Letting go of a change is the one decision that belongs on
                     the scene: it is about this scene entire. Taking a change
                     IN is answered paragraph by paragraph in the diff below,
@@ -2566,6 +2582,37 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                     (A64-6). */}
                 {change && (
                   <span className="scene-decide">
+                    {/* The way to SEE the change stands beside the way to
+                        throw it away (A64-10). The reading is the chapter's,
+                        so this switches it and lands here, where the diff
+                        carries its own per-paragraph accept and reject. */}
+                    {change.status === 'modified' && (
+                      <a className="linklike pass-act"
+                        title={view === 'changes'
+                          ? 'Back to reading the draft as it would stand.'
+                          : 'Show what changed in this scene — the new words against the old, with accept and reject on each paragraph.'}
+                        onClick={() => {
+                          if (view === 'changes') { setView('proposed'); return }
+                          // Changing the reading restores the chapter's saved
+                          // position, which would scroll over any jump made
+                          // beside it. So the landing goes through the same
+                          // channel the restore reads — the one 'read from
+                          // here' and the header's index already use.
+                          pendingRef.current = { key: `${s.scene}:0`, frac: 0 }
+                          setView('changes')
+                          if (mode === 'edit') switchMode('notes')
+                        }}>
+                        {view === 'changes' ? 'hide the changes' : 'see the changes'}
+                      </a>
+                    )}
+                    {/* The pair that changes the book, side by side, each
+                        asking first. One armed at a time (A64-13). */}
+                    <a className="linklike pass-act" onClick={() => acceptScene(s.file)}
+                      title={acceptArmed === s.file
+                        ? 'Press again to take the whole scene into the book. Everything else pending stays pending.'
+                        : 'Take this whole scene into the book. Asks first — nothing is committed on this click. For one paragraph at a time, use the diff\'s own accept.'}>
+                      {acceptArmed === s.file ? 'accept — sure?' : 'accept'}
+                    </a>
                     <a className="linklike" onClick={() => discard(s.file)}
                       title={armed === s.file
                         ? 'Press again to throw these changes away — the scene goes back to what the book says.'

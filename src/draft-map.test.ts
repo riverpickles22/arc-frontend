@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Chapter, ProseChange, ProseScene } from './canon'
-import { changesHere, draftWhere, groupByChapter, placeChanges, placeLabel } from './draft-map'
+import { changeCounts, changesHere, draftWhere, groupByChapter, placeChanges, placeLabel } from './draft-map'
 
 const chapters = [
   { id: 'ch.00', order: 0, title: 'The Hollowing' },
@@ -84,6 +84,9 @@ describe('draftWhere', () => {
     expect(draftWhere([], 'ch.00')).toBe('')
     expect(draftWhere(place(['prose/ch-01/scene-01.md'], null), null))
       .toBe('1 scene changed in Chapter 1 — The Café')
+    // The header stands in no chapter, so nothing is "other" from there.
+    expect(draftWhere(place(['prose/ch-01/scene-01.md', 'prose/ch-02/scene-01.md'], null), null))
+      .toBe('2 scenes changed in 2 chapters')
   })
 })
 
@@ -115,6 +118,23 @@ describe('groupByChapter', () => {
     expect(g).toHaveLength(2)
     expect(g[0].changes).toHaveLength(2)
     expect(g[1].label).toBe('Not in canon yet')
+  })
+})
+
+describe('changeCounts', () => {
+  it('counts the working tree against the book, and an untouched or unknown scene as nothing', () => {
+    const main = scene('prose/ch-01/scene-01.md', 'sc.01-1', 'ch.01')
+    ;(main as unknown as { body: string }).body = 'One two three.\n\nFour five.'
+    const work = scene('prose/ch-01/scene-01.md', 'sc.01-1', 'ch.01')
+    ;(work as unknown as { body: string }).body = 'One two three.\n\nFour five six seven.'
+    const byFile = new Map([[work.file, work]])
+    const c = change('prose/ch-01/scene-01.md', 'modified', main)
+    const st = changeCounts(c, byFile)
+    expect(st.ins).toBeGreaterThan(0)
+    // The property the scene row and the index depend on: one function, so
+    // whoever asks gets the same two numbers for the same change.
+    expect(changeCounts(c, byFile)).toEqual(st)
+    expect(changeCounts(change('prose/ch-09/nope.md', 'modified', null), byFile)).toEqual({ ins: 0, del: 0 })
   })
 })
 

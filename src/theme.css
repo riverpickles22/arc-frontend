@@ -483,11 +483,14 @@ svg text { font-family: inherit; }
    order of the eye. Quiet is what stops them competing — not hiding them,
    which only moves the cost to the moment you need one. */
 .scene-acts {
-  display: inline-flex; align-items: baseline; gap: 6px; margin-left: auto;
-  /* Set at the pills' size so the widest header state — four routes
-     waiting, and full — still fits the 74ch measure on one line (A59-9,
-     measured: 689px available, ~36px to spare). The cluster never tears
-     mid-list: if it ever has to move, it moves as one unit. */
+  /* The second row, on purpose (A64-12). The header was fitted onto one
+     line this morning (A59-9); by evening a pending scene's row carried its
+     counts, 'see the changes' and 'discard' too, and the actions wrapped on
+     some scenes and not others — overflow, not layout. So the verbs take a
+     row of their own, always, right-aligned: the eye learns where they live.
+     flex-basis: 100% is what makes the row a row rather than a wrap. */
+  display: flex; flex-basis: 100%; justify-content: flex-end;
+  align-items: baseline; gap: 6px; margin-top: 2px;
   font-size: 11px; flex-wrap: nowrap; white-space: nowrap;
 }
 .scene-acts .linklike, .scene-acts .copyref { color: var(--muted); }
@@ -590,6 +593,7 @@ svg text { font-family: inherit; }
 /* Letting go of a change, on the scene it is about. It asks first: the
    gestures that change what the book says never fire on one click. Taking a
    change IN is answered in the diff, paragraph by paragraph (A64-6). */
+.scene-counts { font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .scene-decide { display: inline-flex; align-items: baseline; gap: 10px; }
 .scene-decide .linklike { font-size: 11.5px; }
 /* The waiting index, hanging from the header chip so it is reachable from

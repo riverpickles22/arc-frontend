@@ -16,8 +16,7 @@
 // and read it. Every decision about the book happens at the change itself,
 // with the prose on screen — never in a dropdown (A64-3).
 import type { Chapter, ProseDraft, ProseScene } from '../canon'
-import { diffProse, diffStats } from '../diff'
-import { draftWhere, groupByChapter, placeChanges } from '../draft-map'
+import { changeCounts, draftWhere, groupByChapter, placeChanges } from '../draft-map'
 
 export function DraftChip({ draft, scenes, chapters, open, onToggle, onGo }: {
   draft: ProseDraft
@@ -38,8 +37,6 @@ export function DraftChip({ draft, scenes, chapters, open, onToggle, onGo }: {
   // row names where it is, which is the whole point of the panel.
   const placed = placeChanges(draft.changes, scenes, chapters, null)
   const byFile = new Map(scenes.map(s => [s.file, s]))
-  const counts = (file: string, main: string) =>
-    diffStats(diffProse(main, byFile.get(file)?.body ?? ''))
 
   return (
     <>
@@ -54,7 +51,7 @@ export function DraftChip({ draft, scenes, chapters, open, onToggle, onGo }: {
             <div key={g.chapter ?? 'unplaced'} className="attn-group">
               <h3>{g.label}</h3>
               {g.changes.map(c => {
-                const st = counts(c.file, draft.changes.find(x => x.file === c.file)?.main?.body ?? '')
+                const st = changeCounts(draft.changes.find(x => x.file === c.file)!, byFile)
                 const go = c.scene && c.status !== 'deleted'
                 return (
                   <div key={c.file} className="attn-row">
