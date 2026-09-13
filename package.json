@@ -9,7 +9,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "check": "npm run build && npm run lint && npm test"
   },
   "dependencies": {
     "arc-canon-graph": "file:../arc-core/graph",

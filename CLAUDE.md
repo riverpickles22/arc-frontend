@@ -13,5 +13,5 @@ repo shares. This file is only what is particular to the viewer.
 - **Manuscript-adjacent surfaces are quiet.** One thing at a time, no bare-key
   hotkeys, ⌘C always copies, nothing binds from a click that is not the
   author's accept. Product words: routes, marks, review, depth — not agents.
-- Checks before you say done: `npm run build` · `npm test` · `npm run lint`.
-  Commit with `-s` (DCO).
+- Checks before you say done: `npm run check` (build, lint, tests — one exit
+  code). Commit with `-s` (DCO).
