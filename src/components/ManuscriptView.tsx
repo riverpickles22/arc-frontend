@@ -12,6 +12,7 @@ import { byNewest, chainsOf, isRouteKey, lockNotice, quoteOf, railCards, railMet
 import type { RailCard } from '../routes-view'
 import { answeredInDraft, draftPillTitle, workLabel, workableScenes } from '../notes-work'
 import { changeCounts, changesHere, placeChanges } from '../draft-map'
+import { keepAnchored } from '../anchor'
 
 /** A scene holds this many other ways through at a time; the backend is
  *  where the rule lives (arc-backend/src/reroute.ts MAX_ROUTES). */
@@ -841,6 +842,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // work this way — not a browser dialog, which blocks the page and reads
   // as the browser's question rather than arc's.
   const [rerouteArmed, setRerouteArmed] = useState<string | null>(null)
+  // Adopting from the tab strip changes the book, so it arms the same way
+  // (A59-3). Held by route id, because the strip shows several at once.
+  const [adoptArmed, setAdoptArmed] = useState<string | null>(null)
   const [routeErr, setRouteErr] = useState<string | null>(null)
 
   // Annotations: select prose, write the thought, keep reading. No
@@ -2213,13 +2217,33 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       setRouteBusy(false)
     }
   }
+  /** Keep the scene's own header where it is while the routes fold in or
+   *  out beneath it (A59-3). The two surfaces share one reading area, so
+   *  the swap changes the page's height; without this the author is moved
+   *  away from the very scene they are deciding about. */
+  const anchored = (scene: string, change: () => void) => {
+    const top = () => {
+      const el = document.querySelector<HTMLElement>(`[data-scene-head="${CSS.escape(scene)}"]`)
+      return el ? el.getBoundingClientRect().top : null
+    }
+    keepAnchored(top, change, dy => window.scrollBy(0, dy), fn => requestAnimationFrame(fn))
+  }
+
   const adopt = async (scene: string, id: string) => {
     setRouteBusy(true); setRouteErr(null)
     try {
       await adoptRoute(scene, id)
       refreshCounts()
       onRefresh()   // the draft layer now carries the route as an ordinary change
+      // Land where the change now is (A59-3). The route did its work; what
+      // the author has to decide next is the draft, in the scene, under the
+      // ordinary gate. Leaving them in the route panel would show them the
+      // thing they just took rather than the book it went into.
+      setAdoptArmed(null)
+      anchored(scene, () => { setRoutesFor(null); setReadingRoute(null) })
     } catch (e) {
+      // A settled scene refuses with 423 and the backend's own sentence;
+      // it reaches the author unchanged, above the reader.
       setRouteErr((e as Error).message ?? String(e))
     } finally {
       setRouteBusy(false)
@@ -2484,16 +2508,17 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   of the same line. What it rests on lives in the contract
                   fold below (A59-9); a third row of canon ids under the
                   actions competed with the prose beneath it. */}
-              {mode !== 'read' && <div className="scene-head">
+              {mode !== 'read' && <div className="scene-head" data-scene-head={s.scene}>
                 <code>{s.scene}</code>
                 {routeCounts[s.scene] > 0 && (
                   <button className="scene-routes wait" disabled={routeBusy}
                     title="Read the other ways through this scene, and decide."
-                    onClick={() => {
+                    onClick={() => anchored(s.scene, () => {
                       const opening = routesFor !== s.scene
                       setRoutesFor(opening ? s.scene : null)
                       setReadingRoute(null)
-                    }}>
+                      setAdoptArmed(null)
+                    })}>
                     {routesFor === s.scene
                       ? 'hide the routes'
                       : `${routeCounts[s.scene]} route${routeCounts[s.scene] === 1 ? '' : 's'} waiting`}
@@ -2712,14 +2737,28 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               {mode !== 'read' && <ContractPanel c={s.contract ?? undefined} rests={[...s.facts, ...s.events]} onOpenWorld={onOpenWorld} />}
               {/* The routes fold INTO the scene: one reading area, and a tab
                   strip that swaps what is in it. */}
-              {routesFor === s.scene && routes.length > 0 && mode !== 'read' && (
-                <RouteTabs routes={routes} selectedId={readingRoute}
-                  onSelect={id => {
-                    // Leaving a route leaves its notes. A composer opened
-                    // against route A must never be filed against route B.
-                    setReadingRoute(id); setSel(null); setNoteText(''); setActive(null); setFocused(null)
-                  }} />
-              )}
+              {routesFor === s.scene && routes.length > 0 && mode !== 'read' && (() => {
+                // Settled prose refuses a route into the draft the same way
+                // it refuses a new one: said here, before the press, so the
+                // backend's 423 is never the author's first news of it.
+                const held = heldLockOf(s, overrides[s.file] ?? s.body)
+                return (
+                  <RouteTabs routes={routes} selectedId={readingRoute}
+                    busy={routeBusy}
+                    settled={held
+                      ? `This ${held.anchor.chapter ? 'chapter' : 'section'} is settled — locked (${held.id}). Unlock it to take a route into the draft.`
+                      : null}
+                    adoptArmed={adoptArmed}
+                    onArmAdopt={id => setAdoptArmed(id)}
+                    onAdopt={alt => adopt(s.scene, alt)}
+                    onSelect={id => anchored(s.scene, () => {
+                      // Leaving a route leaves its notes. A composer opened
+                      // against route A must never be filed against route B.
+                      setReadingRoute(id); setSel(null); setNoteText(''); setActive(null); setFocused(null)
+                      setAdoptArmed(null)
+                    })} />
+                )
+              })()}
               {routesFor === s.scene && routeChain && mode !== 'read'
                 ? (
                   <RouteReader

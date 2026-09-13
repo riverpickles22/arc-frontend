@@ -30,8 +30,24 @@ export function RouteTabs(props: {
   selectedId: string | null
   onSelect: (id: string | null) => void
   counts?: number
+  /** Decide from the strip (A59-3). The author has often already read the
+   *  routes; making them open each one again to take the one they want is a
+   *  detour, so adopt sits on the tab. It asks first, because it replaces
+   *  the scene's draft — the same two-step every other gesture that changes
+   *  the book uses.
+   *
+   *  Cancel deliberately does NOT join it here: under the governed path a
+   *  cancel records the route's disposition rather than removing a file, so
+   *  the gesture is built once, there (A67-10). */
+  onAdopt?: (alt: string) => void | Promise<void>
+  adoptArmed?: string | null
+  onArmAdopt?: (alt: string | null) => void
+  /** Why this scene cannot take a route, in the author's words, or null. */
+  settled?: string | null
+  busy?: boolean
 }) {
   const chains = chainsOf(props.routes)
+  const canAdopt = props.onAdopt && props.onArmAdopt
   return (
     <div className="rr-tabs">
       <button className={'rr-tab' + (props.selectedId === null ? ' is-on' : '')}
@@ -39,13 +55,42 @@ export function RouteTabs(props: {
         The scene as it stands
       </button>
       {chains.map(c => (
-        <button key={c.head.id} className={'rr-tab' + (c.head.id === props.selectedId ? ' is-on' : '')}
-          onClick={() => props.onSelect(c.head.id)}>
-          {seedLabel(c.head.seed)}
-          <small>{paragraphsOf(c.head.body).length} ¶
-            {(c.head.notes?.length ?? 0) > 0 ? ` · ${c.head.notes!.length} note${c.head.notes!.length === 1 ? '' : 's'}` : ''}
-            {c.earlier.length ? ` · v${c.earlier.length + 1}` : ''}</small>
-        </button>
+        <span key={c.head.id} className="rr-tab-wrap">
+          <button className={'rr-tab' + (c.head.id === props.selectedId ? ' is-on' : '')}
+            onClick={() => props.onSelect(c.head.id)}>
+            {seedLabel(c.head.seed)}
+            <small>{paragraphsOf(c.head.body).length} ¶
+              {(c.head.notes?.length ?? 0) > 0 ? ` · ${c.head.notes!.length} note${c.head.notes!.length === 1 ? '' : 's'}` : ''}
+              {c.earlier.length ? ` · v${c.earlier.length + 1}` : ''}</small>
+          </button>
+          {props.settled
+            ? (
+              <span className="rr-tab-adopt is-off" title={props.settled}>settled</span>
+            )
+            : canAdopt && props.adoptArmed === c.head.id
+            ? (
+              <span className="rr-tab-ask" role="group" aria-label="Confirm adopt">
+                <button className="rr-tab-adopt go" disabled={props.busy}
+                  title="Take this route into the scene's draft now. Accept or discard it through the ordinary gate."
+                  onClick={() => { props.onArmAdopt!(null); void props.onAdopt!(c.head.id) }}>
+                  adopt
+                </button>
+                <a className="linklike rr-tab-no" onClick={() => props.onArmAdopt!(null)}
+                  title="Leave the scene as it is — nothing is written.">
+                  no
+                </a>
+              </span>
+            )
+            : canAdopt
+            ? (
+              <button className="rr-tab-adopt" disabled={props.busy}
+                title="Take this route into the scene's draft, without opening it first. Asks before it writes — nothing changes on this click."
+                onClick={() => props.onArmAdopt!(c.head.id)}>
+                adopt…
+              </button>
+            )
+            : null}
+        </span>
       ))}
     </div>
   )

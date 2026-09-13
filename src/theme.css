@@ -815,6 +815,19 @@ svg text { font-family: inherit; }
 .rr-tab:hover { background: var(--c-hover, rgba(127,127,127,.08)); }
 .rr-tab.is-on { border-color: var(--c1); color: var(--text-primary); }
 .rr-tab small { display: block; color: var(--text-secondary); font-size: 11px; margin-top: 1px; }
+/* Adopt on the tab, so a decision needs no detour through each route in
+   turn (A59-3). It arms first, like every other gesture that changes the
+   book; it sits beside its own route, never over the strip, because what
+   it acts on is that one route. */
+.rr-tab-wrap { display: inline-flex; align-items: center; gap: 4px; }
+.rr-tab-adopt { font: inherit; font-size: 11px; color: var(--ink-act); background: transparent;
+  border: 1px solid color-mix(in oklab, var(--ink-act) 40%, transparent); border-radius: 7px;
+  padding: 2px 7px; cursor: pointer; }
+.rr-tab-adopt:hover { border-color: var(--ink-act); }
+.rr-tab-adopt:disabled { opacity: .5; cursor: default; }
+.rr-tab-adopt.is-off { color: var(--text-secondary); border-style: dashed; cursor: default; }
+.rr-tab-ask { display: inline-flex; align-items: center; gap: 6px; }
+.rr-tab-no { font-size: 11px; color: var(--ink-act); }
 .rr-meta { font-size: 12px; color: var(--text-secondary); margin: 0 0 10px; }
 .rr-cols { position: relative; }
 .rr-main { min-width: 0; padding-left: 34px; }
