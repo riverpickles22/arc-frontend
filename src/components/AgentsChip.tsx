@@ -1,6 +1,11 @@
 import type { Agent, RunSummary } from '../canon'
 import type { StreamState } from '../hooks/useRunStream'
 
+/** The run states that are over (A67-3, api-types RunState): what the chip
+ *  stops counting as active. */
+const RUN_OVER: ReadonlySet<RunSummary['state']> = new Set(['refused', 'failed', 'cancelled', 'done'])
+
+
 /** Who is working on the story, and what they have done.
  *
  *  THE HONESTY RULE, and nowhere is it more tempting to break: in observed
@@ -40,7 +45,7 @@ export function AgentsChip({ stream, onOpenRun, openRun, onOpened, open, onToggl
 
   const working = agents.filter(a => a.state === 'working')
   const externalFiles = external.flatMap(e => e.files)
-  const active = runs.filter(r => r.state !== 'closed')
+  const active = runs.filter(r => !RUN_OVER.has(r.state))
 
   // The chip earns its space only when there is something to say.
   const label = agents.length === 0 && !externalFiles.length
@@ -85,7 +90,7 @@ export function AgentsChip({ stream, onOpenRun, openRun, onOpened, open, onToggl
               {active.map(r => (
                 <button key={r.id} className="ag-run" onClick={() => onOpenRun?.(r.id)}>
                   <code>{r.id}</code>
-                  <span className={r.state === 'awaiting' ? 'ag-state awaits' : 'ag-state'}>{r.state}</span>
+                  <span className={r.state === 'waiting for you' ? 'ag-state awaits' : 'ag-state'}>{r.state}</span>
                   <span className="ag-prompt">{r.prompt}</span>
                 </button>
               ))}

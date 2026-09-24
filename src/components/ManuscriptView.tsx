@@ -6,7 +6,7 @@ import { DUE_SHOWN, SECTIONS, awayLabel, briefingVisible, chapterLabel, dueRows,
 import type { ProseCheckHit } from 'arc-canon-graph/api-types.ts'
 import { dateOf } from '../canon'
 import { dotsFor } from '../keypoints'
-import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, loadBriefing, loadRouteCounts, rerouteScene, reviseRoute, addRouteNote, deleteRouteNote, adoptRoute, dropRoute, workNotes } from '../api'
+import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, loadBriefing, loadRouteCounts, rerouteScene, reviseRoute, addRouteNote, deleteRouteNote, adoptRoute, dropRoute, workNotes, loadRuns, stopRun, deleteRunTranscript } from '../api'
 import type { RouteAlternative, RouteLockNotice } from 'arc-canon-graph/api-types.ts'
 import { byNewest, chainsOf, isRouteKey, lockNotice, quoteOf, railCards, railMeta, routeKey, routeParagraphOf, seedLabel, standDownCount } from '../routes-view'
 import type { RailCard } from '../routes-view'
@@ -681,13 +681,23 @@ function NotesRail({ cards, tops, cardRef, railRef, head, empty, notice, active,
  *  is a count per store, each a link to its surface; what is due is the
  *  obligations whose window touches the chapter you are in. The last
  *  session's accepts sit folded shut. Nothing here is generated. */
-function Briefing({ b, chapters, now, onGo, onDismiss }: {
+function Briefing({ b, chapters, now, onGo, onDismiss, onForget }: {
   b: BriefingResponse
   chapters: Chapter[]
   now: number
   onGo: (link: BriefingLink) => void
   onDismiss: () => void
+  /** Let a run's working notes go, which is what closes its record. */
+  onForget: (id: string) => Promise<void>
 }) {
+  const [forgetting, setForgetting] = useState<string | null>(null)
+  const [forgetErr, setForgetErr] = useState<string | null>(null)
+  const forget = async (id: string) => {
+    setForgetting(id); setForgetErr(null)
+    try { await onForget(id) }
+    catch (e) { setForgetErr((e as Error).message || String(e) || 'arc could not let those go just now.') }
+    finally { setForgetting(null) }
+  }
   const left = b.lastAccepted!
   const links = readyLinks(b)
   const due = dueRows(b.due)
@@ -743,6 +753,31 @@ function Briefing({ b, chapters, now, onGo, onDismiss }: {
         <details>
           <summary>What the last session did · {b.lastSession.length} accept{b.lastSession.length === 1 ? '' : 's'}</summary>
           <ul>{b.lastSession.map(c => <li key={c.hash}><code>{c.hash}</code> {c.subject}</li>)}</ul>
+        </details>
+      )}
+      {/* WORK THAT NEVER FINISHED (A67-12). arc was closed while it was
+          thinking, so the run has no ending and nobody was there to write
+          one. Letting its working notes go is what closes the record — and
+          it is the only way to close it, which is why `arc doctor` sends the
+          author here and why this had to exist before that sentence could be
+          true. Nothing of the book is lost: the notes are the runtime's
+          transcript, outside the story. */}
+      {b.unfinished.length > 0 && (
+        <details className="briefing-unfinished">
+          <summary>Work that never finished · {b.unfinished.length}</summary>
+          <ul>
+            {b.unfinished.map(u => (
+              <li key={u.id}>
+                {u.prompt || u.id}
+                <button className="linklike" disabled={forgetting === u.id}
+                  title="Let this one's working notes go. The record closes, and nothing of your book is touched."
+                  onClick={() => void forget(u.id)}>
+                  {forgetting === u.id ? 'letting it go…' : 'let its working notes go'}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {forgetErr && <p className="db-err">{forgetErr}</p>}
         </details>
       )}
     </aside>
@@ -827,7 +862,10 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // author adopts it, so nothing here touches the draft layer's controls.
   const [routes, setRoutes] = useState<RouteAlternative[]>([])
   /** routes waiting per scene, for the manuscript's markers — one read */
-  const [routeCounts, setRouteCounts] = useState<Record<string, number>>({})
+  /** Per scene: how many routes wait on the author, and how many of the
+   *  four places are taken. A stale route waits but holds no place
+   *  (A67-10), so the two are different questions. */
+  const [routeCounts, setRouteCounts] = useState<Record<string, { waiting: number; governed: number }>>({})
   /** which scene's routes the author has open, if any */
   const [routesFor, setRoutesFor] = useState<string | null>(null)
   /** which route is being read in place of the scene; null = the scene itself */
@@ -835,6 +873,21 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const [routeNoteBusy, setRouteNoteBusy] = useState(false)
   const [routeLocks, setRouteLocks] = useState<RouteLockNotice[]>([])
   const [routeBusy, setRouteBusy] = useState(false)
+  /** Which scene is working, and the run doing it. A pass is one awaited
+   *  request, so the run id is not in hand until it is over — the run list is
+   *  where a working run can be found WHILE it works, and it is what makes
+   *  the stop reachable (A67-11, criterion 3). */
+  const [workingScene, setWorkingScene] = useState<string | null>(null)
+  /** What the run is ABOUT, which is not always the scene: a rewrite's
+   *  subject is the route. The header says which scene is busy; the poll
+   *  matches on this. */
+  const [workingSubject, setWorkingSubject] = useState<string | null>(null)
+  /** When this client asked. A run that was already going when the author
+   *  pressed is somebody else's — another tab, the terminal — and stopping it
+   *  would kill their work and leave this one running. */
+  const [workingSince, setWorkingSince] = useState<number>(0)
+  const [workingRun, setWorkingRun] = useState<string | null>(null)
+  const [stopping, setStopping] = useState(false)
   // Asking for a route costs a minute or two of model time and lands two
   // alternatives beside the scene, so the control asks once before it
   // writes: the first click arms it, the second runs (per the author,
@@ -842,10 +895,48 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // work this way — not a browser dialog, which blocks the page and reads
   // as the browser's question rather than arc's.
   const [rerouteArmed, setRerouteArmed] = useState<string | null>(null)
-  // Adopting from the tab strip changes the book, so it arms the same way
-  // (A59-3). Held by route id, because the strip shows several at once.
-  const [adoptArmed, setAdoptArmed] = useState<string | null>(null)
+  // Adopt and cancel arm on the ROUTE now, not on the tab strip (A67-15).
+  // Both two-steps are the reader's own (`confirmAdopt`, `confirmDrop`), so
+  // this view holds no armed route id of its own — only `rerouteArmed`, which
+  // is about the scene rather than about any one route.
   const [routeErr, setRouteErr] = useState<string | null>(null)
+
+  // WHILE IT WORKS (A67-11, criterion 3). The pass is one awaited request, so
+  // the run id only comes back at the end — and a stop the author can only
+  // press after the work is over is not a stop. The run list is the one place
+  // a working run can be named while it works, so the wait polls it, quietly:
+  // a failed poll costs the stop, never the wait.
+  useEffect(() => {
+    if (!routeBusy || !workingSubject) { setWorkingRun(null); return }
+    let alive = true
+    const look = async () => {
+      try {
+        const { runs } = await loadRuns()
+        const live = runs.find(r =>
+          r.subject === workingSubject
+          && (r.state === 'running' || r.state === 'queued')
+          // Started no earlier than the press. Without this the newest run on
+          // the same subject wins, and that can be another tab's or the
+          // terminal's — stopping it kills their work and leaves this one
+          // going, which is worse than having no stop at all.
+          && Date.parse(r.started_at) >= workingSince)
+        if (alive) setWorkingRun(live?.id ?? null)
+      } catch { /* the stop is an extra; the wait stands without it */ }
+    }
+    void look()
+    const t = window.setInterval(look, 1500)
+    return () => { alive = false; window.clearInterval(t) }
+  }, [routeBusy, workingSubject, workingSince])
+
+  /** Stop the run that is working. What landed stays; the request that
+   *  started it returns with what there is, and its refusal says it was
+   *  stopped — in the sentence arc's own code renders. */
+  const stopWorking = async () => {
+    if (!workingRun || stopping) return
+    setStopping(true)
+    try { await stopRun(workingRun) } catch (e) { setRouteErr((e as Error).message || String(e) || 'arc could not finish that — nothing was written.') }
+  }
+
 
   // Annotations: select prose, write the thought, keep reading. No
   // categorisation, no scope declaration — the author's only job is the note.
@@ -1597,6 +1688,14 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     return () => ctrl.abort()
   }, [countsTick, draft, anns])
   const dismissBriefing = useCallback(() => { setBriefChoice('dismissed'); writeBriefingDismissed() }, [])
+  /** Let a run's working notes go. They are the runtime's transcript, outside
+   *  the story — nothing of the book is in the story repo's way — and letting
+   *  them go is what closes a record nobody was there to close (A67-12). The
+   *  briefing re-reads, so the row disappears when it is done. */
+  const forgetRun = useCallback(async (id: string) => {
+    await deleteRunTranscript(id)
+    setBriefing(await loadBriefing())
+  }, [])
 
   // Landing on a scene in another chapter takes two renders: the chapter
   // first, then the scene once its rows exist. The intent waits here.
@@ -2168,6 +2267,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
   const reroute = async (scene: string, file: string) => {
     setRouteBusy(true); setRouteErr(null)
+    setWorkingScene(scene); setWorkingSubject(scene); setWorkingSince(Date.now() - 1000)
     try {
       await flushFile(file)
       const res = await rerouteScene({ scene, count: 1, ...(guidance.trim() ? { guidance: guidance.trim() } : {}) })
@@ -2177,12 +2277,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       setRoutes(prev => byNewest([...res.alternatives, ...prev.filter(p => !res.alternatives.some(a => a.id === p.id))]))
       setRoutesFor(scene)
       if (res.alternatives[0]) setReadingRoute(res.alternatives[0].id)
-      if (res.refused.length) setRouteErr(res.refused.map(r => `${seedLabel(r.seed)}: ${r.reason}`).join(' · '))
+      if (res.refused.length) setRouteErr(res.refused.map(r => `${seedLabel(r.seed)}: ${r.outcome ?? r.reason}`).join(' · '))
       refreshCounts()
     } catch (e) {
-      setRouteErr((e as Error).message ?? String(e))
+      setRouteErr((e as Error).message || String(e) || 'arc could not finish that — nothing was written.')
     } finally {
-      setRouteBusy(false)
+      setRouteBusy(false); setWorkingScene(null); setWorkingSubject(null); setWorkingRun(null); setStopping(false)
     }
   }
   // Notes on a route (A58): the author's reactions, kept with the route and
@@ -2192,13 +2292,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const saveRouteNoteFor = async (scene: string, alt: string, body: string, paragraph: number | null) => {
     setRouteNoteBusy(true)
     try { mergeAlt((await addRouteNote({ scene, alt, body, paragraph })).alternative) }
-    catch (e) { setRouteErr((e as Error).message ?? String(e)) }
+    catch (e) { setRouteErr((e as Error).message || String(e) || 'arc could not finish that — nothing was written.') }
     finally { setRouteNoteBusy(false) }
   }
   const removeRouteNote = async (scene: string, alt: string, note: string) => {
     setRouteNoteBusy(true)
     try { mergeAlt((await deleteRouteNote({ scene, alt, note })).alternative) }
-    catch (e) { setRouteErr((e as Error).message ?? String(e)) }
+    catch (e) { setRouteErr((e as Error).message || String(e) || 'arc could not finish that — nothing was written.') }
     finally { setRouteNoteBusy(false) }
   }
 
@@ -2206,15 +2306,18 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // author's note; the result lands as a new version of the same route.
   const reviseFor = async (scene: string, id: string, extra: string) => {
     setRouteBusy(true); setRouteErr(null)
+    // The rewrite's subject is the ROUTE, which is what its run records — the
+    // header still names the scene, because that is where the author is.
+    setWorkingScene(scene); setWorkingSubject(id); setWorkingSince(Date.now() - 1000)
     try {
       const res = await reviseRoute({ scene, alt: id, ...(extra ? { note: extra } : {}) })
       setRoutes(prev => byNewest([...res.alternatives, ...prev.filter(p => !res.alternatives.some(a => a.id === p.id))]))
-      if (res.refused.length) setRouteErr(res.refused.map(r => `${seedLabel(r.seed)}: ${r.reason}`).join(' · '))
+      if (res.refused.length) setRouteErr(res.refused.map(r => `${seedLabel(r.seed)}: ${r.outcome ?? r.reason}`).join(' · '))
       refreshCounts()
     } catch (e) {
-      setRouteErr((e as Error).message ?? String(e))
+      setRouteErr((e as Error).message || String(e) || 'arc could not finish that — nothing was written.')
     } finally {
-      setRouteBusy(false)
+      setRouteBusy(false); setWorkingScene(null); setWorkingSubject(null); setWorkingRun(null); setStopping(false)
     }
   }
   /** Keep the scene's own header where it is while the routes fold in or
@@ -2239,12 +2342,11 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       // the author has to decide next is the draft, in the scene, under the
       // ordinary gate. Leaving them in the route panel would show them the
       // thing they just took rather than the book it went into.
-      setAdoptArmed(null)
       anchored(scene, () => { setRoutesFor(null); setReadingRoute(null) })
     } catch (e) {
       // A settled scene refuses with 423 and the backend's own sentence;
       // it reaches the author unchanged, above the reader.
-      setRouteErr((e as Error).message ?? String(e))
+      setRouteErr((e as Error).message || String(e) || 'arc could not finish that — nothing was written.')
     } finally {
       setRouteBusy(false)
     }
@@ -2254,9 +2356,11 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     try {
       await dropRoute(scene, id)
       setRoutes(prev => prev.filter(a => a.id !== id))
+      // Leaving the route that was open leaves nothing to read.
+      setReadingRoute(prev => (prev === id ? null : prev))
       refreshCounts()
     } catch (e) {
-      setRouteErr((e as Error).message ?? String(e))
+      setRouteErr((e as Error).message || String(e) || 'arc could not finish that — nothing was written.')
     }
   }
 
@@ -2288,8 +2392,6 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
       {err && <p className="db-err">{err}</p>}
       {curScenes.length === 1 && notice.blocked && <p className="db-err">{notice.blocked}</p>}
       {curScenes.length === 1 && notice.constrain && <p className="gen-note">{notice.constrain}</p>}
-      {routeBusy && <p className="gen-note">arc is taking another way through — the destination and the known route go in, the prose stays out. One alternative, a minute or two.</p>}
-      {routeErr && <p className="db-err">{routeErr}</p>}
       {gen && (
         <div className="db-capture">
           <h3>Drafting pass — briefing</h3>
@@ -2327,9 +2429,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               {curScenes.map(sc => (
                 <a key={sc.scene} className="nav-scene" onClick={() => jumpToScene(sc.scene)}>
                   <code>{sc.scene}</code>
-                  {routeCounts[sc.scene] > 0 && (
-                    <span className="nav-routes" title={`${routeCounts[sc.scene]} another way through this scene, waiting for you`}>
-                      {routeCounts[sc.scene]} ⤳
+                  {(routeCounts[sc.scene]?.waiting ?? 0) > 0 && (
+                    <span className="nav-routes" title={`${routeCounts[sc.scene].waiting} another way through this scene, waiting for you`}>
+                      {routeCounts[sc.scene].waiting} ⤳
                     </span>
                   )}
                 </a>
@@ -2373,7 +2475,8 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         )}
       <article className="ms-main">
         {briefing && mode !== 'read' && briefingVisible(briefing, Date.now(), briefChoice) && (
-          <Briefing b={briefing} chapters={chapters} now={Date.now()} onGo={followBriefing} onDismiss={dismissBriefing} />
+          <Briefing b={briefing} chapters={chapters} now={Date.now()} onGo={followBriefing} onDismiss={dismissBriefing}
+            onForget={forgetRun} />
         )}
         <header className="ms-head" ref={headRef}>
           <div className="ms-headrow">
@@ -2510,18 +2613,17 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   actions competed with the prose beneath it. */}
               {mode !== 'read' && <div className="scene-head" data-scene-head={s.scene}>
                 <code>{s.scene}</code>
-                {routeCounts[s.scene] > 0 && (
+                {(routeCounts[s.scene]?.waiting ?? 0) > 0 && (
                   <button className="scene-routes wait" disabled={routeBusy}
                     title="Read the other ways through this scene, and decide."
                     onClick={() => anchored(s.scene, () => {
                       const opening = routesFor !== s.scene
                       setRoutesFor(opening ? s.scene : null)
                       setReadingRoute(null)
-                      setAdoptArmed(null)
                     })}>
                     {routesFor === s.scene
                       ? 'hide the routes'
-                      : `${routeCounts[s.scene]} route${routeCounts[s.scene] === 1 ? '' : 's'} waiting`}
+                      : `${routeCounts[s.scene].waiting} route${routeCounts[s.scene].waiting === 1 ? '' : 's'} waiting`}
                   </button>
                 )}
                 {/* Asking for a route belongs on the scene it is about, beside
@@ -2540,7 +2642,9 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                   // The cap is the backend's rule; the viewer says it before
                   // the press so the refusal is never a surprise. Cancelling a
                   // route lowers the count and the control returns.
-                  if ((routeCounts[s.scene] ?? 0) >= MAX_ROUTES) return (
+                  // Only the places actually taken count against the cap: a
+                  // stale route is shown with a re-run and holds none.
+                  if ((routeCounts[s.scene]?.governed ?? 0) >= MAX_ROUTES) return (
                     <span className="scene-routes is-off"
                       title={`A scene holds ${MAX_ROUTES} other ways through at a time. Cancel one you are done with to make room for another.`}>
                       full — cancel one to add another
@@ -2558,6 +2662,26 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                         title="Leave the scene as it is — nothing is sent.">
                         no
                       </a>
+                    </span>
+                  )
+                  // WORKING, WITH A STOP (A67-11, criterion 3). It belongs
+                  // on the header of the scene it is about, not in one of the
+                  // three panes below — the author watches this from Read and
+                  // Notes as often as from Edit, and a stop they can only
+                  // reach in one pane is a stop they do not have.
+                  if (routeBusy && workingScene === s.scene) return (
+                    <span className="scene-routes-working" role="status">
+                      <span className="scene-routes is-off"
+                        title="arc is taking another way through this scene. The destination and the known route go in; the prose stays out.">
+                        working…
+                      </span>
+                      {workingRun && (
+                        <button className="scene-routes stop" disabled={stopping}
+                          title="Stop this one. Anything that already landed stays."
+                          onClick={() => void stopWorking()}>
+                          {stopping ? 'stopping…' : 'stop'}
+                        </button>
+                      )}
                     </span>
                   )
                   return (
@@ -2737,42 +2861,38 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               {mode !== 'read' && <ContractPanel c={s.contract ?? undefined} rests={[...s.facts, ...s.events]} onOpenWorld={onOpenWorld} />}
               {/* The routes fold INTO the scene: one reading area, and a tab
                   strip that swaps what is in it. */}
-              {routesFor === s.scene && routes.length > 0 && mode !== 'read' && (() => {
-                // Settled prose refuses a route into the draft the same way
-                // it refuses a new one: said here, before the press, so the
-                // backend's 423 is never the author's first news of it.
-                const held = heldLockOf(s, overrides[s.file] ?? s.body)
-                return (
-                  <RouteTabs routes={routes} selectedId={readingRoute}
-                    busy={routeBusy}
-                    settled={held
-                      ? `This ${held.anchor.chapter ? 'chapter' : 'section'} is settled — locked (${held.id}). Unlock it to take a route into the draft.`
-                      : null}
-                    adoptArmed={adoptArmed}
-                    onArmAdopt={id => setAdoptArmed(id)}
-                    onAdopt={alt => adopt(s.scene, alt)}
-                    onSelect={id => anchored(s.scene, () => {
-                      // Leaving a route leaves its notes. A composer opened
-                      // against route A must never be filed against route B.
-                      setReadingRoute(id); setSel(null); setNoteText(''); setActive(null); setFocused(null)
-                      setAdoptArmed(null)
-                    })} />
-                )
-              })()}
+              {routesFor === s.scene && routes.length > 0 && mode !== 'read' && (
+                <RouteTabs routes={routes} selectedId={readingRoute}
+                  onSelect={id => anchored(s.scene, () => {
+                    // Leaving a route leaves its notes. A composer opened
+                    // against route A must never be filed against route B.
+                    setReadingRoute(id); setSel(null); setNoteText(''); setActive(null); setFocused(null)
+                  })} />
+              )}
               {routesFor === s.scene && routeChain && mode !== 'read'
-                ? (
+                ? (() => {
+                  // Settled prose refuses a route into the draft the same way
+                  // it refuses a new one: said on the adopt, before the press,
+                  // so the backend's 423 is never the author's first news of it.
+                  const held = heldLockOf(s, overrides[s.file] ?? s.body)
+                  return (
                   <RouteReader
                     chain={routeChain!}
                     busy={routeBusy}
                     error={routeErr}
                     focusedKey={focused}
+                    settled={held
+                      ? `This ${held.anchor.chapter ? 'chapter' : 'section'} is settled — locked (${held.id}). Unlock it to take a route into the draft.`
+                      : null}
                     onCompose={composeRoute}
                     onFocusNote={(id, n) => { setActive(id); setFocused(routeKey(n)) }}
                     onRevise={(alt, extra) => reviseFor(s.scene, alt, extra)}
                     onAdopt={alt => adopt(s.scene, alt)}
                     onDrop={alt => drop(s.scene, alt)}
+                    onRerun={() => void reroute(s.scene, s.file)}
                   />
-                )
+                  )
+                })()
                 : mode === 'read'
                 ? (
                   // The book, and only the book: the working tree's prose —
@@ -2913,6 +3033,18 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
               : <DiffBody d={diffs.get(c.file) ?? []} />}
           </section>
         ))}
+
+        {/* WHAT THE PASS IS DOING, AND WHY IT DID NOT LAND — in the chapter's
+            own flow, not in the drafting bar. The bar is toggled from the
+            header and is hidden in Read, so a sentence that lives inside it
+            is a sentence the author often never sees; the run they started
+            from the scene header has to answer where they are watching from.
+            The stop itself sits on the scene header, beside the scene it
+            belongs to. */}
+        {routeBusy && (
+          <p className="gen-note">arc is working on another way through — the destination and the known route go in, the prose stays out. One alternative, a minute or two.</p>
+        )}
+        {routeErr && <p className="db-err">{routeErr}</p>}
 
         {curScenes.length > 0 && showGen && mode !== 'read' && genBar}
 

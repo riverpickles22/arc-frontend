@@ -23,6 +23,9 @@ import { AgentsChip } from './components/AgentsChip'
 import { DraftChip } from './components/DraftChip'
 import { useRunStream } from './hooks/useRunStream'
 
+/** The run states that are over (A67-3): a finished run marks nothing. */
+const RUN_OVER: ReadonlySet<string> = new Set(['refused', 'failed', 'cancelled', 'done'])
+
 type Page = 'world' | 'manuscript' | 'wiki' | 'style' | 'thoughts'
 
 // Labels live in a lookup, not a ternary chain: a chain's final `else` label
@@ -284,7 +287,7 @@ function Shell({ canon, data, dark, onToggleDark }: {
   const touching = useMemo(() => {
     const m = new Map<string, string>()
     for (const r of stream.runs) {
-      if (r.state === 'closed') continue
+      if (RUN_OVER.has(r.state)) continue
       for (const id of r.touching ?? []) m.set(id, r.id)
     }
     return m

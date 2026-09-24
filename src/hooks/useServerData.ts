@@ -33,7 +33,7 @@ export interface ServerData {
   /** The author's notebook — whatever they wrote down. */
   thoughts: Note[]
   /** Which engine is live, or null when none is. */
-  engine: 'sdk' | 'claude-cli' | null
+  engine: 'sdk' | 'claude-cli' | 'fixture' | null
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -43,7 +43,7 @@ export function useServerData(): ServerData {
   const [canonError, setCanonError] = useState<string | null>(null)
   const [view, setView] = useState<View>({})
   const [style, setStyle] = useState<StyleResponse | null>(null)
-  const [engine, setEngine] = useState<'sdk' | 'claude-cli' | null>(null)
+  const [engine, setEngine] = useState<'sdk' | 'claude-cli' | 'fixture' | null>(null)
   const [thoughts, setThoughts] = useState<Note[]>([])
   const [notes, setNotes] = useState<ResolvedAnnotation[]>([])
   const [docs, setDocs] = useState<DocArticle[]>([])

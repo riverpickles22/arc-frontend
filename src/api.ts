@@ -7,9 +7,9 @@
 // backend can no longer masquerade as an empty story.
 import type {
   AnalyzeRequest, AnalyzeResponse, AnnotationsResponse, ApiErrorResponse, AttentionResponse, DocsResponse, DraftSceneRequest, DraftSceneResponse, LocksResponse, MaterialResponse, RedraftRequest,
-  AddNoteRequest, AgentsResponse, DeleteNoteRequest, HealthResponse, NoteResponse, NotesResponse, OkResponse,
+  AddNoteRequest, RouteCountsResponse, AgentsResponse, DeleteNoteRequest, HealthResponse, NoteResponse, NotesResponse, OkResponse,
   CreateAnnotationRequest, DeleteAnnotationRequest, UpdateAnnotationRequest, CreateLockRequest, DeleteLockRequest,
-  RunsResponse, RunDetailResponse,
+  RunsResponse, RunDetailResponse, StopRunResponse, DeleteTranscriptResponse,
   UpdateMaterialRequest, UpdateMaterialResponse, UpdateNoteRequest,
   WorkDecisionRequest, WorkDecisionResponse, WorkNoteRequest, WorkResponse,
   ProseAcceptRequest, ProseAcceptResponse, ProseCheckHit, ProseChecksResponse, ProseDiscardRequest, ProseParagraphRequest, ProseResponse, ProseSentenceRequest, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
@@ -161,6 +161,23 @@ export const loadRuns = (signal?: AbortSignal): Promise<RunsResponse> =>
 export const loadRun = (id: string, signal?: AbortSignal): Promise<RunDetailResponse> =>
   getJson<RunDetailResponse>(`/api/runs/${encodeURIComponent(id)}`, { signal })
 
+/** Stop a run that is working (A67-11). The child is killed, whatever landed
+ *  stays, and the run ends `cancelled` — so the request that started it comes
+ *  back with what there is rather than with nothing. */
+export const stopRun = (id: string): Promise<StopRunResponse> =>
+  post<StopRunResponse>(`/api/runs/${encodeURIComponent(id)}/stop`, {})
+
+/** Let a run's working notes go: the transcripts its launches named, removed
+ *  by id. They are the runtime's, outside the story, and they can hold text
+ *  from the book — so this is the one gesture that takes them off the disk.
+ *  A run that never finished is closed by it (A67-12). */
+export const deleteRunTranscript = async (id: string): Promise<DeleteTranscriptResponse> => {
+  const res = await fetch(`/api/runs/${encodeURIComponent(id)}/transcript`, { method: 'DELETE' })
+  const out = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((out as Partial<ApiErrorResponse>).error ?? res.statusText)
+  return out as DeleteTranscriptResponse
+}
+
 /** Notes: whatever you wanted written down.
  *
  *  Filing is a WRITE — no model runs, nothing waits, and no engine is needed.
@@ -276,8 +293,8 @@ export const reviseRoute = (req: ReviseRouteRequest): Promise<RerouteResponse> =
  *  Notes live with the route and are what a rewrite reads. */
 /** How many routes wait on each scene — one read for the whole story, so the
  *  manuscript can mark every scene without a request per scene. */
-export const loadRouteCounts = (signal?: AbortSignal): Promise<{ counts: Record<string, number> }> =>
-  getJson<{ counts: Record<string, number> }>('/api/prose/reroute/counts', { signal })
+export const loadRouteCounts = (signal?: AbortSignal): Promise<RouteCountsResponse> =>
+  getJson<RouteCountsResponse>('/api/prose/reroute/counts', { signal })
 
 export const addRouteNote = (req: AddRouteNoteRequest): Promise<{ alternative: RouteAlternative }> =>
   post('/api/prose/reroute/note', req)

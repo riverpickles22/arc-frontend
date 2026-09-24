@@ -1,12 +1,71 @@
 import { describe, expect, it } from 'vitest'
-import { byNewest, canRewrite, chainsOf, coverageRows, isRouteKey, lockNotice, noteLabel, notesByParagraph, overlapLabel, paragraphsOf, quoteOf, railCards, railMeta, routeKey, routeParagraphOf, seedLabel, standDownCount } from './routes-view'
-import type { RouteAlternative } from 'arc-canon-graph/api-types.ts'
+import { blocksAdopt, byNewest, cancelPrompt, canRewrite, chainsOf, coverageRows, droppedLabel, endingLabel, gateLine, isRouteKey, staleChip, staleLabel, lockNotice, noteLabel, notesByParagraph, overlapLabel, paragraphsOf, quoteOf, railCards, railMeta, receiptReadings, routeKey, routeParagraphOf, seedLabel, standDownCount, tookLabel } from './routes-view'
+import type { RouteAlternative, RouteReceipt, RunEnding } from 'arc-canon-graph/api-types.ts'
 
 describe('coverageRows', () => {
   it('renders reported paragraphs and says "not reported" rather than guessing', () => {
     expect(coverageRows([{ item: 'A', paragraph: 2 }, { item: 'B', paragraph: null }])).toEqual([{ item: 'A', where: '¶2' }, { item: 'B', where: 'not reported' }])
   })
   it('a missing tail is no rows at all', () => { expect(coverageRows(null)).toEqual([]) })
+})
+
+describe('staleLabel', () => {
+  const base = { id: 'a', scene: 'sc.01-1', seed: 's', based_on: 'b', created_at: '', body: '', briefing: '', coverage: null, overlap: null } as RouteAlternative
+  it('a route an older arc wrote reads differently from one whose scene moved', () => {
+    expect(staleLabel({ ...base, stale: { changed: [], why: 'written by an older arc' } })).toBe('written by an older arc')
+    expect(staleLabel({ ...base, stale: { changed: ['sc.01-1'], why: 'the record moved' } })).toBe('the scene has changed since this was written')
+    expect(staleLabel({ ...base, stale: { changed: ['style'], why: 'the record moved' } })).toBe('what this was written from has changed')
+  })
+  it('a route that still holds says nothing', () => { expect(staleLabel(base)).toBeNull() })
+})
+
+describe('staleChip', () => {
+  const base = { id: 'a', scene: 'sc.01-1', seed: 's', based_on: 'b', created_at: '', body: '', briefing: '', coverage: null, overlap: null } as RouteAlternative
+  it('the strip says only THAT a route is out of date — the sentence belongs to the route', () => {
+    expect(staleChip({ ...base, stale: { changed: [], why: 'written by an older arc' } })).toBe('out of date')
+    expect(staleChip({ ...base, stale: { changed: ['style'], why: 'the record moved' } })).toBe('out of date')
+  })
+  it('a route that still holds wears no marker', () => { expect(staleChip(base)).toBeNull() })
+})
+
+describe('blocksAdopt', () => {
+  const base = { id: 'a', scene: 'sc.01-1', seed: 's', based_on: 'b', created_at: '', body: '', briefing: '', coverage: null, overlap: null } as RouteAlternative
+  it('closes adopt on exactly what the write path refuses: a record that moved', () => {
+    expect(blocksAdopt({ ...base, stale: { changed: ['style'], why: 'the record moved' } })).toBe(true)
+    expect(blocksAdopt({ ...base, stale: { changed: ['sc.01-1'], why: 'the record moved' } })).toBe(true)
+  })
+  it('an older arc\'s route is noted, never refused — arc would still take it', () => {
+    expect(blocksAdopt({ ...base, stale: { changed: [], why: 'written by an older arc' } })).toBe(false)
+  })
+  it('and a route that still holds is not blocked', () => { expect(blocksAdopt(base)).toBe(false) })
+})
+
+describe('cancelPrompt', () => {
+  const base = { id: 'a', scene: 'sc.01-1', seed: 's', based_on: 'b', created_at: '', body: '', briefing: '', coverage: null, overlap: null } as RouteAlternative
+  it('names what cancelling keeps: the author\'s own notes go to the record, not away', () => {
+    expect(cancelPrompt({ ...base, notes: [{ id: 'n', paragraph: null, body: 'x', created_at: '' }] }))
+      .toBe('Really cancel it? Your note on it stays on the record.')
+    expect(cancelPrompt({ ...base, notes: [{ id: 'n', paragraph: null, body: 'x', created_at: '' }, { id: 'm', paragraph: 1, body: 'y', created_at: '' }] }))
+      .toBe('Really cancel it? Your 2 notes on it stay on the record.')
+  })
+  it('and says what happens when there are none', () => {
+    expect(cancelPrompt(base)).toBe('Really cancel it? The record says you let it go.')
+  })
+})
+
+describe('droppedLabel', () => {
+  it('says how many claims were dropped and why, where the route is', () => {
+    expect(droppedLabel([{ reason: 'unresolvable', count: 1 }])).toBe('1 claim whose evidence did not resolve — dropped')
+    expect(droppedLabel([{ reason: 'unresolvable', count: 3 }])).toBe('3 claims whose evidence did not resolve — dropped')
+    expect(droppedLabel([{ reason: 'outside the slice', count: 1 }])).toMatch(/not asked to reach/)
+    expect(droppedLabel([{ reason: 'unparseable', count: 2 }])).toMatch(/could not read/)
+    expect(droppedLabel([{ reason: 'unresolvable', count: 1 }, { reason: 'unparseable', count: 1 }]))
+      .toBe('1 claim whose evidence did not resolve · 1 claim arc could not read — dropped')
+  })
+  it('a route that dropped nothing says nothing', () => {
+    expect(droppedLabel(undefined)).toBeNull()
+    expect(droppedLabel([])).toBeNull()
+  })
 })
 
 describe('overlapLabel', () => {
@@ -181,5 +240,66 @@ describe('railMeta / standDownCount', () => {
   it('counts only the routed scene\'s notes as standing down', () => {
     expect(standDownCount([ann('sc.1'), ann('sc.2'), ann('sc.1')], 'sc.1', route(1))).toBe(2)
     expect(standDownCount([ann('sc.1')], 'sc.1', null)).toBe(0)
+  })
+})
+
+// ---- the receipt, as the author reads it (A67-11) -------------------------
+
+describe('the receipt in the fold', () => {
+  const receipt = (over: Partial<RouteReceipt> = {}): RouteReceipt => ({
+    run: 'run.0001', given: ['style', 'pack'], withheld_by_design: ['the current prose of sc.02-1'],
+    dropped_for_budget: [], runtime_added: [], gates: [], outcome: null,
+    started_at: '2026-09-14T00:00:00Z', decided_at: '2026-09-14T00:01:00Z', ...over,
+  })
+
+  it('keeps the three readings apart, and says so when one is empty', () => {
+    const rows = receiptReadings(receipt())
+    expect(rows.map(r => r.heading)).toEqual(
+      ['Given to the pass', 'Withheld by design', 'Dropped for room', 'Added by the runtime'])
+    // An absent heading reads as "this did not happen"; "nothing was dropped"
+    // is a fact the author wants to be told.
+    expect(rows[2].items).toEqual([])
+    expect(rows[2].empty).toMatch(/nothing was dropped/)
+    expect(rows[1].items).toEqual(['the current prose of sc.02-1'])
+  })
+
+  it('never merges withheld by design with dropped for room', () => {
+    const rows = receiptReadings(receipt({ withheld_by_design: ['the prose'], dropped_for_budget: ['siblings'] }))
+    const withheld = rows.find(r => r.heading === 'Withheld by design')!
+    const dropped = rows.find(r => r.heading === 'Dropped for room')!
+    expect(withheld.items).toEqual(['the prose'])
+    expect(dropped.items).toEqual(['siblings'])
+  })
+
+  it('renders a gate by what it checks, never by arc\'s id for it', () => {
+    // The id is arc's vocabulary (rule 9) and the server is the one place
+    // that knows the author's word for each gate, so the two can never drift
+    // into two vocabularies.
+    expect(gateLine({ gate: 'overlap', says: 'wording reused from the scene', verdict: 'refused', measured: 0.62, bar: 0.4, attempt: 2 }))
+      .toBe('wording reused from the scene: refused — 0.62 against 0.4 (attempt 2)')
+    expect(gateLine({ gate: 'leak', says: 'the scene\u2019s own prose kept out of the brief', verdict: 'held', attempt: 1 }))
+      .toBe('the scene\u2019s own prose kept out of the brief: held')
+    // An older receipt with no `says` still reads, rather than rendering
+    // nothing where the gate's name should be.
+    expect(gateLine({ gate: 'locks', says: '', verdict: 'held', attempt: 1 })).toBe('locks: held')
+  })
+
+  it('says how a run ended in the author\'s words, and has a word for every ending', () => {
+    const endings: RunEnding[] = ['landed', 'refused', 'could not run', 'timed out', 'budget', 'unreadable', 'cancelled', 'unfinished']
+    for (const e of endings) {
+      expect(endingLabel(e), e).not.toBe('still open')
+      expect(endingLabel(e), e).not.toContain(e === 'landed' ? 'zzz' : '_')
+    }
+    expect(endingLabel(undefined)).toBe('still open')
+    expect(endingLabel('cancelled')).toBe('you stopped it')
+  })
+
+  it('says how long it took the way a person says it, and nothing at all when it cannot', () => {
+    expect(tookLabel(1000)).toBe('1 second')
+    expect(tookLabel(41_000)).toBe('41 seconds')
+    expect(tookLabel(60_000)).toBe('1 minute')
+    expect(tookLabel(138_000)).toBe('2.3 minutes')
+    expect(tookLabel(undefined)).toBe(null)
+    expect(tookLabel(Number.NaN)).toBe(null)
   })
 })

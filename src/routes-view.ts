@@ -1,6 +1,7 @@
 // The route viewer's data half (A51): what an alternative shows the author,
 // as pure functions so the rendering rules are testable without a DOM.
-import type { RouteAlternative, RouteCoverage, RouteLockNotice, RouteNote } from 'arc-canon-graph/api-types.ts'
+import type { DroppedClaim, RouteAlternative, RouteCoverage, RouteGateReading, RouteLockNotice, RouteNote, RouteReceipt } from 'arc-canon-graph/api-types.ts'
+import type { RunEnding } from 'arc-canon-graph/api-types.ts'
 import type { ResolvedAnnotation } from './canon'
 
 export interface CoverageRow { item: string; where: string }
@@ -13,6 +14,64 @@ export function coverageRows(coverage: RouteCoverage[] | null): CoverageRow[] {
   return coverage.map(c => ({ item: c.item, where: c.paragraph === null ? 'not reported' : `¶${c.paragraph}` }))
 }
 
+/** What was dropped, where the route is: claims the pass made whose
+ *  evidence did not resolve against the destination it was given (A67-8).
+ *  Counted by reason, in the author's terms — never a silent omission. */
+export function droppedLabel(dropped: DroppedClaim[] | undefined): string | null {
+  if (!dropped?.length) return null
+  const said = (d: DroppedClaim): string => {
+    const claims = `${d.count} claim${d.count === 1 ? '' : 's'}`
+    switch (d.reason) {
+      case 'outside the slice': return `${claims} about something this pass was not asked to reach`
+      case 'unparseable': return `${claims} arc could not read`
+      default: return `${claims} whose evidence did not resolve`
+    }
+  }
+  return `${dropped.map(said).join(' · ')} — dropped`
+}
+
+/** A route whose ground has moved, in the author's terms (A67-10). Two
+ *  different things the author reads differently: a route an older arc
+ *  wrote, which has no receipt to open, and a governed route whose scene or
+ *  style contract has changed under it. Null when it still holds. */
+export function staleLabel(alt: RouteAlternative): string | null {
+  if (!alt.stale) return null
+  return alt.stale.why === 'written by an older arc'
+    ? 'written by an older arc'
+    : alt.stale.changed.includes(alt.scene)
+      ? 'the scene has changed since this was written'
+      : 'what this was written from has changed'
+}
+
+/** What the STRIP says about a stale route: that it is out of date, and
+ *  nothing else. What moved, and the one click that helps, belong to the
+ *  route itself — the author decides to ask again while reading the prose
+ *  it would replace, not from a list of alternatives (A67-15). */
+export const staleChip = (alt: RouteAlternative): string | null =>
+  alt.stale ? 'out of date' : null
+
+/** Whether the WRITE PATH would refuse this route — the only ground on which
+ *  the viewer closes adopt. arc-backend's `adoptAlternative` refuses exactly
+ *  one staleness, `the record moved`: a route must never be written over
+ *  newer work. A route written by an older arc is stale in the other sense —
+ *  it carries no receipt, so arc cannot say what it was written from — but it
+ *  is still the author's prose and still theirs to take, and greying adopt on
+ *  it takes away a choice arc would have honoured. */
+export const blocksAdopt = (alt: RouteAlternative): boolean =>
+  alt.stale?.why === 'the record moved'
+
+/** What cancelling this route keeps. The author's notes on a route are
+ *  their words: they go into the record with the disposition rather than
+ *  away with the file, and the confirm says so (A67-10). It is the second
+ *  click's whole label, in the reader where cancel now lives (A67-15). */
+export function cancelPrompt(alt: RouteAlternative): string {
+  const n = alt.notes?.length ?? 0
+  if (!n) return 'Really cancel it? The record says you let it go.'
+  return n === 1
+    ? 'Really cancel it? Your note on it stays on the record.'
+    : `Really cancel it? Your ${n} notes on it stay on the record.`
+}
+
 /** What the overlap figure says, in the author's terms. Null is honest:
  *  too few countable paragraphs to judge, and the gate said so. */
 export function overlapLabel(share: number | null): string {
@@ -21,7 +80,7 @@ export function overlapLabel(share: number | null): string {
 }
 
 export const seedLabel = (seed: string): string =>
-  ({ 'late-entry': 'late entry', 'pressure-first': 'pressure first', unseeded: 'unseeded' } as Record<string, string>)[seed] ?? seed
+  ({ 'late-entry': 'late entry', 'pressure-first': 'pressure first', unseeded: 'unseeded', stopped: 'this one' } as Record<string, string>)[seed] ?? seed
 
 /** The pre-run notice: which locks will constrain the route, and whether one
  *  of them refuses the run outright. A paragraph lock survives verbatim and
@@ -176,4 +235,62 @@ export function railMeta(input: { route: RouteAlternative | null; open: number; 
   if (input.open) parts.push(`${input.open} elsewhere in the chapter`)
   if (input.standDown) parts.push(`${input.standDown} on the scene, back when you close the route`)
   return parts.join(' · ')
+}
+
+// ---- the receipt, as the author reads it (A67-11) -------------------------
+
+/** How the run ended, in the author's words. The wire's endings are arc's
+ *  vocabulary; a line under the prose must not be. */
+export function endingLabel(ending?: RunEnding): string {
+  switch (ending) {
+    case 'landed': return 'it landed'
+    case 'refused': return 'arc would not keep the answer'
+    case 'cancelled': return 'you stopped it'
+    case 'timed out': return 'it ran past its time'
+    case 'budget': return 'it ran past its room'
+    case 'unreadable': return 'the answer came back unreadable'
+    case 'could not run': return 'it could not start'
+    case 'unfinished': return 'arc was closed while it worked'
+    default: return 'still open'
+  }
+}
+
+/** THE THREE READINGS OF WHAT THE PASS WAS NOT GIVEN, kept apart on purpose
+ *  (criterion 2): "arc chose not to show it", "arc ran out of room", and
+ *  "the runtime added this on its own" are three different facts, and a
+ *  page that merges them tells the author none of them.
+ *
+ *  A reading with nothing in it still gets its line, saying so — an absent
+ *  heading reads as "this did not happen", and "nothing was dropped" is a
+ *  thing the author wants to be told. */
+export interface ReceiptReading { heading: string; items: string[]; empty: string }
+export function receiptReadings(r: RouteReceipt): ReceiptReading[] {
+  return [
+    { heading: 'Given to the pass', items: r.given, empty: 'nothing — the pass ran on its rules alone' },
+    { heading: 'Withheld by design', items: r.withheld_by_design, empty: 'nothing was withheld' },
+    { heading: 'Dropped for room', items: r.dropped_for_budget, empty: 'nothing was dropped — it all fit' },
+    { heading: 'Added by the runtime', items: r.runtime_added, empty: 'nothing arc did not ask for' },
+  ]
+}
+
+/** One gate, in a line: what it checks, how it came out, what it measured and
+ *  the bar it measured against. Proven, always — a gate is code.
+ *
+ *  `says` and not `gate`: the id is arc's vocabulary (rule 9), and the server
+ *  is the one place that knows the author's word for each one, so the two can
+ *  never drift into two different vocabularies. */
+export function gateLine(g: RouteGateReading): string {
+  const measured = g.measured === null || g.measured === undefined ? ''
+    : g.bar === null || g.bar === undefined ? ` — ${g.measured}`
+    : ` — ${g.measured} against ${g.bar}`
+  return `${g.says || g.gate}: ${g.verdict}${measured}${g.attempt > 1 ? ` (attempt ${g.attempt})` : ''}`
+}
+
+/** How long the run took, in words a person uses about a minute. */
+export function tookLabel(ms?: number): string | null {
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) return null
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s} second${s === 1 ? '' : 's'}`
+  const m = Math.round(s / 6) / 10
+  return `${m} minute${m === 1 ? '' : 's'}`
 }

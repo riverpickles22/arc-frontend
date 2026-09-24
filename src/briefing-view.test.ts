@@ -7,7 +7,7 @@ const H = 3600 * 1000
 const NOW = Date.parse('2026-09-03T12:00:00Z')
 const at = (hoursAgo: number) => new Date(NOW - hoursAgo * H).toISOString()
 
-const empty: BriefingResponse = { git: true, lastAccepted: null, draft: [], notes: [], routes: {}, unplaced: 0, due: [], lastSession: [] }
+const empty: BriefingResponse = { git: true, lastAccepted: null, draft: [], notes: [], routes: {}, unplaced: 0, due: [], lastSession: [], unfinished: [] }
 const accepted = (hoursAgo: number, extra: Partial<BriefingResponse> = {}): BriefingResponse => ({
   ...empty,
   lastAccepted: { scene: 'sc.02-1', chapter: 'ch.02', file: 'prose/ch-02/scene-01.md', paragraph: 'The last line.', acceptedAt: at(hoursAgo), hash: 'abc1234' },

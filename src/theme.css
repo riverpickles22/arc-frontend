@@ -789,9 +789,48 @@ svg text { font-family: inherit; }
 .route-coverage { border-collapse: collapse; }
 .route-coverage td { font-size: 12.5px; padding: 2px 10px 2px 0; vertical-align: top; color: var(--text-secondary); }
 .route-coverage td:last-child { white-space: nowrap; }
-.route-actions { display: flex; gap: 8px; margin-top: 10px; }
+/* wrap, because the armed labels are whole sentences and a flex item cannot
+   shrink below its min-content: without this the confirm overflows the
+   reading column on a narrow window instead of dropping to its own line. */
+.route-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .route-revise { align-items: center; }
+/* Deciding a route happens HERE now, on the route whose prose the author is
+   reading (A67-15) — so the row wears the viewer's own outlined button
+   (.db-analyze's shape) rather than the browser's default, which is what
+   made the route's footer read as a form. One ink each: adopt is the gesture
+   that changes the book, rewrite spends a pass, cancel lets the route go and
+   only reddens under the cursor, because it is the second click that acts. */
+.route-actions button {
+  font: inherit; font-size: 12.5px; font-weight: 650; white-space: nowrap;
+  background: transparent; color: var(--text-secondary);
+  border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px; cursor: pointer;
+}
+.route-actions button:disabled { opacity: .55; cursor: default; }
+.route-actions > button:first-child:not(:disabled) { color: var(--c1); border-color: var(--c1); }
+.route-actions:not(.route-revise) > button:last-child:not(:first-child):not(:disabled):hover {
+  color: var(--c8); border-color: color-mix(in oklab, var(--c8) 55%, transparent); }
+.route-revise button:not(:disabled) { color: var(--ink-pass); border-color: var(--ink-pass); }
+.route-revise input {
+  font: inherit; font-size: 13px; padding: 5px 9px;
+  background: var(--page); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 8px; }
 .route-hint { font-weight: 400; color: var(--text-secondary); font-size: 12px; }
+/* A route whose ground has moved says so above the reading, in the same
+   quiet register as the hint — never an alarm, because nothing is wrong
+   with the route; the record simply moved under it (A67-10). */
+.route-stale { font-size: 12px; color: var(--text-secondary); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+/* The receipt, inside the fold the route reader already has (A67-11). Two
+   columns so the four readings of what the pass was given line up and the
+   author can see at a glance which of them is empty. */
+.route-receipt { margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
+.route-receipt-part { display: grid; grid-template-columns: 160px 1fr; gap: 10px; padding: 3px 0; align-items: baseline; }
+.route-receipt-head { color: var(--text-secondary); opacity: .8; }
+.route-receipt-body { color: var(--text-primary, inherit); }
+.route-gate { display: block; }
+/* Working, with the way out of it, on the header of the scene it is about. */
+.scene-routes-working { display: inline-flex; gap: 6px; align-items: baseline; }
+.scene-routes.stop { border-color: var(--c1); }
+@media (max-width: 640px) { .route-receipt-part { grid-template-columns: 1fr; gap: 2px; } }
 .route-para { cursor: pointer; border-radius: 3px; padding: 1px 3px; margin-left: -3px; }
 .route-para:hover { background: var(--c-hover, rgba(127,127,127,.10)); }
 .route-para.noted { box-shadow: inset 2px 0 0 var(--c1); }
@@ -809,25 +848,29 @@ svg text { font-family: inherit; }
 /* The route reader (A59-1). The prose column and the notes rail are SIBLING
    columns; every card is out of the prose's flow, so nothing a note does can
    move a line of the route. */
-.rr-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 6px; }
+/* The routes strip is TABS and nothing else (A67-15): one control per
+   reading, so the row beside "The scene as it stands" reads as a choice of
+   what to look at rather than as a panel of adopts and cancels. Deciding a
+   route happens on the route, in the reader below. */
+.rr-tabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: stretch; margin: 10px 0 6px; }
 .rr-tab { font: inherit; font-size: 12.5px; text-align: left; color: var(--text-secondary);
   background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
 .rr-tab:hover { background: var(--c-hover, rgba(127,127,127,.08)); }
 .rr-tab.is-on { border-color: var(--c1); color: var(--text-primary); }
 .rr-tab small { display: block; color: var(--text-secondary); font-size: 11px; margin-top: 1px; }
-/* Adopt on the tab, so a decision needs no detour through each route in
-   turn (A59-3). It arms first, like every other gesture that changes the
-   book; it sits beside its own route, never over the strip, because what
-   it acts on is that one route. */
-.rr-tab-wrap { display: inline-flex; align-items: center; gap: 4px; }
-.rr-tab-adopt { font: inherit; font-size: 11px; color: var(--ink-act); background: transparent;
+/* Out of date is said INSIDE the tab, on the line that already carries the
+   tab's measurements, and in the wait ink — a fact about the route, never a
+   control beside it. What moved is on hover; ask again is on the route. */
+.rr-tab.is-stale { border-style: dashed; }
+.rr-tab .rr-tab-stale { color: var(--ink-wait); font-style: normal; }
+/* Ask again, on the opened route and nowhere else (A67-15) — arc's own chip,
+   not the browser's button, which is what the strip's controls fell back to
+   when they had no rule of their own. */
+.route-rerun { font: inherit; font-size: 11px; color: var(--ink-act); background: transparent;
   border: 1px solid color-mix(in oklab, var(--ink-act) 40%, transparent); border-radius: 7px;
   padding: 2px 7px; cursor: pointer; }
-.rr-tab-adopt:hover { border-color: var(--ink-act); }
-.rr-tab-adopt:disabled { opacity: .5; cursor: default; }
-.rr-tab-adopt.is-off { color: var(--text-secondary); border-style: dashed; cursor: default; }
-.rr-tab-ask { display: inline-flex; align-items: center; gap: 6px; }
-.rr-tab-no { font-size: 11px; color: var(--ink-act); }
+.route-rerun:hover { border-color: var(--ink-act); }
+.route-rerun:disabled { opacity: .5; cursor: default; }
 .rr-meta { font-size: 12px; color: var(--text-secondary); margin: 0 0 10px; }
 .rr-cols { position: relative; }
 .rr-main { min-width: 0; padding-left: 34px; }
