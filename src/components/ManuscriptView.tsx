@@ -8,7 +8,7 @@ import { dateOf } from '../canon'
 import { dotsFor } from '../keypoints'
 import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, loadBriefing, loadRouteCounts, rerouteScene, reviseRoute, addRouteNote, deleteRouteNote, adoptRoute, dropRoute, workNotes, loadRuns, stopRun, deleteRunTranscript } from '../api'
 import type { RouteAlternative, RouteLockNotice } from 'arc-canon-graph/api-types.ts'
-import { byNewest, chainsOf, isRouteKey, lockNotice, quoteOf, railCards, railMeta, routeKey, routeParagraphOf, seedLabel, standDownCount } from '../routes-view'
+import { byNewest, chainsOf, isRouteKey, lockNotice, planWords, quoteOf, railCards, railMeta, routeKey, routeParagraphOf, seedLabel, standDownCount } from '../routes-view'
 import type { RailCard } from '../routes-view'
 import { answeredInDraft, draftPillTitle, workLabel, workableScenes } from '../notes-work'
 import { changeCounts, changesHere, placeChanges } from '../draft-map'
@@ -31,6 +31,24 @@ import {
 } from '../manuscript-text'
 import { stack } from '../note-stack'
 import { Working } from './Working'
+import { DraftReceipt } from './DraftReceipt'
+import { editClause, planToSend, readDraftAnswer, saysSomething } from '../drafting-bar'
+
+/** A craft plan the author has been shown and has not settled. It dies with
+ *  the press that settles it and is never stored: restarting re-derives it
+ *  (A69-4). `target` is what go will run — the chapter for a draft, the
+ *  scene and its file for a redraft. */
+type PendingPlan = {
+  moves: { move: string; how: string }[]
+  said: string
+  editing: boolean
+  /** WHAT GO WILL RUN, captured when the plan was made and never re-read
+   *  from whatever is open now: a plan made for chapter 3 that wrote into
+   *  chapter 7 because the author looked away is prose in the wrong book. */
+  target:
+    | { kind: 'draft'; chapter: string }
+    | { kind: 'redraft'; scene: string; file: string; range?: [number, number] }
+}
 
 /** The scene's stated intent (conventions §10), collapsed by default —
  *  the contract the prose must satisfy, not an outline of what happens. */
@@ -855,6 +873,12 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const [genErr, setGenErr] = useState<string | null>(null)
   const [gen, setGen] = useState<DraftSceneResponse | null>(null)
   const [guidance, setGuidance] = useState('')
+  /** THE CRAFT YOUR LINE BECAME, waiting to be read (A69-4). Present only
+   *  between saying something and settling it: a line that names an effect
+   *  comes back as craft and NOTHING is written until the author says go.
+   *  `editing` turns the clauses into fields — the move ids are arc's and
+   *  never on the page, so what is edited is what the pass is told to do. */
+  const [plan, setPlan] = useState<PendingPlan | null>(null)
   const [showGen, setShowGen] = useState(false)
 
   // The reroute pass (A51): alternatives BESIDE the manuscript, not in it.
@@ -907,7 +931,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // a working run can be named while it works, so the wait polls it, quietly:
   // a failed poll costs the stop, never the wait.
   useEffect(() => {
-    if (!routeBusy || !workingSubject) { setWorkingRun(null); return }
+    if ((!routeBusy && !genBusy) || !workingSubject) { setWorkingRun(null); return }
     let alive = true
     const look = async () => {
       try {
@@ -926,7 +950,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     void look()
     const t = window.setInterval(look, 1500)
     return () => { alive = false; window.clearInterval(t) }
-  }, [routeBusy, workingSubject, workingSince])
+  }, [routeBusy, genBusy, workingSubject, workingSince])
 
   /** Stop the run that is working. What landed stays; the request that
    *  started it returns with what there is, and its refusal says it was
@@ -934,7 +958,13 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const stopWorking = async () => {
     if (!workingRun || stopping) return
     setStopping(true)
-    try { await stopRun(workingRun) } catch (e) { setRouteErr((e as Error).message || String(e) || 'arc could not finish that — nothing was written.') }
+    try { await stopRun(workingRun) } catch (e) {
+      setRouteErr((e as Error).message || String(e) || 'arc could not finish that — nothing was written.')
+      // The stop did not reach it, and the run is still going. Leaving the
+      // button disabled would leave the author watching work they asked to
+      // end with no way left to ask again.
+      setStopping(false)
+    }
   }
 
 
@@ -1638,7 +1668,10 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
     // Leaving a chapter is leaving off somewhere in it.
     const here = anchorNow()
     if (here && chapterKey) writePosition(chapterKey, here)
-    flushAllEdits(); setArmed(null); setAcceptArmed(null); setRerouteArmed(null); setGen(null); setGenErr(null); setShowGen(false); onChapter(i)
+    // The plan goes with the chapter it was made for. It is never stored
+    // and a restart re-derives it (A69-4), so dropping it here costs one
+    // cheap reading and saves a draft written into the wrong chapter.
+    flushAllEdits(); setArmed(null); setAcceptArmed(null); setRerouteArmed(null); setGen(null); setGenErr(null); setPlan(null); setShowGen(false); onChapter(i)
   }
 
   const byFile = useMemo(() => new Map(scenes.map(s => [s.file, s])), [scenes])
@@ -2209,17 +2242,50 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
 
 
 
-  const generate = async () => {
+  /** WRITE THE SCENE. `settled` is the craft the author read and kept —
+   *  `null` when they withdrew the line, `undefined` when they said nothing
+   *  and there was nothing to translate. Everything here writes; the step
+   *  that does not is `askForPlan` below. */
+  const draftNow = async (chapter: string, line: string, settled?: { moves: { move: string; how: string }[] } | null) => {
     setGenBusy(true); setGenErr(null); setGen(null)
+    // WORKING, AND STOPPABLE, FROM THE PRESS. The subject is the chapter
+    // because that is what the drafting run records as its own (A67-3), and
+    // the run id is learned from the run list while it works.
+    setWorkingSubject(chapter); setWorkingSince(Date.now() - 1000)
     try {
-      const res = await draftScene(cur.id, guidance.trim() || undefined)
+      const res = await draftScene(chapter, line || undefined, settled)
       setGen(res)
+      setPlan(null)
       setGuidance('')
       onRefresh()
     } catch (e) {
       setGenErr((e as Error).message ?? String(e))
     } finally {
-      setGenBusy(false)
+      setGenBusy(false); setWorkingSubject(null); setWorkingRun(null); setStopping(false)
+    }
+  }
+
+  /** THE FIRST HALF, when the author said something: a cheap reading turns
+   *  their line into craft and NOTHING is written. They read one line, edit
+   *  it, drop it or say go (A69-4). A press with no line skips this
+   *  entirely — there is nothing to translate, so it drafts at once. */
+  const generate = async () => {
+    const line = guidance.trim()
+    if (!saysSomething(line)) { void draftNow(cur.id, ''); return }
+    setGenBusy(true); setGenErr(null); setGen(null)
+    setWorkingSubject(cur.id); setWorkingSince(Date.now() - 1000)
+    try {
+      const res = await draftScene(cur.id, line)
+      const answer = readDraftAnswer(res)
+      if (answer.step === 'plan') {
+        setPlan({ moves: answer.moves, said: line, editing: false, target: { kind: 'draft', chapter: cur.id } })
+      } else {
+        setGen(res); setGuidance(''); onRefresh()
+      }
+    } catch (e) {
+      setGenErr((e as Error).message ?? String(e))
+    } finally {
+      setGenBusy(false); setWorkingSubject(null); setWorkingRun(null); setStopping(false)
     }
   }
 
@@ -2228,17 +2294,62 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
    *  — a generation landing in the draft layer for the gate to judge. The
    *  editor's pending text is flushed first; the pass reads the file. */
   const redraft = async (scene: string, file: string, range?: [number, number]) => {
+    const line = guidance.trim()
     setGenBusy(true); setGenErr(null); setGen(null)
+    setWorkingScene(scene); setWorkingSubject(scene); setWorkingSince(Date.now() - 1000)
     try {
       await flushFile(file)
-      const res = await redraftScene({ scene, ...(range ? { paragraphs: range } : {}) })
-      setGen(res)
-      onRefresh()
+      // THE LINE REACHES THIS PASS TOO (A69-11). The viewer has never sent
+      // it, so a clean pass could not be aimed; it is the same field the
+      // drafting bar already has, and the same two steps.
+      const res = await redraftScene({ scene, ...(range ? { paragraphs: range } : {}), ...(line ? { guidance: line } : {}) })
+      const answer = readDraftAnswer(res)
+      if (answer.step === 'plan') {
+        // THE PLAN HAS TO BE SOMEWHERE THE AUTHOR CAN SEE IT. A redraft
+        // reaches here from the selection menu and from ask again, where the
+        // drafting bar may be closed — and a plan set behind a closed bar is
+        // a press that silently did nothing.
+        setShowGen(true)
+        setPlan({ moves: answer.moves, said: line, editing: false, target: { kind: 'redraft', scene, file, ...(range ? { range } : {}) } })
+      } else {
+        setGen(res); setGuidance(''); onRefresh()
+      }
     } catch (e) {
       setGenErr((e as Error).message ?? String(e))
     } finally {
-      setGenBusy(false)
+      setGenBusy(false); setWorkingScene(null); setWorkingSubject(null); setWorkingRun(null); setStopping(false)
     }
+  }
+
+  /** The clean pass, written from the craft the author settled. */
+  const redraftNow = async (
+    t: { scene: string; file: string; range?: [number, number] },
+    line: string, settled?: { moves: { move: string; how: string }[] } | null,
+  ) => {
+    setGenBusy(true); setGenErr(null); setGen(null)
+    setWorkingScene(t.scene); setWorkingSubject(t.scene); setWorkingSince(Date.now() - 1000)
+    try {
+      await flushFile(t.file)
+      const res = await redraftScene({
+        scene: t.scene, ...(t.range ? { paragraphs: t.range } : {}),
+        ...(line ? { guidance: line } : {}), ...(settled !== undefined ? { plan: settled } : {}),
+      })
+      setGen(res); setPlan(null); setGuidance(''); onRefresh()
+    } catch (e) {
+      setGenErr((e as Error).message ?? String(e))
+    } finally {
+      setGenBusy(false); setWorkingScene(null); setWorkingSubject(null); setWorkingRun(null); setStopping(false)
+    }
+  }
+
+  /** GO, or DROP. Go runs the pass on the craft as it stands — edited or
+   *  not; drop withdraws the line and runs it without. Either way the plan
+   *  is gone afterwards: it is never stored, and a restart re-derives it. */
+  const settlePlan = (keep: boolean) => {
+    if (!plan) return
+    const settled = planToSend(plan, keep)
+    if (plan.target.kind === 'draft') void draftNow(plan.target.chapter, plan.said, settled)
+    else void redraftNow(plan.target, plan.said, settled)
   }
 
   /** "Work through my notes on this scene" (A63): the scene's open notes are
@@ -2385,7 +2496,53 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
         )}
 
       </div>
-      {genBusy && <p className="gen-note">arc is drafting from the chapter's context pack — style contract, cast state, payoff fence. This takes a minute or two.</p>}
+      {/* WRITING TOWARD — the craft your line became, before a token is
+          spent on prose (A69-4). One line, and three things to do with it:
+          change what the pass is told, drop the line and draft without it,
+          or go. Nothing has been written while this is on the page. */}
+      {plan && !genBusy && (
+        <div className="gen-plan" role="group" aria-label="Writing toward">
+          <p className="gen-note">
+            <strong>Writing toward:</strong>{' '}
+            {plan.editing ? '' : planWords(plan.moves)}
+          </p>
+          {plan.editing && (
+            <div className="gen-plan-edit">
+              {plan.moves.map((m, i) => (
+                <input key={i} value={m.how} aria-label={`what to do, ${i + 1} of ${plan.moves.length}`}
+                  onChange={ev => setPlan(p => (p ? { ...p, moves: editClause(p.moves, i, ev.target.value) } : p))} />
+              ))}
+            </div>
+          )}
+          <div className="gen-plan-actions">
+            <button disabled={genBusy}
+              title="Change what the writing pass is told to do. Your line stays as you said it; this is what it became."
+              onClick={() => setPlan(p => (p ? { ...p, editing: !p.editing } : p))}>
+              {plan.editing ? 'done' : 'edit'}
+            </button>
+            <button disabled={genBusy}
+              title="Draft without it. What you said is still on the record; the pass just is not given it."
+              onClick={() => settlePlan(false)}>drop</button>
+            <button disabled={genBusy}
+              title="Write the scene, toward this."
+              onClick={() => settlePlan(true)}>go</button>
+          </div>
+        </div>
+      )}
+      {/* WORKING, WITH A STOP, from the press (A67-11). On the chapter's own
+          bar because a draft has no scene header yet to sit on. */}
+      {genBusy && (
+        <p className="gen-note" role="status">
+          working…
+          {workingRun && (
+            <button className="scene-routes stop" disabled={stopping}
+              title="Stop this one. Anything that already landed stays."
+              onClick={() => void stopWorking()}>
+              {stopping ? 'stopping…' : 'stop'}
+            </button>
+          )}
+        </p>
+      )}
       {genErr && <p className="db-err">{genErr}</p>}
       {/* A refused accept or discard — a lock, a stale draft — said beside
           the prose it refused, now that no drawer carries a banner. */}
@@ -2712,6 +2869,14 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                 })()}
                 {change && <span className={`stpill ${change.status}`} title={draftPillTitle(change)}>
                   draft</span>}
+                {/* WHAT THE PASS WAS GIVEN, two interactions from the prose
+                    and not one fewer (A69-11): the author is reading the
+                    scene, and this is beside the pill that says it is a
+                    draft. Closed, none of it is on the page. */}
+                {change?.run && (
+                  <DraftReceipt run={change.run}
+                    onAskAgain={() => void redraft(s.scene, s.file)} />
+                )}
                 {/* How much changed, in the index's numbers — the same
                     function on the same input, so they cannot disagree
                     (A64-11). */}

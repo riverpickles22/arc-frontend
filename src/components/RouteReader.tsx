@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import type { RouteAlternative } from 'arc-canon-graph/api-types.ts'
-import { blocksAdopt, canRewrite, cancelPrompt, chainsOf, coverageRows, droppedLabel, endingLabel, gateLine, noteLabel, notesByParagraph, overlapLabel, paragraphsOf, quoteOf, receiptReadings, routeKey, seedLabel, staleChip, staleLabel, tookLabel } from '../routes-view'
+import { blocksAdopt, canRewrite, cancelPrompt, chainsOf, coverageRows, droppedLabel, noteLabel, notesByParagraph, overlapLabel, paragraphsOf, quoteOf, routeKey, seedLabel, staleChip, staleLabel } from '../routes-view'
 import type { RouteChain } from '../routes-view'
+import { ReceiptFold } from './ReceiptFold'
 
 /** The route reader (A59-1): one route at a time at book measure, with the
  *  author's notes in a rail BESIDE the paragraphs they are about.
@@ -221,42 +222,11 @@ export function RouteReader(props: RouteReaderProps) {
         <h4>How arc ran it (proven)</h4>
         {alt.receipt
           ? (
-            <div className="route-receipt">
-              {alt.receipt.request && (
-                <p className="gen-note">
-                  You asked: “{alt.receipt.request.gesture}”
-                  {alt.receipt.request.subject ? ` · about ${alt.receipt.request.subject}` : ''}
-                </p>
-              )}
-              {receiptReadings(alt.receipt).map(r => (
-                <div key={r.heading} className="route-receipt-part">
-                  <span className="route-receipt-head">{r.heading}</span>
-                  <span className="route-receipt-body">
-                    {r.items.length ? r.items.join(' · ') : <em>{r.empty}</em>}
-                  </span>
-                </div>
-              ))}
-              <div className="route-receipt-part">
-                <span className="route-receipt-head">Overlap with the scene</span>
-                <span className="route-receipt-body">{overlapLabel(alt.overlap)}</span>
-              </div>
-              {alt.receipt.gates.length > 0 && (
-                <div className="route-receipt-part">
-                  <span className="route-receipt-head">Checks</span>
-                  <span className="route-receipt-body">
-                    {alt.receipt.gates.map(g => <span key={`${g.gate}-${g.attempt}`} className="route-gate">{gateLine(g)}</span>)}
-                  </span>
-                </div>
-              )}
-              <div className="route-receipt-part">
-                <span className="route-receipt-head">How it ended</span>
-                <span className="route-receipt-body">
-                  {endingLabel(alt.receipt.ending)}
-                  {tookLabel(alt.receipt.wall_clock_ms) ? ` · took ${tookLabel(alt.receipt.wall_clock_ms)}` : ''}
-                </span>
-              </div>
-              {alt.receipt.outcome && <p className="gen-note">{alt.receipt.outcome}</p>}
-            </div>
+            // ONE FOLD FOR EVERY RUN (A69-11): the route's overlap figure is
+            // the one reading only a route has, so it rides as an extra
+            // rather than forking the component.
+            <ReceiptFold receipt={alt.receipt}
+              extra={[{ heading: 'Overlap with the scene', body: overlapLabel(alt.overlap) }]} />
           )
           : alt.run
           // A run it has, a receipt it should have: the difference matters,

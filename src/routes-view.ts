@@ -294,3 +294,102 @@ export function tookLabel(ms?: number): string | null {
   const m = Math.round(s / 6) / 10
   return `${m} minute${m === 1 ? '' : 's'}`
 }
+
+// ---- the writing run's receipt, as the author reads it (A69-11) ------------
+
+/** WHAT EACH LAYER OF THE BRIEF IS CALLED, in the author's words. The wire
+ *  names are arc's vocabulary — `dramatic-condition`, `promoted-rules` — and
+ *  rule 9 keeps arc's vocabulary off the page. A layer arc adds later and
+ *  this list has not caught up with falls through to its own name rather
+ *  than vanishing: an unnamed layer is still a layer the author was shown. */
+const LAYER_WORDS: Record<string, string> = {
+  intent: 'What you asked for',
+  contract: 'What the scene has to do',
+  handoff: 'Where the last scene left the story',
+  'dramatic-condition': 'What is live here',
+  canon: 'The record at this moment',
+  position: 'Where the scene sits',
+  voice: 'How everyone here sounds',
+  research: 'Research',
+  notes: 'Your notes on this scene',
+  'promoted-rules': 'Your style contract',
+  withholds: 'What it must not reveal',
+  locks: 'The paragraphs you settled',
+}
+export const layerWords = (layer: string): string => LAYER_WORDS[layer] ?? layer
+
+/** THE FOUR STATUSES, KEPT APART (A69-2). "arc chose not to show it", "arc
+ *  ran out of room", "arc does not read this yet" and "there is honestly
+ *  nothing here" are four different facts about a book, and one word for all
+ *  of them is how a brief stops being readable. Never *missing*. */
+export function layerStatusWords(status: string): string {
+  switch (status) {
+    case 'given': return 'given to the pass'
+    case 'not shown': return 'not shown — room ran out'
+    case 'deferred': return 'arc does not read this yet'
+    case 'none': return 'nothing here'
+    default: return status
+  }
+}
+
+export interface LayerReadingRow { layer: string; heading: string; status: string; detail: string }
+
+/** One row per layer of the brief: what it is called, how it came out, and
+ *  why when it is not `given` — the reason as the backend recorded it, which
+ *  is already the author's words (*the first scene of the book*, *research is
+ *  not read yet*). Ids are shown only where they name things the author
+ *  knows: scenes, notes, people. */
+export function layerReadings(r: RouteReceipt): LayerReadingRow[] {
+  return (r.layers ?? []).map(l => {
+    const bits: string[] = [layerStatusWords(l.status)]
+    if (l.status !== 'given' && l.because) bits.push(l.because)
+    if (l.note) bits.push(l.note)
+    if (l.rungs?.length) bits.push(l.rungs.map(g => `${g.scene} at ${g.rung}`).join('; '))
+    if (l.status === 'given' && l.ids.length) bits.push(l.ids.join(', '))
+    return { layer: l.layer, heading: layerWords(l.layer), status: l.status, detail: bits.join(' · ') }
+  })
+}
+
+/** WHAT THE RUN LEANED ON that the record has not looked at lately (A69-6).
+ *  Proven from the manifest by code — a pass never writes this — and said
+ *  where the author is already reading rather than left in a file. */
+export function leanedOnLine(r: RouteReceipt): string | null {
+  const aged = r.leaned_on ?? []
+  if (!aged.length) return null
+  return `It leans on ${aged.map(l => `${l.id} as of ${l.as_of}`).join(', ')} — the record has not looked since.`
+}
+
+/** THE LINE SAID, AND THE CRAFT IT BECAME (A69-4). The author's own words
+ *  first, because they are what the author remembers saying; then what the
+ *  writing pass actually received in their place. */
+export function intentLines(r: RouteReceipt): { said: string | null; plan: string | null; note: string | null } {
+  const i = r.intent
+  if (!i) return { said: null, plan: null, note: null }
+  const said = i.said ? `You said: “${i.said}”` : null
+  const plan = i.plan?.moves.length ? `Writing toward: ${planWords(i.plan.moves)}` : null
+  const note = i.withdrawn
+    ? 'You read what that became and drafted without it.'
+    : i.note === 'nothing to translate'
+      ? 'You said nothing about this one, so there was nothing to turn into craft.'
+      : i.note ?? null
+  return { said, plan, note }
+}
+
+/** A craft plan as one line. The moves are arc's ids and never reach the
+ *  page (A69-4): what the author reads is the clause each one carries. */
+export const planWords = (moves: { move: string; how: string }[]): string =>
+  moves.map(m => m.how.trim()).filter(Boolean).join('; ')
+
+/** WHAT THE NOTES WERE, AND WHOSE (A69-9). A note arc wrote is never handed
+ *  to a writing pass as an instruction, so seeing one here at all would be a
+ *  fault — which is exactly why the fold says who wrote each. */
+export const notesHandedLine = (r: RouteReceipt): string | null => {
+  const n = r.notes_handed ?? []
+  if (!n.length) return null
+  return n.map(x => `${x.id}${x.by === 'agent' ? ' (arc’s own)' : ''}`).join(', ')
+}
+
+/** ARC HAS CHANGED SINCE THIS RAN (Q14, the author's decision): a LABEL, and
+ *  never a staleness that hides the work. What is on the page is still the
+ *  prose arc wrote; asking again is how you get what arc would write now. */
+export const OLDER_ARC = 'written by an older arc'

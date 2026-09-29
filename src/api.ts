@@ -10,6 +10,7 @@ import type {
   AddNoteRequest, RouteCountsResponse, AgentsResponse, DeleteNoteRequest, HealthResponse, NoteResponse, NotesResponse, OkResponse,
   CreateAnnotationRequest, DeleteAnnotationRequest, UpdateAnnotationRequest, CreateLockRequest, DeleteLockRequest,
   RunsResponse, RunDetailResponse, StopRunResponse, DeleteTranscriptResponse,
+  CraftPlanned, RouteReceipt, RunReceiptResponse,
   UpdateMaterialRequest, UpdateMaterialResponse, UpdateNoteRequest,
   WorkDecisionRequest, WorkDecisionResponse, WorkNoteRequest, WorkResponse,
   ProseAcceptRequest, ProseAcceptResponse, ProseCheckHit, ProseChecksResponse, ProseDiscardRequest, ProseParagraphRequest, ProseResponse, ProseSentenceRequest, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
@@ -302,8 +303,22 @@ export const addRouteNote = (req: AddRouteNoteRequest): Promise<{ alternative: R
 export const deleteRouteNote = (req: DeleteRouteNoteRequest): Promise<{ alternative: RouteAlternative }> =>
   post('/api/prose/reroute/note/delete', req)
 
-export const draftScene = (chapter: string, guidance?: string): Promise<DraftSceneResponse> =>
-  post('/api/prose/draft-scene', { chapter, guidance } satisfies DraftSceneRequest)
+/** THE DRAFTING PASS, IN TWO STEPS WHEN YOU SAY SOMETHING (A69-4).
+ *
+ *  `plan` undefined — you have not been shown one. A line said now comes
+ *  back as craft and NOTHING is written. `plan` set — you read it and
+ *  settled it, as given or edited, and the draft runs on it. `plan: null` —
+ *  you read it and withdrew the line; the draft runs without it.
+ *
+ *  With no line there is nothing to translate, so it drafts at once. */
+export const draftScene = (chapter: string, guidance?: string, plan?: CraftPlanned | null): Promise<DraftSceneResponse> =>
+  post('/api/prose/draft-scene', { chapter, guidance, ...(plan !== undefined ? { plan } : {}) } satisfies DraftSceneRequest)
+
+/** WHAT ARC RECORDED ABOUT ONE RUN. Read by id and not carried on the
+ *  response that made it: the fold under a draft opens whenever the author
+ *  gets to it, which may be days after the draft was written (A69-11). */
+export const loadRunReceipt = (run: string, signal?: AbortSignal): Promise<RouteReceipt> =>
+  getJson<RunReceiptResponse>(`/api/runs/${encodeURIComponent(run)}/receipt`, { signal }).then(r => r.receipt)
 
 /** A story's basemap, served from its assets/. Absent is fine — a story
  *  without one still draws its markers, so a miss stays null by design. */
