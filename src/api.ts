@@ -15,7 +15,7 @@ import type {
   WorkDecisionRequest, WorkDecisionResponse, WorkNoteRequest, WorkResponse,
   ProseAcceptRequest, ProseAcceptResponse, ProseCheckHit, ProseChecksResponse, ProseDiscardRequest, ProseParagraphRequest, ProseResponse, ProseSentenceRequest, RatifyRuleRequest, RatifyRuleResponse, StyleResponse,
 } from 'arc-canon-graph'
-import type { AdoptRouteRequest, AdoptRouteResponse, BriefingResponse, DropRouteRequest, AddRouteNoteRequest, DeleteRouteNoteRequest, RouteAlternative, RerouteRequest, ReviseRouteRequest, RerouteResponse, RouteListResponse, WorkNotesRequest, WorkNotesResponse } from 'arc-canon-graph/api-types.ts'
+import type { AdoptRouteRequest, AdoptRouteResponse, AskAgainRequest, BriefingResponse, DropRouteRequest, AddRouteNoteRequest, DeleteRouteNoteRequest, RouteAlternative, RerouteRequest, ReviseRouteRequest, RerouteResponse, RouteListResponse, WorkNotesRequest, WorkNotesResponse } from 'arc-canon-graph/api-types.ts'
 import type { Canon, DocArticle, MaterialItem, ProseDraft, ProseScene, ResolvedAnnotation, ResolvedLock, SuggestRequest, SuggestResponse } from './canon'
 import type { View } from './presentation'
 import type { GeoJSON } from './map-geometry'
@@ -275,6 +275,12 @@ export const workNotes = (req: WorkNotesRequest): Promise<WorkNotesResponse> =>
  *  shows it as an ordinary change), drop deletes the file. */
 export const listRoutes = (scene: string, signal?: AbortSignal): Promise<RouteListResponse> =>
   getJson<RouteListResponse>(`/api/prose/reroute?scene=${encodeURIComponent(scene)}`, { signal })
+
+/** Ask again: THIS route's job, re-issued against the record as it stands
+ *  now. The answer takes its place, so the scene's count does not move —
+ *  `rerouteScene` below is the one that adds (A69-13). */
+export const askAgain = (req: AskAgainRequest): Promise<RerouteResponse> =>
+  post('/api/prose/reroute/again', req)
 
 export const rerouteScene = (req: RerouteRequest): Promise<RerouteResponse> =>
   post('/api/prose/reroute', req)

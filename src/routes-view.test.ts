@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { blocksAdopt, byNewest, cancelPrompt, canRewrite, chainsOf, coverageRows, droppedLabel, endingLabel, gateLine, isRouteKey, staleChip, staleLabel, lockNotice, noteLabel, notesByParagraph, overlapLabel, paragraphsOf, quoteOf, railCards, railMeta, receiptReadings, routeKey, routeParagraphOf, seedLabel, standDownCount, tookLabel } from './routes-view'
+import { ANOTHER_WAY, ASK_AGAIN, blocksAdopt, byNewest, cancelPrompt, canRewrite, chainsOf, coverageRows, droppedLabel, endingLabel, gateLine, isRouteKey, staleChip, staleLabel, lockNotice, noteLabel, notesByParagraph, overlapLabel, paragraphsOf, quoteOf, railCards, railMeta, receiptReadings, reissuedLine, routeKey, routeParagraphOf, seedLabel, standDownCount, tookLabel } from './routes-view'
 import type { RouteAlternative, RouteReceipt, RunEnding } from 'arc-canon-graph/api-types.ts'
 
 describe('coverageRows', () => {
@@ -301,5 +301,26 @@ describe('the receipt in the fold', () => {
     expect(tookLabel(138_000)).toBe('2.3 minutes')
     expect(tookLabel(undefined)).toBe(null)
     expect(tookLabel(Number.NaN)).toBe(null)
+  })
+})
+
+// The two gestures sit next to each other and do opposite things, so the
+// words that tell them apart are held here rather than in the markup (A69-13).
+describe('ask again, beside another way through', () => {
+  it('says which one replaces and which one adds, in the author\'s words', () => {
+    expect(ASK_AGAIN).toMatch(/replaced by what comes back/)
+    expect(ASK_AGAIN).toMatch(/as it stands now/)
+    expect(ANOTHER_WAY).toMatch(/beside the ones already here/)
+    // Neither sentence may reach for arc's own vocabulary (rule 9).
+    for (const line of [ASK_AGAIN, ANOTHER_WAY]) {
+      expect(line).not.toMatch(/\b(run|receipt|row|slice|pass|prompt|agent)\b/i)
+    }
+  })
+
+  it('the fold says a route was a second asking, and whether the one it replaced left a record', () => {
+    expect(reissuedLine({})).toBeNull()
+    expect(reissuedLine({ reissued: true, reissued_from: 'run.0007' })).toMatch(/asked again/)
+    expect(reissuedLine({ reissued: true, reissued_from: 'run.0007' })).not.toMatch(/run\.0007/)
+    expect(reissuedLine({ reissued: true })).toMatch(/older arc/)
   })
 })

@@ -6,7 +6,7 @@ import { DUE_SHOWN, SECTIONS, awayLabel, briefingVisible, chapterLabel, dueRows,
 import type { ProseCheckHit } from 'arc-canon-graph/api-types.ts'
 import { dateOf } from '../canon'
 import { dotsFor } from '../keypoints'
-import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, loadBriefing, loadRouteCounts, rerouteScene, reviseRoute, addRouteNote, deleteRouteNote, adoptRoute, dropRoute, workNotes, loadRuns, stopRun, deleteRunTranscript } from '../api'
+import { acceptDraft, acceptParagraph, rejectParagraph, acceptSentence, rejectSentence, createLock as apiCreateLock, createNote, deleteAnnotation, deleteLock as apiDeleteLock, discardDraft, draftScene, loadChecks, loadLocks, redraftScene, suggestText, updateNote, writeScene, listRoutes, loadBriefing, loadRouteCounts, askAgain, rerouteScene, reviseRoute, addRouteNote, deleteRouteNote, adoptRoute, dropRoute, workNotes, loadRuns, stopRun, deleteRunTranscript } from '../api'
 import type { RouteAlternative, RouteLockNotice } from 'arc-canon-graph/api-types.ts'
 import { byNewest, chainsOf, isRouteKey, lockNotice, planWords, quoteOf, railCards, railMeta, routeKey, routeParagraphOf, seedLabel, standDownCount } from '../routes-view'
 import type { RailCard } from '../routes-view'
@@ -2376,6 +2376,39 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   // any generation. Existing alternatives load with the scene.
   const notice = lockNotice(routeLocks)
 
+  /** ASK AGAIN (A69-13): this route's own job, re-issued against the record
+   *  as it stands now. What comes back TAKES ITS PLACE — the list is mapped,
+   *  never re-sorted, so the route the author is reading stays where it was
+   *  and they stay on it. The scene's count does not move; `reroute` below
+   *  is the only gesture that adds a way through.
+   *
+   *  One press spends the pass: there is no confirm step here, because the
+   *  author has the route in front of them and asking again is the cheapest
+   *  thing they can do with it (A67-11's progress is the feedback). */
+  const askAgainFor = async (scene: string, file: string, alt: string) => {
+    setRouteBusy(true); setRouteErr(null)
+    setWorkingScene(scene); setWorkingSubject(scene); setWorkingSince(Date.now() - 1000)
+    try {
+      await flushFile(file)
+      const res = await askAgain({ scene, alt })
+      const next = res.alternatives[0]
+      if (next) {
+        // IN ITS PLACE, and deliberately without a refetch: the listing
+        // effect sorts by newest, which would lift the re-issued route to
+        // the top of the rail and move the author off the one they were
+        // reading. Mapping keeps the order they already had.
+        setRoutes(prev => prev.map(p => (p.id === alt ? next : p)))
+        setReadingRoute(next.id)
+      }
+      if (res.refused.length) setRouteErr(res.refused.map(r => `${seedLabel(r.seed)}: ${r.outcome ?? r.reason}`).join(' · '))
+      refreshCounts()
+    } catch (e) {
+      setRouteErr((e as Error).message || String(e) || 'arc could not finish that — nothing was written.')
+    } finally {
+      setRouteBusy(false); setWorkingScene(null); setWorkingSubject(null); setWorkingRun(null); setStopping(false)
+    }
+  }
+
   const reroute = async (scene: string, file: string) => {
     setRouteBusy(true); setRouteErr(null)
     setWorkingScene(scene); setWorkingSubject(scene); setWorkingSince(Date.now() - 1000)
@@ -3054,7 +3087,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
                     onRevise={(alt, extra) => reviseFor(s.scene, alt, extra)}
                     onAdopt={alt => adopt(s.scene, alt)}
                     onDrop={alt => drop(s.scene, alt)}
-                    onRerun={() => void reroute(s.scene, s.file)}
+                    onRerun={alt => void askAgainFor(s.scene, s.file, alt)}
                   />
                   )
                 })()

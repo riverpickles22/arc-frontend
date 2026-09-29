@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { RouteAlternative } from 'arc-canon-graph/api-types.ts'
-import { blocksAdopt, canRewrite, cancelPrompt, chainsOf, coverageRows, droppedLabel, noteLabel, notesByParagraph, overlapLabel, paragraphsOf, quoteOf, routeKey, seedLabel, staleChip, staleLabel } from '../routes-view'
+import { ASK_AGAIN, blocksAdopt, canRewrite, cancelPrompt, chainsOf, coverageRows, droppedLabel, noteLabel, notesByParagraph, overlapLabel, paragraphsOf, quoteOf, routeKey, seedLabel, staleChip, staleLabel } from '../routes-view'
 import type { RouteChain } from '../routes-view'
 import { ReceiptFold } from './ReceiptFold'
 
@@ -88,7 +88,8 @@ export interface RouteReaderProps {
   /** Ask again from where the record stands now — the one click a stale
    *  route offers, and the ONLY place in the viewer that offers it: it is a
    *  decision about this route, made where its prose is (A67-15). */
-  onRerun?: () => void
+  /** Ask again for THIS route — the one the author is reading (A69-13). */
+  onRerun?: (alt: string) => void
   /** Why this scene cannot take a route, in the author's words, or null.
    *  The strip used to say this in adopt's place; adopt lives here now, so
    *  the reason does too — said before the press, never as the backend's
@@ -155,8 +156,8 @@ export function RouteReader(props: RouteReaderProps) {
             : ' — arc will not write it over newer work.'}
           {props.onRerun && (
             <button className="route-rerun" disabled={busy}
-              title="Ask again, from where the record stands now."
-              onClick={() => props.onRerun!()}>ask again</button>
+              title={ASK_AGAIN}
+              onClick={() => props.onRerun!(alt.id)}>ask again</button>
           )}
         </p>
       )}

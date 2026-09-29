@@ -13,7 +13,7 @@
 import type { RouteReceipt } from 'arc-canon-graph/api-types.ts'
 import {
   endingLabel, gateLine, intentLines, layerReadings, leanedOnLine,
-  notesHandedLine, receiptReadings, tookLabel,
+  notesHandedLine, receiptReadings, reissuedLine, tookLabel,
 } from '../routes-view'
 
 export function ReceiptFold(props: {
@@ -34,6 +34,11 @@ export function ReceiptFold(props: {
           {r.request.subject ? ` · about ${r.request.subject}` : ''}
         </p>
       )}
+
+      {/* A SECOND ASKING (A69-13). The route it replaced is gone from disk,
+          so the fold is where the author reads that this one is a re-run
+          rather than a route that arrived beside the others. */}
+      {reissuedLine(r) && <p className="gen-note">{reissuedLine(r)}</p>}
 
       {/* WHAT YOU SAID, AND WHAT THE PASS WAS GIVEN INSTEAD (A69-4). The two
           are different on purpose: a pass told to write dread writes about

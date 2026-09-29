@@ -50,6 +50,30 @@ export function staleLabel(alt: RouteAlternative): string | null {
 export const staleChip = (alt: RouteAlternative): string | null =>
   alt.stale ? 'out of date' : null
 
+/** THE TWO GESTURES, IN ONE VOCABULARY (A67-15, A69-13). They are near each
+ *  other on the page and they do opposite things, so the words that tell
+ *  them apart live here rather than in the markup.
+ *
+ *  *Ask again* re-issues THIS route's job — the same notes, the same line —
+ *  against the record as it stands now, and the answer takes its place. The
+ *  scene keeps the same number of ways through, and the author keeps the one
+ *  they were reading.
+ *
+ *  *Another way through* is the only gesture that ADDS one. */
+export const ASK_AGAIN = 'Ask again: the same request, against the record as it stands now. This route is replaced by what comes back.'
+export const ANOTHER_WAY = 'Another way through: a different route, beside the ones already here.'
+
+/** Where a re-issued route came from, in the author's words (A69-13). The
+ *  receipt it re-issued is a run id — arc's word, not theirs — so what the
+ *  fold says is that this route is a second asking, and whether the one it
+ *  replaced left a record of its own. Null when this run was not one. */
+export function reissuedLine(r: { reissued?: boolean; reissued_from?: string }): string | null {
+  if (!r.reissued && !r.reissued_from) return null
+  return r.reissued_from
+    ? 'You asked again for this one. It was the same request as the route it replaced, made again against the record as it stood.'
+    : 'You asked again for this one. The route it replaced was written by an older arc and left nothing to compare it with.'
+}
+
 /** Whether the WRITE PATH would refuse this route — the only ground on which
  *  the viewer closes adopt. arc-backend's `adoptAlternative` refuses exactly
  *  one staleness, `the record moved`: a route must never be written over
