@@ -1,6 +1,6 @@
 # arc-frontend — agent notes
 
-Read `../arc-system-design/AGENTS.md` first; it carries the rules every arc
+Read `../arc-context/AGENTS.md` first; it carries the rules every arc
 repo shares. This file is only what is particular to the viewer.
 
 - **A pure client.** The viewer holds no canon and never reads or writes
