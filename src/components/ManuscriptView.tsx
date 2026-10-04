@@ -2236,7 +2236,7 @@ export function ManuscriptView({ scenes, chapters, chapterIx, onChapter, onOpenW
   const acceptScene = (file: string) => {
     if (acceptArmed !== file) { setAcceptArmed(file); setArmed(null); return }
     setAcceptArmed(null)
-    void run(() => acceptDraft(undefined, [file]))
+    void run(() => acceptDraft([file]))
   }
 
 

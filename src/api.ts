@@ -234,12 +234,12 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return out as T
 }
 
-/** Ratify the draft. `files` takes one scene alone — the decision made where
- *  the change is, with its diff on screen (A64-3); without it, everything
- *  pending is ratified together. */
-export const acceptDraft = (message?: string, files?: string[]): Promise<ProseAcceptResponse> =>
+/** Ratify the draft. `files` names the scenes being ratified and is required
+ *  (A72-1): the decision is made where the change is, with its diff on screen
+ *  (A64-3), so there is no call that ratifies everything pending at once. */
+export const acceptDraft = (files: string[], message?: string): Promise<ProseAcceptResponse> =>
   // capture runs when the backend has credentials
-  post('/api/prose/accept', { message, capture: true, ...(files ? { files } : {}) } satisfies ProseAcceptRequest)
+  post('/api/prose/accept', { message, capture: true, files } satisfies ProseAcceptRequest)
 
 export const discardDraft = (file: string): Promise<void> =>
   post('/api/prose/discard', { file } satisfies ProseDiscardRequest)

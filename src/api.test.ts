@@ -31,5 +31,5 @@ test('a network failure propagates instead of becoming an empty story', async ()
 
 test('mutations surface the domain message from 4xx responses', async () => {
   vi.stubGlobal('fetch', vi.fn(() => fail(409, { error: 'no draft changes to accept' })))
-  await expect(acceptDraft()).rejects.toThrow('no draft changes to accept')
+  await expect(acceptDraft(['prose/ch-01/scene-01.md'])).rejects.toThrow('no draft changes to accept')
 })
